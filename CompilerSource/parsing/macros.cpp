@@ -298,6 +298,7 @@ TokenVector Macro::ParseTokens(
     std::shared_ptr<const std::string> owned_raw_string, ErrorHandler *herr) {
   TokenVector definiens;
   Lexer lex(owned_raw_string, &ParseContext::ForPreprocessorEvaluation(), herr);
+  lex.UseCppOptions();
   for (auto t = lex.ReadToken(); t.type != TT_ENDOFCODE; t = lex.ReadToken()) {
     definiens.push_back(t);
   }
