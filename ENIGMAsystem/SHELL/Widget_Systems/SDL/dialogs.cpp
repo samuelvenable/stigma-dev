@@ -50,6 +50,15 @@ namespace enigma {
 
 namespace enigma_user {
 
+int widget_get_theme() {
+  return (ngs::fs::environment_get_variable("IMGUI_DIALOG_THEME").empty() ? -2 : 
+  (int)strtol(ngs::fs::environment_get_variable("IMGUI_DIALOG_THEME").c_str(), nullptr, 10));
+}
+
+bool widget_set_theme(int theme) {
+  return ngs::fs::environment_set_variable("IMGUI_DIALOG_THEME", std::to_string(theme));
+}
+
 void show_info(string info, int bgcolor, int left, int top, int width, int height, bool embedGameWindow, bool showBorder, bool allowResize, bool stayOnTop, bool pauseGame, string caption) { }
 
 void show_info() { }
