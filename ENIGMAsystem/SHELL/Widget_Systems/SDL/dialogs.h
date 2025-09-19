@@ -28,6 +28,8 @@
 
 namespace enigma_user {
 
+int widget_get_theme();
+bool widget_set_theme(int theme);
 bool show_question(std::string message);
 int show_message_ext(std::string message, std::string button1 = "", std::string button2 = "", std::string button3 = "");
 std::string get_string(std::string message, std::string defstr);
