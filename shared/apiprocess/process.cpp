@@ -1758,22 +1758,27 @@ namespace ngs::ps {
     standard_input = "";
     #if defined(_WIN32)
     std::vector<char> buff;
-    DWORD bytes_avail = 0;
     HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
     if (handle == INVALID_HANDLE_VALUE) {
       return standard_input.c_str();
     }
     if (GetFileType(handle) == FILE_TYPE_PIPE) {
-      if (PeekNamedPipe(handle, nullptr, 0, nullptr, &bytes_avail, nullptr)) {
-        DWORD mode = 0;
-        if (GetConsoleMode(handle, &mode)) {
+      DWORD mode = 0;
+      if (GetConsoleMode(handle, &mode)) {
+        DWORD bytes_avail = 0;
+        if (PeekNamedPipe(handle, nullptr, 0, nullptr, &bytes_avail, nullptr)) {
           DWORD bytes_read = 0;
           buff.resize(bytes_avail);
           if (PeekNamedPipe(handle, &buff[0], bytes_avail, &bytes_read, nullptr, nullptr)) {
             standard_input = buff.data();
           }
         } else {
-          // TODO: Handle files sent to stdin with non-console mode...
+          DWORD nRead = BUFSIZ;
+          buff.resize(nRead);
+          while (ReadFile(handle, &buff[0], nRead, &nRead, nullptr) && nRead) {
+            message_pump();
+            standard_input.append(buff.data(), nRead);
+          }
         }
       }
     } else {
