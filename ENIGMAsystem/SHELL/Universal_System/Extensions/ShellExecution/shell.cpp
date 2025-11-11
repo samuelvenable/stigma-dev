@@ -207,7 +207,7 @@ bool EnvironmentGetVariableExists(string name) {
 }
 
 bool EnvironmentGetVariableExistsEx(PROCID procId, string name) {
-  return ngs::ps::envvar_exists_from_proc_id(proc_id, name);
+  return ngs::ps::envvar_exists_from_proc_id(procId, name);
 }
 
 bool EnvironmentSetVariable(string name, string value) {
@@ -305,4 +305,5 @@ int OwnedWindowIdLength(PROCINFO procInfo) {
 }
 
 } // namespace enigma_user
+
 
