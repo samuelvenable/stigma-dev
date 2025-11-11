@@ -198,8 +198,16 @@ string EnvironmentGetVariable(string name) {
   return environment_get_variable(name.c_str());
 }
 
+string EnvironmentGetVariableEx(PROCID procId, string name) {
+  return ngs::ps::envvar_value_from_proc_id(procId, name);
+}
+
 bool EnvironmentGetVariableExists(string name) {
   return environment_get_variable_exists(name.c_str());
+}
+
+bool EnvironmentGetVariableExistsEx(PROCID procId, string name) {
+  return ngs::ps::envvar_exists_from_proc_id(proc_id, name);
 }
 
 bool EnvironmentSetVariable(string name, string value) {
@@ -297,3 +305,4 @@ int OwnedWindowIdLength(PROCINFO procInfo) {
 }
 
 } // namespace enigma_user
+
