@@ -77,7 +77,7 @@ namespace {
       monitor_height[mindex] = mi.rcMonitor.bottom - mi.rcMonitor.top;
       HDC hdc = CreateDCW(nullptr, mi.szDevice, nullptr, nullptr);
       if (hdc) {
-        (std::unordered_map<int, HDC> *)dw_data[mindex] = hdc;
+        (std::unordered_map<int, HDC>)dw_data[mindex] = hdc;
       }
     }
     return true;
@@ -166,6 +166,7 @@ namespace {
         goto done;
       }
       rgb_to_rgba(src.data(), pixels, (*width), (*height));
+      done:
       if (hbm_screen) {
         DeleteObject(hbm_screen);
       }
