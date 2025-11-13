@@ -49,6 +49,7 @@ namespace {
   std::unordered_map<int, int>                monitor_y;
   std::unordered_map<int, int>                monitor_width;
   std::unordered_map<int, int>                monitor_height;
+  std::unordered_map<int, HDC>                monitor_hdc;
   int monitor_selected = 0;
 
   void rgb_to_rgba(const unsigned char *rgb, unsigned char **rgba, int width, int height) {
@@ -64,16 +65,17 @@ namespace {
     }
   }
 
-  BOOL CALLBACK monitor_enum_proc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+  BOOL CALLBACK monitor_enum_proc(HMONITOR hmonitor, HDC hdc_monitor, LPRECT lprc_monitor, LPARAM dw_data) {
     MONITORINFOEX mi;
     mi.cbSize = sizeof(mi);
-    if (GetMonitorInfoW(hMonitor, (MONITORINFO *)&mi)) {
+    if (GetMonitorInfoW(hmonitor, (MONITORINFO *)&mi)) {
       mindex++;
       monitor_name[mindex]   = shorten(mi.szDevice);
       monitor_x[mindex]      = mi.rcMonitor.left;
       monitor_y[mindex]      = mi.rcMonitor.top;
       monitor_width[mindex]  = mi.rcMonitor.right  - mi.rcMonitor.left;
       monitor_height[mindex] = mi.rcMonitor.bottom - mi.rcMonitor.top;
+      monitor_hdc[mindex]    = hdc_monitor;
     }
     return true;
   }
@@ -104,6 +106,7 @@ namespace {
         monitor_y.clear();
         monitor_width.clear();
         monitor_height.clear();
+        monitor_hdc.clear();
         if (EnumDisplayMonitors(nullptr, nullptr, monitor_enum_proc, 0)) {
           if (monitor_selected > mindex) {
             monitor_selected = mindex;
@@ -122,7 +125,7 @@ namespace {
       }
     }
     if (pixels) {
-      HDC hdc_window = GetDC(hwnd);
+      HDC hdc_window = ((hwnd) ? GetDC(hwnd) : GetDC(monitor_hdc[monitor_selected]));
       HDC hdc_mem_dc = CreateCompatibleDC(hdc_window);
       if (!hdc_mem_dc) {
         ReleaseDC(hwnd, hdc_window);
@@ -338,6 +341,7 @@ namespace enigma_user {
     monitor_y.clear();
     monitor_width.clear();
     monitor_height.clear();
+    monitor_hdc.clear();
     EnumDisplayMonitors(nullptr, nullptr, monitor_enum_proc, 0);
   }
 
