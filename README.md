@@ -33,3 +33,5 @@ A fork of the ENIGMA Development Environment that strives to go a different dire
 - **Greg Williamson**, Linux, RadialGM, emake, SDL2, major contributor.
 - **Hugh Patrick Greene**, Wiki, games, tutorials, content contributor.
 - **Samuel Venable**, STIGMA, GUI widgets, SDL2 joystick contributor.
+
+**IMPORTANT NOTE**: The LateralGM IDE Game Editor is very unstable when it comes to saving projects and it often times will corrupt your game projects so that they can no longer be opened. Backup your projects and game files frequently; if you do not do this your hard work is at risk of being lost forever, so please use the LateralGM IDE Game Editor with caution. Other than that issue, the engine code is pretty stable.
