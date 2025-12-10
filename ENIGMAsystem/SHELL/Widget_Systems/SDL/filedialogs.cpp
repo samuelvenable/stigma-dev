@@ -267,6 +267,12 @@ namespace {
   SDL_Renderer *renderer = nullptr;
   SDL_Surface *surf = nullptr;
   ImFontAtlas *shared_font_atlas = nullptr;
+  #if (defined(__APPLE__) && defined(__MACH__))
+  bool mousedrag = false;
+  int startmx = 0, startmy = 0;
+  int xoffset = 0, yoffset = 0;
+  int startx = 0, starty = 0;
+  #endif
 
   string file_dialog_helper(string filter, string fname, string dir, string title, int type, string message = "", string def = "") {
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").empty()) {
@@ -426,6 +432,28 @@ namespace {
     while (true) {
       while (SDL_PollEvent(&e)) {
         ImGui_ImplSDL2_ProcessEvent(&e);
+        #if (defined(__APPLE__) && defined(__MACH__))
+        if ((int)strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) != 1) {
+          if (e.type == SDL_MOUSEBUTTONDOWN) {
+            int w = 0, h = 0;
+            SDL_GetMouseState(&startmx, &startmy);
+            if (!SDL_GetRendererOutputSize(SDL_GetRenderer(window), &w, &h)) {
+              if (startmx >= 0 && startmx <= w && startmy >= 0 && startmy <= 30) {
+                mousedrag = true;
+              }
+            }
+          }
+          if (mousedrag) {
+            int gmx = 0, gmy = 0;
+            SDL_GetGlobalMouseState(&gmx, &gmy);
+            xoffset = startx + startmx - gmx;
+            yoffset = starty + startmy - gmy; 
+          }
+          if (e.type == SDL_MOUSEBUTTONUP) {
+            mousedrag = false;
+          }
+        }
+        #endif
       }
       ImGui_ImplSDLRenderer2_NewFrame();
       ImGui_ImplSDL2_NewFrame();
@@ -603,7 +631,7 @@ namespace {
           childFrameWidth = childFrame.right - childFrame.left;
           childFrameHeight = childFrame.bottom - childFrame.top;
           MoveWindow(hWnd, (parentFrame.left + (parentFrameWidth / 2)) - (childFrameWidth / 2),
-          (parentFrame.top + (parentFrameHeight / 2)) - (childFrameHeight / 2), childFrameWidth, childFrameHeight, TRUE);
+          (parentFrame.top + (parentFrameHeight / 2)) - (childFrameHeight / 2), childFrameWidth, childFrameHeight, true);
           PostMessage(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)GetIcon((HWND)(void *)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)));
         }
@@ -653,18 +681,10 @@ namespace {
           CFRelease(windowList);
         }
         if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty() && !windowIDExists) {
-          [[(NSWindow *)(void *)(std::uintptr_t)strtoull(
-          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)
-          standardWindowButton:NSWindowCloseButton] setEnabled:NO];
-          [(NSWindow *)(void *)(std::uintptr_t)strtoull(
-          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)
-          addChildWindow:nsWnd ordered:NSWindowAbove];
-          NSRect parentFrame = [(NSWindow *)(void *)(std::uintptr_t)strtoull(
-          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10) frame];
-          NSRect childFrame = [nsWnd frame]; [nsWnd setFrame:NSMakeRect(
-          (parentFrame.origin.x + (parentFrame.size.width / 2)) - (childFrame.size.width / 2),
-          (parentFrame.origin.y + (parentFrame.size.height / 2)) - (childFrame.size.height / 2),
-          childFrame.size.width, childFrame.size.height) display:YES];
+          windowID = [(NSWindow *)(void *)(std::uintptr_t)strtoull(
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10) windowNumber];
+          SDL_SetWindowAlwaysOnTop(window, SDL_TRUE);
+          windowIDExists = true;
         }
         #elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
         SDL_SysWMinfo system_info;
@@ -721,6 +741,7 @@ namespace {
                 NSRect childFrame = [nsWnd frame]; SDL_SetWindowPosition(window,
                 (parentX + (parentWidth / 2)) - (childFrame.size.width / 2), 
                 (parentY + (parentHeight / 2)) - (childFrame.size.height / 2));
+                SDL_GetWindowPosition(window, &startx, &starty);
               }
               if (SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) {
                 SDL_ShowWindow(window);
@@ -776,6 +797,13 @@ namespace {
           SDL_ShowWindow(window);
         }
       #if (defined(__APPLE__) && defined(__MACH__))
+      }
+      if (windowIDExists) {
+        if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
+          int x = 0, y = 0;
+          SDL_GetWindowPosition(window, &x, &y);
+          SDL_SetWindowPosition(window, x - xoffset, y - yoffset);
+        }
       }
       #endif
     }
