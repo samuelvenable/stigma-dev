@@ -63,12 +63,15 @@ bool ImGuiAl::MsgBox::Init(const char *title, const char *text, std::vector<std:
 
 int ImGuiAl::MsgBox::Draw() {
   int index = 0;
-  if (ImGui::BeginPopupModal(m_Title, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+  if (ImGui::BeginPopupModal(m_Title, nullptr, ImGuiWindowFlags_NoScrollbar | 
+    ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? ImGuiWindowFlags_NoTitleBar : 0) | 
+    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
     ImGui::TextWrapped(m_Text);
     int sw = 0, sh = 0;
     int dw = ImGui::CalcTextSize(m_Text, m_Text + strlen(m_Text), false, 100 * (0.25 * ImGui::GetFontSize())).x;
     if (dw < ImGui::GetWindowContentRegionMax().x * 0.75) dw = ImGui::GetWindowContentRegionMax().x * 0.75;
     int dh = ImGui::CalcTextSize(m_Text, m_Text + strlen(m_Text), false, 100 * (0.25 * ImGui::GetFontSize())).y + (4.875f * ImGui::GetFontSize());
+    dh += ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? 0 : 30);
     if (m_Input) dh += ((4.875f * ImGui::GetFontSize()) / 2);
     if (dialog) {
       SDL_GetWindowSize(dialog, &sw, &sh);
