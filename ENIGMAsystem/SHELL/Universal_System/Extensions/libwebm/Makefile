@@ -3,13 +3,17 @@ WEBMPATH := Universal_System/Extensions/libwebm/src
 
 ifeq ($(UNIX_BASED), true)
 	ifeq ($(OS), Darwin)
-		override CXXFLAGS += -std=c++17 -IUniversal_System/Extensions/libwebm/include/ -I$(SHARED_SRC_DIR)/libwebm -Wno-narrowing -fexceptions
-		override CFLAGS += -std=c++17 -IUniversal_System/Extensions/libwebm/include/ -I$(SHARED_SRC_DIR)/libwebm -Wno-narrowing -fexceptions
+		override CXXFLAGS += -std=c++17 -IUniversal_System/Extensions/libwebm/include/ -Wno-narrowing -fexceptions
+		override CFLAGS += -std=c++17 -IUniversal_System/Extensions/libwebm/include/ -Wno-narrowing -fexceptions
 		override LDFLAGS += -lpthread -Wno-narrowing -fexceptions
 		override LDLIBS += -lpthread -Wno-narrowing -fexceptions
 		ifeq ($(shell uname -m), arm64)
+			override CXXFLAGS += -I/opt/homebrew/include/
+			override CFLAGS += -I/opt/homebrew/include/
 			override LDLIBS += /opt/homebrew/lib/libwebm.a /opt/homebrew/lib/libvpx.a /opt/homebrew/lib/libvorbisfile.a /opt/homebrew/lib/libvorbisenc.a /opt/homebrew/lib/libvorbis.a /opt/homebrew/lib/libogg.a
 		else
+			override CXXFLAGS += -I/usr/local/include/
+			override CFLAGS += -I/usr/local/include/
 			override LDLIBS += /usr/local/lib/libwebm.a /usr/local/lib/libvpx.a /usr/local/lib/libvorbisfile.a /usr/local/lib/libvorbisenc.a /usr/local/lib/libvorbis.a /usr/local/lib/libogg.a
 		endif
 	else ifeq ($(OS), FreeBSD)
