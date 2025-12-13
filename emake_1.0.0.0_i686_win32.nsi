@@ -95,6 +95,13 @@ Section "emake"
 
 SectionEnd
 
+Section "MSYS2"
+
+  SetOutPath $INSTDIR
+  File /r C:\emake-msys2-gcc
+
+SectionEnd
+
 Section "Uninstall"
 
   ;Remove all registry keys
@@ -111,5 +118,6 @@ Section "Uninstall"
   RmDir  "$SMPROGRAMS\${PRODUCT}"
 
 SectionEnd
+
 
 
