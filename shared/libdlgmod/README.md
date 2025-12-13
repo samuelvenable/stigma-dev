@@ -42,7 +42,6 @@ Available for download from [itch.io](https://itch.io) freely for GameMaker use 
 
 Documentation for all of the functions included can be found [here](http://dialogmodule.weebly.com/).
 
-Downloadable PDF for offline viewing of the documentation is [here](https://drive.google.com/file/d/18xXZZlvazihPC62imZO4CkZYH2dfxYwz/).
-
 ----------------------------------------------------------------------------------------------------------------------------------
+
 
