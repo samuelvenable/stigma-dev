@@ -1,7 +1,6 @@
 #include "Main.hpp"
 #include "OptionsParser.hpp"
 #include "EnigmaPlugin.hpp"
-#include "Server.hpp"
 
 #include "egm.h"
 #include "gmk.h"
@@ -90,13 +89,6 @@ int main(int argc, char* argv[])
 
   bool run = options.GetOption("run").as<bool>();
   if (!run) plugin.HandleGameLaunch();
-
-  bool server = options.GetOption("server").as<bool>();
-  if (server) {
-    int port = options.GetOption("port").as<int>();
-    string ip = options.GetOption("ip").as<std::string>();
-    return RunServer(ip + ":" + std::to_string(port), plugin, options, ecb);
-  }
 
   GameMode mode;
   std::string _mode = options.GetOption("mode").as<std::string>();
