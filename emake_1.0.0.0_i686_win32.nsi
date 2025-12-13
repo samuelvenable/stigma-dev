@@ -69,7 +69,7 @@ XPStyle on
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
 
-Section "emake Sources"
+Section "emake"
   SectionIn RO # Just means if in component mode this is locked
 
   ;Set output path to the installation directory.
@@ -111,4 +111,5 @@ Section "Uninstall"
   RmDir  "$SMPROGRAMS\${PRODUCT}"
 
 SectionEnd
+
 
