@@ -172,7 +172,7 @@ int OptionsParser::ReadArgs(int argc, char* argv[])
       opt::notify(_rawArgs);
       
     if (!_rawArgs.count("help") && !_rawArgs.count("list") && !_rawArgs.count("info") && !_rawArgs.count("server") && !_rawArgs.count("output")) {
-      throw std::logic_error("Option 'help', 'list', 'info', 'server', or option 'output' is required.");
+      throw std::logic_error("Option 'help', 'list', 'info', or option 'output' is required.");
     }
   }
   catch(std::exception& e)
