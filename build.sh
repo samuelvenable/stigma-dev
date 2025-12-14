@@ -2,6 +2,7 @@
 cd "${0%/*}";
 if [ `uname` = "Darwin" ]; then
   env PATH=$PATH:/opt/homebrew/bin make -C "." Game WORKDIR="./stigma/" CODEGEN="./stigma/" CFLAGS="-I./stigma" CXXFLAGS="-I./stigma" GMODE="Compile" GRAPHICS="OpenGL1" AUDIO="SDL" COLLISION="Precise" WIDGETS="None" NETWORKING="None" PLATFORM="SDL" TARGET-PLATFORM="MacOSX" CC="clang" CXX="clang++" MAKE="make" COMPILEPATH="MacOSX/MacOSX/Clang" EXTENSIONS=" Universal_System/Extensions/HideErrors Universal_System/Extensions/Alarms Universal_System/Extensions/Paths" OUTPUTNAME="${0%/*}/build/Key to Success"
+  install_name_tool -change /opt/local/lib/libiconv.2.dylib /usr/lib/libiconv.2.dylib "${0%/*}/build/Key to Success"
 elif [ $(uname) = "Linux" ]; then
   make -C "." Game WORKDIR="./stigma/" CODEGEN="./stigma/" CFLAGS="-I./stigma" CXXFLAGS="-I./stigma" GMODE="Compile" GRAPHICS="OpenGL1" AUDIO="SDL" COLLISION="Precise" WIDGETS="None" NETWORKING="None" PLATFORM="SDL" TARGET-PLATFORM="Linux" CC="gcc" CXX="g++" MAKE="make" COMPILEPATH="Linux/Linux/GNU_GCC_G++" EXTENSIONS=" Universal_System/Extensions/HideErrors Universal_System/Extensions/Alarms Universal_System/Extensions/Paths" OUTPUTNAME="${0%/*}/build/Key to Success"
 elif [ $(uname) = "FreeBSD" ]; then
