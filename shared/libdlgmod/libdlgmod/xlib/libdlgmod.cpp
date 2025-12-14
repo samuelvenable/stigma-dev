@@ -758,7 +758,7 @@ char *get_directory_alt(char *capt, char *root) {
     if (str_dname.empty() || str_dname[0] != '/') pwd = "\"$HOME/\"";
     else pwd = string("\"") + add_escaping(str_dname, false, "") + string("\"");
     str_command = string("ans=$(kdialog ") +
-    string("--getexistingdirectory ") + pwd + string(" --title \"") + str_title + string("\")");
+    string("--getexistingdirectory ") + pwd + string(" --title \"") + str_title + string("\");echo $ans");
   }
   static string result;
   result = create_shell_dialog(str_command);
