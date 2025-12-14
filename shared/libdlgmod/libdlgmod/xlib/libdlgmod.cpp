@@ -763,7 +763,12 @@ char *get_directory_alt(char *capt, char *root) {
   static string result;
   result = create_shell_dialog(str_command);
   caption = caption_previous;
-  return (char *)result.c_str();
+  if (result.empty() || result == "/") {
+    return (char *)result.c_str();
+  }
+  static string final_result;
+  final_result = result + std::string("/");
+  return (char *)final_result.c_str();
 }
 
 int get_color(int defcol) {
