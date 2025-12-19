@@ -646,27 +646,41 @@ std::string os_product_name() {
     productname = "wine-" + wine_version;
   }
   #elif (defined(__APPLE__) && defined(__MACH__))
-  std::string tmp1 = read_output("echo `sw_vers | grep 'ProductName:' | uniq | awk 'NR==1{$1=$1;print}' && sw_vers | grep 'ProductVersion:' | uniq | awk 'NR==1{$1=$1;print}'`");
+  std::string tmp1 = read_output("echo `sw_vers | grep 'ProductName:' | uniq | awk 'NR==1{$1=$1;print}'`");
+  std::string tmp2 = read_output("echo `sw_vers | grep 'ProductVersion:' | uniq | awk 'NR==1{$1=$1;print}'`");
   if (!tmp1.empty()) {
     tmp1 = std::regex_replace(tmp1, std::regex("ProductName: "), "");
-    tmp1 = std::regex_replace(tmp1, std::regex("ProductVersion: "), "");
+    tmp2 = std::regex_replace(tmp2, std::regex("ProductVersion: "), "");
+    tmp1 += " " + tmp2;
     std::fstream doc;
     doc.open("/System/Library/CoreServices/Setup Assistant.app/Contents/Resources/en.lproj/OSXSoftwareLicense.rtf", std::ios::in);
     if (doc.is_open()) {
-      std::string tmp2;
-      while (std::getline(doc, tmp2)) {
-        std::string tmp3 = tmp2;
-        std::transform(tmp2.begin(), tmp2.end(), tmp2.begin(), ::toupper);
-        std::size_t pos1 = tmp2.find("SOFTWARE LICENSE AGREEMENT FOR MAC OS X");
-        std::size_t pos2 = tmp2.find("SOFTWARE LICENSE AGREEMENT FOR MACOS");
+      std::string tmp3;
+      while (std::getline(doc, tmp3)) {
+        std::string tmp4 = tmp3;
+        std::transform(tmp3.begin(), tmp3.end(), tmp3.begin(), ::toupper);
+        std::size_t pos1 = tmp3.find("SOFTWARE LICENSE AGREEMENT FOR MAC OS X");
+        std::size_t pos2 = tmp3.find("SOFTWARE LICENSE AGREEMENT FOR MACOS");
         std::size_t len1 = strlen("SOFTWARE LICENSE AGREEMENT FOR MAC OS X");
         std::size_t len2 = strlen("SOFTWARE LICENSE AGREEMENT FOR MACOS");
         if (pos1 != std::string::npos) {
-          tmp1 += tmp3.substr(pos1 + len1);
+          tmp4.erase(std::remove_if(tmp4.begin(), tmp4.end(), [](char c) {
+            return (std::isdigit(c) || c == '.');
+          }), tmp4.end());
+          while (!tmp4.empty() && std::isspace(tmp4.back())) {
+            tmp4.pop_back();
+          }
+          tmp1 += " " + tmp4.substr(pos1 + len1);
           tmp1 = tmp1.substr(0, tmp1.length() - 1);
           break;
         } else if (pos2 != std::string::npos) {
-          tmp1 += tmp3.substr(pos2 + len2);
+          tmp4.erase(std::remove_if(tmp4.begin(), tmp4.end(), [](char c) {
+            return (std::isdigit(c) || c == '.');
+          }), tmp4.end());
+          while (!tmp4.empty() && std::isspace(tmp4.back())) {
+            tmp4.pop_back();
+          }
+          tmp1 += " " + tmp4.substr(pos2 + len2);
           tmp1 = tmp1.substr(0, tmp1.length() - 1);
           break;
         }
@@ -1547,6 +1561,10 @@ std::string cpu_core_count() {
   #elif defined(__linux__)
   numcores = (int)(strtol(read_output("echo `lscpu | awk '/^Socket\\(s\\)/{ print $2 }'`").c_str(), nullptr, 10) * 
     strtol(read_output("echo `lscpu | awk '/^Core\\(s\\) per socket/{ print $4 }'`").c_str(), nullptr, 10));
+  if (!numcores) {
+    int threads_per_core = (int)strtol(read_output("echo `lscpu | grep 'Thread(s) per core:' | uniq | cut -d' ' -f4- | awk 'NR==1{$1=$1;print}'`").c_str(), nullptr, 10);
+    numcores = (int)(((cpu_processor_count() != std::string("(null)")) ? (int)strtol(cpu_processor_count().c_str(), nullptr, 10) : 0) / ((threads_per_core) ? threads_per_core : 1));
+  }
   #elif defined(__FreeBSD__)
   int buf = -1;
   std::size_t sz = sizeof(int);
