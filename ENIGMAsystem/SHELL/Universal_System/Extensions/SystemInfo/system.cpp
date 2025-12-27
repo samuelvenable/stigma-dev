@@ -72,9 +72,7 @@
 #include <fcntl.h>
 #include <kvm.h>
 #elif (defined(__NetBSD__) || defined(__OpenBSD__))
-#if defined(__NetBSD__)
 #include <uvm/uvm_extern.h>
-#endif
 #include <sys/param.h>
 #include <sys/swap.h>
 #endif
@@ -1020,9 +1018,6 @@ std::string memory_totalswap(bool human_readable) {
   kvm_close(kvmh);
   #elif (defined(__NetBSD__) || defined(__OpenBSD__))
   long long total = 0;
-  long block_s = 0;
-  int header_len = 0;
-  getbsize(&header_len, &block_s);
   int nswap = swapctl(SWAP_NSWAP, nullptr, 0);
   if (!nswap) totalswap = 0;
   if (nswap > 0) {
@@ -1031,7 +1026,7 @@ std::string memory_totalswap(bool human_readable) {
       if (swapctl(SWAP_STATS, swaps, nswap) > 0) {
         for (int i = 0; i < nswap; i++) {
           if (swaps[i].se_flags & SWF_ENABLE)
-            total += ((swaps[i].se_nblks / (1024 / block_s)) * 1024);
+            total += ((swaps[i].se_nblks / (1024 / DEV_BSIZE)) * 1024);
         }
       }
       free(swaps);
@@ -1104,9 +1099,6 @@ std::string memory_freeswap(bool human_readable) {
   kvm_close(kvmh);
   #elif (defined(__NetBSD__) || defined(__OpenBSD__))
   long long avail = 0;
-  long block_s = 0;
-  int header_len = 0;
-  getbsize(&header_len, &block_s);
   int nswap = swapctl(SWAP_NSWAP, nullptr, 0);
   if (!nswap) freeswap = 0;
   if (nswap > 0) {
@@ -1115,7 +1107,7 @@ std::string memory_freeswap(bool human_readable) {
       if (swapctl(SWAP_STATS, swaps, nswap) > 0) {
         for (int i = 0; i < nswap; i++) {
           if (swaps[i].se_flags & SWF_ENABLE)
-            avail += (((swaps[i].se_nblks - swaps[i].se_inuse) / (1024 / block_s)) * 1024);
+            avail += (((swaps[i].se_nblks - swaps[i].se_inuse) / (1024 / DEV_BSIZE)) * 1024);
         }
       }
       free(swaps);
@@ -1196,9 +1188,6 @@ std::string memory_usedswap(bool human_readable) {
   kvm_close(kvmh);
   #elif (defined(__NetBSD__) || defined(__OpenBSD__))
   long long used = 0;
-  long block_s = 0;
-  int header_len = 0;
-  getbsize(&header_len, &block_s);
   int nswap = swapctl(SWAP_NSWAP, nullptr, 0);
   if (!nswap) usedswap = 0;
   if (nswap > 0) {
@@ -1207,7 +1196,7 @@ std::string memory_usedswap(bool human_readable) {
       if (swapctl(SWAP_STATS, swaps, nswap) > 0) {
         for (int i = 0; i < nswap; i++) {
           if (swaps[i].se_flags & SWF_ENABLE)
-            used += ((swaps[i].se_inuse / (1024 / block_s)) * 1024);
+            used += ((swaps[i].se_inuse / (1024 / DEV_BSIZE)) * 1024);
         }
       }
       free(swaps);
