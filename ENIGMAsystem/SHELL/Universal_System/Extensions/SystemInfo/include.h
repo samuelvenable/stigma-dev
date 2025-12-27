@@ -2,7 +2,7 @@
 
  MIT License
  
- Copyright © 2023 Samuel Venable
+ Copyright © 2023-2025 Samuel Venable
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -109,4 +109,5 @@ inline std::string cpu_core_count() {
 }
 
 } // namespace enigma_user
+
 
