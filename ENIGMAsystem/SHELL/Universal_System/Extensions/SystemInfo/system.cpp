@@ -2,7 +2,7 @@
 
  MIT License
  
- Copyright © 2023 Samuel Venable
+ Copyright © 2023-2025 Samuel Venable
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -901,7 +901,15 @@ std::string memory_totalram(bool human_readable) {
   }
   if ((tram * (long long)page_s))
     totalram = (long long)(tram * (long long)page_s);
-  #elif (defined(__NetBSD__) || defined(__OpenBSD__))
+  #elif defined(__NetBSD__)
+  int mib[2];
+  mib[0] = CTL_VM;
+  mib[1] = VM_UVMEXP2;
+  struct uvmexp_sysctl buf;
+  std::size_t sz = sizeof(buf);
+  if (!sysctl(mib, 2, &buf, &sz, nullptr, 0))
+    totalram = buf.npages * sysconf(_SC_PAGESIZE);
+  #elif defined(__OpenBSD__)
   int mib[2];
   mib[0] = CTL_VM;
   mib[1] = VM_UVMEXP;
@@ -945,7 +953,15 @@ std::string memory_freeram(bool human_readable) {
     return pointer_null();
   if ((fram * (long long)page_s))
     freeram = (long long)(fram * (long long)page_s);
-  #elif (defined(__NetBSD__) || defined(__OpenBSD__))
+  #elif defined(__NetBSD__)
+  int mib[2];
+  mib[0] = CTL_VM;
+  mib[1] = VM_UVMEXP2;
+  struct uvmexp_sysctl buf;
+  std::size_t sz = sizeof(buf);
+  if (!sysctl(mib, 2, &buf, &sz, nullptr, 0))
+    freeram = buf.free * sysconf(_SC_PAGESIZE);
+  #elif defined(__OpenBSD__)
   int mib[2];
   mib[0] = CTL_VM;
   mib[1] = VM_UVMEXP;
