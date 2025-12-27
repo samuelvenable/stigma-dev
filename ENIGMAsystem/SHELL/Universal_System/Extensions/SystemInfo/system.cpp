@@ -72,9 +72,9 @@
 #include <fcntl.h>
 #include <kvm.h>
 #elif (defined(__NetBSD__) || defined(__OpenBSD__))
-#include <uvm/uvm_extern.h>
 #include <sys/param.h>
 #include <sys/swap.h>
+#include <uvm/uvm_extern.h>
 #endif
 #endif
 #if !defined(__sun)
@@ -1026,12 +1026,12 @@ std::string memory_totalswap(bool human_readable) {
       if (swapctl(SWAP_STATS, swaps, nswap) > 0) {
         for (int i = 0; i < nswap; i++) {
           if (swaps[i].se_flags & SWF_ENABLE)
-            total += ((swaps[i].se_nblks / (1024 / DEV_BSIZE)) * 1024);
+            total += swaps[i].se_nblks;
         }
       }
       free(swaps);
     }
-    totalswap = total;
+    totalswap = total * DEV_BSIZE;
   }
   #elif defined(__sun)
   int i = 0, n = 0;
@@ -1107,12 +1107,12 @@ std::string memory_freeswap(bool human_readable) {
       if (swapctl(SWAP_STATS, swaps, nswap) > 0) {
         for (int i = 0; i < nswap; i++) {
           if (swaps[i].se_flags & SWF_ENABLE)
-            avail += (((swaps[i].se_nblks - swaps[i].se_inuse) / (1024 / DEV_BSIZE)) * 1024);
+            avail += (swaps[i].se_nblks - swaps[i].se_inuse);
         }
       }
       free(swaps);
     }
-    freeswap = avail;
+    freeswap = avail * DEV_BSIZE;
   }
   #elif defined(__sun)
   int i = 0, n = 0;
@@ -1196,12 +1196,12 @@ std::string memory_usedswap(bool human_readable) {
       if (swapctl(SWAP_STATS, swaps, nswap) > 0) {
         for (int i = 0; i < nswap; i++) {
           if (swaps[i].se_flags & SWF_ENABLE)
-            used += ((swaps[i].se_inuse / (1024 / DEV_BSIZE)) * 1024);
+            used += swaps[i].se_inuse;
         }
       }
       free(swaps);
     }
-    usedswap = used;
+    usedswap = used * DEV_BSIZE;
   }
   #elif defined(__sun)
   int i = 0, n = 0;
