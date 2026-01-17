@@ -36,6 +36,8 @@ SOFTWARE.
 #include <filedialogs.hpp>
 #include <filesystem.hpp>
 
+#include <ghc/filesystem.hpp>
+
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
 
@@ -66,7 +68,48 @@ int ImGuiAl::MsgBox::Draw() {
   if (ImGui::BeginPopupModal(m_Title, nullptr, ImGuiWindowFlags_NoScrollbar | 
     ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? ImGuiWindowFlags_NoTitleBar : 0) | 
     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-    ImGui::TextWrapped(strlen(m_Text) ? m_Text : ngs::fs::environment_get_variable("IMGUI_DIALOG_MESSAGE").c_str());
+    #ifdef _WIN32
+    ghc::filesystem::path homePath = ngs::fs::environment_get_variable("USERPROFILE");
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_FOLDER", "filedialogs");
+    if (!ngs::fs::directory_exists(homePath.string() + "\\.config\\" + ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER")))
+      ngs::fs::directory_create(homePath.string() + "\\.config\\" + ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER"));
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_MESSAGE").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_MESSAGE", "message.txt");
+    std::string text, conf = homePath.string() + "\\.config\\" + ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER") + "\\" +
+      ngs::fs::environment_get_variable("IMGUI_CONFIG_MESSAGE");
+    if (ngs::fs::file_exists(conf)) {
+      int fd = ngs::fs::file_text_open_read(conf);
+      if (fd != -1) {
+        while (!ngs::fs::file_text_eof(fd)) {
+          text += ngs::fs::file_text_read_string(fd) + std::string("\n");
+          ngs::fs::file_text_readln(fd);
+        }
+        ngs::fs::file_text_close(fd);
+      }
+    }
+    #else
+    ghc::filesystem::path homePath = ngs::fs::environment_get_variable("HOME");
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_FOLDER", "filedialogs");
+    if (!ngs::fs::directory_exists(homePath.string() + "/.config/" + ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER")))
+      ngs::fs::directory_create(homePath.string() + "/.config/" + ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER"));
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_MESSAGE").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_MESSAGE", "message.txt");
+    std::string text, conf = homePath.string() + "/.config/" + ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER") + "/" +
+      ngs::fs::environment_get_variable("IMGUI_CONFIG_MESSAGE");
+    if (ngs::fs::file_exists(conf)) {
+      int fd = ngs::fs::file_text_open_read(conf);
+      if (fd != -1) {
+        while (!ngs::fs::file_text_eof(fd)) {
+          text += ngs::fs::file_text_read_string(fd) + std::string("\n");
+          ngs::fs::file_text_readln(fd);
+        }
+        ngs::fs::file_text_close(fd);
+      }
+    }
+    #endif
+    ImGui::TextWrapped(!text.empty() ? text.c_str() : m_Text);
     int sw = 0, sh = 0;
     int dw = ImGui::CalcTextSize(m_Text, m_Text + strlen(m_Text), false, 100 * (0.25 * ImGui::GetFontSize())).x;
     if (dw < ImGui::GetWindowContentRegionMax().x * 0.75) dw = ImGui::GetWindowContentRegionMax().x * 0.75;
