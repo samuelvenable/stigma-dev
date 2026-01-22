@@ -90,7 +90,6 @@ std::string string_receive() {
 }
 
 bool ImGuiAl::MsgBox::Init(const char *title, const char *text, std::vector<std::string> captions, bool input) {
-  unlink(PIPE_NAME);
   m_Title = title;
   m_Text = text;
   m_Captions = captions;
@@ -105,7 +104,10 @@ int ImGuiAl::MsgBox::Draw() {
     ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? ImGuiWindowFlags_NoTitleBar : 0) | 
     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
     std::string str = string_receive();
-    if (!str.empty()) strrecv = str;
+    if (!str.empty()) {
+      strrecv = str;
+      unlink(PIPE_NAME);
+    }
     str = strrecv.empty() ? m_Text : strrecv;
     ImGui::TextWrapped(str.c_str());
     int sw = 0, sh = 0;
