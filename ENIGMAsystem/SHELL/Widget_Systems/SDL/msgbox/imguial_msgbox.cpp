@@ -101,7 +101,7 @@ std::string string_receive() {
     if (retval == -1) {
       break;
     } else if (retval) {
-      ssize_t bytes_read = read(fd, buffer, BUFFER_SIZE - 1);
+      ssize_t bytes_read = read(fd, buffer, sizeof(buffer));
       if (bytes_read > 0) {
         buffer[bytes_read] = '\0';
       } else if (bytes_read == 0) {
