@@ -82,7 +82,7 @@ std::string string_receive() {
   char buffer[BUFFER_SIZE];
   fd_set read_fds;
   struct timeval tv;
-  int retval;
+  int retval = 0;
   if (mkfifo(FIFO_NAME, 0666) != 0) {
     if (errno != EEXIST) {
       return "";
