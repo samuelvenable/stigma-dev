@@ -85,7 +85,7 @@ std::string string_receive() {
       return "";
     }
   }
-  fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
+  fd = open(FIFO_NAME, O_RDONLY);
   if (fd == -1) {
     return "";
   }
