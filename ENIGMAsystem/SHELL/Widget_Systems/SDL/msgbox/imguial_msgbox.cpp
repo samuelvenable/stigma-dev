@@ -80,11 +80,12 @@ std::string string_receive() {
   #else
   int fd = -1;
   char buffer[BUFFER_SIZE];
-  mkfifo(FIFO_NAME, 0666);
-  fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
-  if (fd != -1) {
-    read(fd, buffer, sizeof(buffer));
-    close(fd);
+  if (!mkfifo(FIFO_NAME, 0666)) {
+    fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
+    if (fd != -1) {
+      read(fd, buffer, sizeof(buffer));
+      close(fd);
+    }
   }
   #endif
   return buffer;
