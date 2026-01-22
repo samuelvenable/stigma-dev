@@ -81,7 +81,9 @@ std::string string_receive() {
   int fd = 0;
   char buffer[BUFFER_SIZE];
   if (mkfifo(FIFO_NAME, 0666) != 0) {
-    return "";
+    if (errno != EEXIST) {
+      return "";
+    }
   }
   fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
   if (fd == -1) {
