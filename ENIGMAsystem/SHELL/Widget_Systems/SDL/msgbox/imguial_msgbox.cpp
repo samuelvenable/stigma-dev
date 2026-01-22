@@ -84,10 +84,11 @@ std::string string_receive() {
     return "";
   }
   fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
-  if (fd != -1) {
-    read(fd, buffer, sizeof(buffer));
-    close(fd);
+  if (fd == -1) {
+    return "";
   }
+  read(fd, buffer, sizeof(buffer));
+  close(fd);
   #endif
   return buffer;
 }
