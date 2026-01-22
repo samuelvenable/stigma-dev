@@ -49,9 +49,6 @@ SOFTWARE.
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define PIPE_NAME "/tmp/IMGUI_DIALOG_PIPE"
-#define BUFFER_SIZE 4096
-
 bool init = false;
 extern SDL_Window *dialog;
 ImGuiAl::MsgBox::~MsgBox() { }
@@ -67,26 +64,34 @@ void AlignForWidth(float width, float alignment = 0.5f) {
 }
 
 std::string string_receive() {
+  std::string str;
   #if defined(_WIN32)
   const char *pipeName = R"(\\.\pipe\IMGUI_DIALOG_PIPE)";
   HANDLE hPipe = CreateFileA(pipeName, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
   if (hPipe == INVALID_HANDLE_VALUE) {
     return "";
   }
-  char buffer[BUFFER_SIZE];
-  DWORD bytesRead = 0;
-  ReadFile(hPipe, buffer, (DWORD)sizeof(buffer) - 1, &bytesRead, nullptr);
+  DWORD nRead = 0; 
+  char buffer[BUFSIZ];
+  while (ReadFile(hPipe, buffer, BUFSIZ, &nRead, nullptr) && nRead) {
+    buffer[nRead] = '\0';
+    str.append(buffer, nRead);
+  }
   CloseHandle(hPipe);
   #else
-  char buffer[BUFFER_SIZE];
-  int fd = open(PIPE_NAME, O_RDONLY);
+  int fd = open("/tmp/IMGUI_DIALOG_PIPE", O_RDONLY);
   if (fd == -1) {
     return "";
   }
-  read(fd, buffer, sizeof(buffer) - 1);
+  ssize_t nRead = 0;
+  char buffer[BUFSIZ];
+  while ((nRead = read(fd, buffer, BUFSIZ)) > 0) {
+    buffer[nRead] = '\0';
+    str.append(buffer, nRead);
+  }
   close(fd);
   #endif
-  return buffer;
+  return str;
 }
 
 bool ImGuiAl::MsgBox::Init(const char *title, const char *text, std::vector<std::string> captions, bool input) {
