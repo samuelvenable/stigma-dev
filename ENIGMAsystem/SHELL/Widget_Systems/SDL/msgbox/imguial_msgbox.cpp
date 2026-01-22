@@ -75,7 +75,7 @@ std::string string_receive() {
   }
   char buffer[BUFFER_SIZE];
   DWORD bytesRead = 0;
-  ReadFile(hPipe, buffer, (DWORD)sizeof(buffer), &bytesRead, nullptr);
+  ReadFile(hPipe, buffer, (DWORD)sizeof(buffer) - 1, &bytesRead, nullptr);
   CloseHandle(hPipe);
   #else
   int fd = 0;
@@ -100,8 +100,10 @@ std::string string_receive() {
     retval = select(fd + 1, &read_fds, nullptr, nullptr, &tv);
     if (retval == -1) {
       break;
-    } else if (retval) {
-      ssize_t bytes_read = read(fd, buffer, sizeof(buffer));
+    } else if (retval == 0) {
+      continue;
+    } else if (FD_ISSET(fd, &read_fds)) {
+      ssize_t bytes_read = read(fd, buffer, sizeof(buffer) - 1);
       if (bytes_read > 0) {
         buffer[bytes_read] = '\0';
       } else if (bytes_read == 0) {
