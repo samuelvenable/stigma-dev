@@ -78,14 +78,15 @@ std::string string_receive() {
   ReadFile(hPipe, buffer, (DWORD)sizeof(buffer), &bytesRead, nullptr);
   CloseHandle(hPipe);
   #else
-  int fd = -1;
+  int fd = 0;
   char buffer[BUFFER_SIZE];
-  if (!mkfifo(FIFO_NAME, 0666)) {
-    fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
-    if (fd != -1) {
-      read(fd, buffer, sizeof(buffer));
-      close(fd);
-    }
+  if (mkfifo(FIFO_NAME, 0666) != 0) {
+    return "";
+  }
+  fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
+  if (fd != -1) {
+    read(fd, buffer, sizeof(buffer));
+    close(fd);
   }
   #endif
   return buffer;
