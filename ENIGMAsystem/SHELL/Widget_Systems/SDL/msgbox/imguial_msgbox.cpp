@@ -49,7 +49,7 @@ SOFTWARE.
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define FIFO_NAME "IMGUI_DIALOG_PIPE"
+#define FIFO_NAME "/tmp/IMGUI_DIALOG_PIPE"
 #define BUFFER_SIZE 4096
 
 bool init = false;
