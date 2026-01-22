@@ -101,13 +101,15 @@ bool ImGuiAl::MsgBox::Init(const char *title, const char *text, std::vector<std:
   return true;
 }
 
+static std::string strrecv;
 int ImGuiAl::MsgBox::Draw() {
   int index = 0;
   if (ImGui::BeginPopupModal(m_Title, nullptr, ImGuiWindowFlags_NoScrollbar | 
     ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? ImGuiWindowFlags_NoTitleBar : 0) | 
     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
     std::string str = string_receive();
-    str = str.empty() ? m_Text : str.c_str();
+    if (!str.empty()) strrecv = str;
+    str = strrecv.empty() ? m_Text : strrecv;
     ImGui::TextWrapped(str.c_str());
     int sw = 0, sh = 0;
     int dw = ImGui::CalcTextSize(m_Text, m_Text + strlen(m_Text), false, 100 * (0.25 * ImGui::GetFontSize())).x;
