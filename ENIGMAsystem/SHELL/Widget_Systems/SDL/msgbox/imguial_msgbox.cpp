@@ -90,6 +90,7 @@ std::string string_receive() {
 }
 
 bool ImGuiAl::MsgBox::Init(const char *title, const char *text, std::vector<std::string> captions, bool input) {
+  unlink(PIPE_NAME);
   m_Title = title;
   m_Text = text;
   m_Captions = captions;
