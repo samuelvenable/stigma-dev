@@ -41,6 +41,17 @@ SOFTWARE.
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
 
+#include <cstdio>
+#include <cstdlib>
+#include <cerrno>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define FIFO_NAME "IMGUI_DIALOG_PIPE"
+#define BUFFER_SIZE 4096
+
 bool init = false;
 extern SDL_Window *dialog;
 ImGuiAl::MsgBox::~MsgBox() { }
@@ -53,6 +64,31 @@ void AlignForWidth(float width, float alignment = 0.5f) {
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + off);
   }
   ImGui::SetCursorPosY(ImGui::GetContentRegionMax().y - (ImGui::GetFontSize() + (ImGui::GetFontSize() / 2)));
+}
+
+std::string string_receive() {
+  #if defined(_WIN32)
+  const char *pipeName = R"(\\.\pipe\IMGUI_DIALOG_PIPE)";
+  HANDLE hPipe = CreateFileA(pipeName, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+  if (hPipe == INVALID_HANDLE_VALUE) {
+    return "";
+  }
+  char buffer[BUFFER_SIZE];
+  DWORD bytesRead = 0;
+  ReadFile(hPipe, buffer, (DWORD)sizeof(buffer), &bytesRead, nullptr);
+  CloseHandle(hPipe);
+  #else
+  int fd = -1;
+  char buffer[BUFFER_SIZE];
+  if (!mkfifo(FIFO_NAME, 0666)) {
+    fd = open(FIFO_NAME, O_RDONLY);
+    if (fd != -1) {
+      read(fd, buffer, sizeof(buffer));
+      close(fd);
+    }
+  }
+  #endif
+  return buffer;
 }
 
 bool ImGuiAl::MsgBox::Init(const char *title, const char *text, std::vector<std::string> captions, bool input) {
@@ -68,7 +104,9 @@ int ImGuiAl::MsgBox::Draw() {
   if (ImGui::BeginPopupModal(m_Title, nullptr, ImGuiWindowFlags_NoScrollbar | 
     ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? ImGuiWindowFlags_NoTitleBar : 0) | 
     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-    ImGui::TextWrapped(m_Text);
+    std::string str = string_receive();
+    str = str.empty() ? m_Text : str.c_str();
+    ImGui::TextWrapped(str.c_str());
     int sw = 0, sh = 0;
     int dw = ImGui::CalcTextSize(m_Text, m_Text + strlen(m_Text), false, 100 * (0.25 * ImGui::GetFontSize())).x;
     if (dw < ImGui::GetWindowContentRegionMax().x * 0.75) dw = ImGui::GetWindowContentRegionMax().x * 0.75;
