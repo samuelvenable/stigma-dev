@@ -49,7 +49,7 @@ SOFTWARE.
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define FIFO_NAME "/tmp/IMGUI_DIALOG_PIPE"
+#define PIPE_NAME "/tmp/IMGUI_DIALOG_PIPE"
 #define BUFFER_SIZE 4096
 
 bool init = false;
@@ -78,45 +78,13 @@ std::string string_receive() {
   ReadFile(hPipe, buffer, (DWORD)sizeof(buffer) - 1, &bytesRead, nullptr);
   CloseHandle(hPipe);
   #else
-  int fd = 0;
   char buffer[BUFFER_SIZE];
-  fd_set read_fds;
-  struct timeval tv;
-  int retval = 0;
-  if (mkfifo(FIFO_NAME, 0666) != 0) {
-    if (errno != EEXIST) {
-      return "";
-    }
-  }
-  fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
+  int fd = open(PIPE_NAME, O_RDONLY);
   if (fd == -1) {
     return "";
   }
-  while (true) {
-    FD_ZERO(&read_fds);
-    FD_SET(fd, &read_fds);
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-    retval = select(fd + 1, &read_fds, nullptr, nullptr, &tv);
-    if (retval == -1) {
-      break;
-    } else if (retval == 0) {
-      continue;
-    } else if (FD_ISSET(fd, &read_fds)) {
-      ssize_t bytes_read = read(fd, buffer, sizeof(buffer) - 1);
-      if (bytes_read > 0) {
-        buffer[bytes_read] = '\0';
-      } else if (bytes_read == 0) {
-        break;
-      } else if (bytes_read == -1) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-          break;
-        }
-      }
-    }
-  }
+  read(fd, buffer, sizeof(buffer) - 1);
   close(fd);
-  unlink(FIFO_NAME);
   #endif
   return buffer;
 }
