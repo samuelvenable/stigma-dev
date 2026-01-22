@@ -80,17 +80,41 @@ std::string string_receive() {
   #else
   int fd = 0;
   char buffer[BUFFER_SIZE];
+  fd_set read_fds;
+  struct timeval tv;
+  int retval;
   if (mkfifo(FIFO_NAME, 0666) != 0) {
     if (errno != EEXIST) {
       return "";
     }
   }
-  fd = open(FIFO_NAME, O_RDONLY);
+  fd = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
   if (fd == -1) {
     return "";
   }
-  read(fd, buffer, sizeof(buffer));
+  while (true) {
+    FD_ZERO(&read_fds);
+    FD_SET(fd, &read_fds);
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    retval = select(fd + 1, &read_fds, nullptr, nullptr, &tv);
+    if (retval == -1) {
+      break;
+    } else if (retval) {
+      ssize_t bytes_read = read(fd, buffer, BUFFER_SIZE - 1);
+      if (bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+      } else if (bytes_read == 0) {
+        break;
+      } else if (bytes_read == -1) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+          break;
+        }
+      }
+    }
+  }
   close(fd);
+  unlink(FIFO_NAME);
   #endif
   return buffer;
 }
