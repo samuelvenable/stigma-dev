@@ -1288,9 +1288,12 @@ std::string gpu_manufacturer() {
     return gpuvendor;
   #else
   unsigned identifier = 0;
-  std::istringstream converter(read_output("ioreg -bls | grep -n2 '    | |   | |   \"model\" = <\"' | awk -F',\"pci' 'NR==5{print $2}' | rev | cut -c 2- | rev | awk -F',' '{print $1}'"));
-  converter >> std::hex >> identifier;
-  gpuvendor = get_vendor_or_device_name_by_id(identifier, false);
+  std::string vendor = read_output("ioreg -bls | grep -n2 '    | |   | |   \"model\" = <\"' | awk -F',\"pci' 'NR==5{print $2}' | rev | cut -c 2- | rev | awk -F',' '{print $1}'");
+  if (!vendor.empty()) {
+    std::istringstream converter(vendor);
+    converter >> std::hex >> identifier;
+    gpuvendor = get_vendor_or_device_name_by_id(identifier, false);
+  }
   if (!gpuvendor.empty()) 
     return gpuvendor;
   gpuvendor = read_output("system_profiler SPDisplaysDataType | grep -i 'Vendor: ' | uniq | awk -F 'Vendor: ' 'NR==1{$1=$1;print}' | awk 'NR==1{$1=$1;print}'");
@@ -1365,9 +1368,12 @@ std::string gpu_renderer() {
     return gpurenderer;
   #else
   unsigned identifier = 0;
-  std::istringstream converter(read_output("ioreg -bls | grep -n2 '    | |   | |   \"model\" = <\"' | awk -F',\"pci' 'NR==5{print $2}' | rev | cut -c 2- | rev | awk -F',' '{print $2}'"));
-  converter >> std::hex >> identifier;
-  gpurenderer = get_vendor_or_device_name_by_id(identifier, true);
+  std::string model = read_output("ioreg -bls | grep -n2 '    | |   | |   \"model\" = <\"' | awk -F',\"pci' 'NR==5{print $2}' | rev | cut -c 2- | rev | awk -F',' '{print $2}'");
+  if (!model.empty()) {
+    std::istringstream converter(model);
+    converter >> std::hex >> identifier;
+    gpurenderer = get_vendor_or_device_name_by_id(identifier, true);
+  }
   if (!gpurenderer.empty()) 
     return gpurenderer;
   gpurenderer = read_output("system_profiler SPDisplaysDataType | grep -i 'Chipset Model: ' | uniq | awk -F 'Chipset Model: ' 'NR==1{$1=$1;print}' | awk 'NR==1{$1=$1;print}'");
