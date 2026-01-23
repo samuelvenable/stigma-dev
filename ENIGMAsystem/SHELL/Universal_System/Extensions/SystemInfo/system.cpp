@@ -1267,9 +1267,12 @@ std::string gpu_manufacturer() {
   #endif
   #if defined(__sun)
   unsigned identifier = 0;
-  std::istringstream converter(read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}'| awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $1}'"));
-  converter >> std::hex >> identifier;
-  gpuvendor = get_vendor_or_device_name_by_id(identifier, false);
+  std::string vendor = read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}'| awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $1}'");
+  if (!vendor.empty()) {
+    std::istringstream converter(vendor);
+    converter >> std::hex >> identifier;
+    gpuvendor = get_vendor_or_device_name_by_id(identifier, false);
+  }
   if (!gpuvendor.empty())
     return gpuvendor;
   #endif
@@ -1347,9 +1350,12 @@ std::string gpu_renderer() {
   #endif
   #if defined(__sun)
   unsigned identifier = 0;
-  std::istringstream converter(read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}' | awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $2}'"));
-  converter >> std::hex >> identifier;
-  gpurenderer = get_vendor_or_device_name_by_id(identifier, true);
+  std::string model = read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}' | awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $2}'");
+  if (!model.empty()) {
+    std::istringstream converter(model);
+    converter >> std::hex >> identifier;
+    gpurenderer = get_vendor_or_device_name_by_id(identifier, true);
+  }
   if (!gpurenderer.empty())
     return gpurenderer;
   #endif
