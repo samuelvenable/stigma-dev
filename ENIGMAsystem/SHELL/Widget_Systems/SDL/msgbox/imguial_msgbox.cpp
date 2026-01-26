@@ -81,7 +81,7 @@ std::string string_receive() {
   #else
   int fd = 0;
   struct stat st;
-  if (stat("/tmp/IMGUI_DIALOG_PIPE", &st) == 0) && S_ISFIFO(st.st_mode)) {
+  if (stat("/tmp/IMGUI_DIALOG_PIPE", &st) == 0 && S_ISFIFO(st.st_mode)) {
     if (mkfifo("/tmp/IMGUI_DIALOG_PIPE", 0666) != 0) {
       if (errno != EEXIST) {
         return "";
