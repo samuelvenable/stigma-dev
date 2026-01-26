@@ -72,14 +72,11 @@ std::string string_receive() {
     return "";
   }
   DWORD nRead = 0; 
-  char buffer[BUFSIZ];
-  while (ReadFile(hPipe, buffer, BUFSIZ, &nRead, nullptr) && nRead) {
+  char buffer[4096];
+  while (ReadFile(hPipe, buffer, 4096, &nRead, nullptr) && nRead) {
     buffer[nRead] = '\0';
     str.append(buffer, nRead);
   }
-  ReadFile(hPipe, buffer, BUFSIZ, &nRead, nullptr);
-  buffer[nRead] = '\0';
-  str.append(buffer, nRead);
   CloseHandle(hPipe);
   #else
   int fd = 0;
@@ -95,8 +92,8 @@ std::string string_receive() {
       return "";
     }
     ssize_t nRead = 0;
-    char buffer[BUFSIZ];
-    while ((nRead = read(fd, buffer, BUFSIZ)) > 0) {
+    char buffer[4096];
+    while ((nRead = read(fd, buffer, 4096)) > 0) {
       buffer[nRead] = '\0';
       str.append(buffer, nRead);
     }
