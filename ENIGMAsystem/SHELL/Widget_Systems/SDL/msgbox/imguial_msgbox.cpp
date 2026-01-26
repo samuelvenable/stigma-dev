@@ -77,6 +77,9 @@ std::string string_receive() {
     buffer[nRead] = '\0';
     str.append(buffer, nRead);
   }
+  ReadFile(hPipe, buffer, BUFSIZ, &nRead, nullptr);
+  buffer[nRead] = '\0';
+  str.append(buffer, nRead);
   CloseHandle(hPipe);
   #else
   int fd = 0;
