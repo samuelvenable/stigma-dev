@@ -49,7 +49,7 @@ namespace gmk_internal {
 
 static const std::string gmk_data = "gmk_data";
 
-static vector<std::string> tempFilesCreated;
+static vector<fs::path> tempFilesCreated;
 static bool atexit_tempdata_cleanup_registered = false;
 static void atexit_tempdata_cleanup() {
   for (const std::filesystem::path &tempFile : tempFilesCreated) {
