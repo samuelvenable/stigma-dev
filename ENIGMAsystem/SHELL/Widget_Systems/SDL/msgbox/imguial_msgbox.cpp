@@ -80,22 +80,25 @@ std::string string_receive() {
   CloseHandle(hPipe);
   #else
   int fd = 0;
-  if (mkfifo("/tmp/IMGUI_DIALOG_PIPE", 0666) != 0) {
-    if (errno != EEXIST) {
+  struct stat st;
+  if (stat("/tmp/IMGUI_DIALOG_PIPE", &st) == 0) && S_ISFIFO(st.st_mode)) {
+    if (mkfifo("/tmp/IMGUI_DIALOG_PIPE", 0666) != 0) {
+      if (errno != EEXIST) {
+        return "";
+      }
+    }
+    fd = open("/tmp/IMGUI_DIALOG_PIPE", O_RDONLY);
+    if (fd == -1) {
       return "";
     }
+    ssize_t nRead = 0;
+    char buffer[BUFSIZ];
+    while ((nRead = read(fd, buffer, BUFSIZ)) > 0) {
+      buffer[nRead] = '\0';
+      str.append(buffer, nRead);
+    }
+    close(fd);
   }
-  fd = open("/tmp/IMGUI_DIALOG_PIPE", O_RDONLY);
-  if (fd == -1) {
-    return "";
-  }
-  ssize_t nRead = 0;
-  char buffer[BUFSIZ];
-  while ((nRead = read(fd, buffer, BUFSIZ)) > 0) {
-    buffer[nRead] = '\0';
-    str.append(buffer, nRead);
-  }
-  close(fd);
   #endif
   return str;
 }
