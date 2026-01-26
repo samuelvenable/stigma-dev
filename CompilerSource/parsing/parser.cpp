@@ -1113,6 +1113,7 @@ void TryParseDeclSpecifier(FullType *type) {
     case TT_STATIC: {
       type->flags |= jdi_decflag_bitmask(token.content).second;
       token = lexer->ReadToken();
+      // TODO: FIXME: This should have a break or [[fallthrough]]... does not look like an optimization, so guessing break
     }
 
     default:

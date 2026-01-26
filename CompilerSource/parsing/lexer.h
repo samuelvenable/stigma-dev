@@ -78,8 +78,8 @@ class Lexer {
 
   std::string ProcessLiteral(std::string lit, size_t spos);
   
-  Lexer(std::string code_, const ParseContext *ctx, ErrorHandler *herr_):
-      owned_code(std::make_shared<std::string>(std::move(code_))),
+  Lexer(std::string_view code_, const ParseContext *ctx, ErrorHandler *herr_):
+      owned_code(std::make_shared<std::string>(code_)),
       code(*owned_code), context(ctx), herr(herr_), options(ctx) {}
   Lexer(std::shared_ptr<const std::string> code_, const ParseContext *ctx,
         ErrorHandler *herr_):

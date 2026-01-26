@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <iostream>
 #include <string>     // std::string, std::to_string (C++11)
+#include <sstream>
 #include "backend/ideprint.h"
 
 using namespace std;
@@ -60,9 +61,9 @@ int lang_CPP::compile_parseAndLink(const GameData &game, CompileState &state) {
   // First we just parse the scripts to add semicolons and collect variable names
   scripts.resize(game.scripts.size());
   for (size_t i = 0; i < game.scripts.size(); i++) {
-    std::string wrapped_code =
-        "with (self) {\n" + game.scripts[i]->code() + "\n/* */}";
-    AST ast = AST::Parse(wrapped_code, &state.parse_context);
+    std::stringstream wrapped_code;
+    wrapped_code << "with (self) {\n" << game.scripts[i]->code() << "\n/* */}";
+    AST ast = AST::Parse(wrapped_code.str(), &state.parse_context);
     if (ast.HasError()) {
       user << "Syntax error in script `" << game.scripts[i].name << "'\n"
            << ast.ErrorString() << flushl;

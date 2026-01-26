@@ -48,8 +48,8 @@ void AST::WriteCppToStream(std::ofstream &of, int base_indent, bool is_script) c
   }
 }
 
-AST AST::Parse(std::string code, const ParseContext* ctex) {
-  AST res(std::move(code), ctex);
+AST AST::Parse(std::string_view code, const ParseContext* ctex) {
+  AST res(code, ctex);
   res.root_ = enigma::parsing::Parse(res.lexer.get(), &res.herr);
   return res;
 }

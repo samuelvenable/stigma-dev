@@ -33,7 +33,7 @@
 
 using namespace std;
 
-inline bool iscomment(const string &n) {
+inline bool iscomment(std::string_view n) {
   if (n.length() < 2 or n[0] != '/') return false;
   if (n[1] == '/') return true;
   if (n[1] != '*') return false;
@@ -180,7 +180,7 @@ static inline void write_extension_casts(std::ostream &wto,
 }
 
 // TODO(JoshDreamland): Burn this function into ash and launch the ashes into space
-static inline void compute_locals(language_adapter *lang, parsed_object *object, const string addls) {
+static inline void compute_locals(language_adapter *lang, parsed_object *object, std::string_view addls) {
   size_t pos;
   string type, name, pres, sufs;
   for (pos = 0; pos < addls.length(); pos++)
@@ -191,7 +191,7 @@ static inline void compute_locals(language_adapter *lang, parsed_object *object,
     if (is_letter(addls[pos]) or addls[pos] == '$') {
       const size_t spos = pos;
       while (is_letterdd(addls[++pos]));
-      string tn = addls.substr(spos,pos-spos);
+      string tn{addls.substr(spos,pos-spos)};
       (lang->find_typename(tn) ? type : name) = tn;
       pos--; continue;
     }
@@ -263,7 +263,7 @@ static std::vector<std::pair<std::string, dectrip>> write_object_locals(language
                                 parsed_object *object) {
   wto << "    // Local variables\n    ";
   for (const ParsedEvent &pev : object->all_events) {
-    string addls = pev.ev_id.LocalDeclarations();
+    std::string_view addls = pev.ev_id.LocalDeclarations();
     if (addls.length()) {
       compute_locals(lang, object, addls);
     }

@@ -649,7 +649,7 @@ class AST {
 
   // Parses the given code, returning an AST*. The resulting AST* is never null.
   // If syntax errors were encountered, they are stored within the AST.
-  static AST Parse(std::string code, const ParseContext* ctex);
+  static AST Parse(std::string_view code, const ParseContext* ctex);
 
   void VisitNodes(Visitor &visitor) {
     if (root_) root_->accept(visitor);
@@ -669,8 +669,8 @@ class AST {
   
 
   // Constructs an AST from the code it will parse. Does not initiate parse.
-  AST(std::string &&code_, const ParseContext *ctex):
-      lexer(std::make_unique<Lexer>(std::move(code_), ctex, &herr)),
+  AST(std::string_view code_, const ParseContext *ctex):
+      lexer(std::make_unique<Lexer>(code_, ctex, &herr)),
       code(lexer->GetCode()) {}
 };
 
