@@ -414,11 +414,6 @@ namespace {
     int childFrameHeight = 0;
     #elif (defined(__APPLE__) && defined(__MACH__))
     NSWindow *nsWnd = nullptr;
-    bool windowIDExists = false;
-    bool windowIDClosed = true;
-    bool windowIDVisible = true;
-    std::uintptr_t windowID = (std::uintptr_t)strtoull(ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10);
-    const CGWindowLevel kScreensaverWindowLevel = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey);
     #elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
     Display *display = nullptr;
     Window xWnd = 0;
