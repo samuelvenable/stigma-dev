@@ -406,22 +406,11 @@ namespace {
     SDL_Event e; string result;
     #if defined(_WIN32)
     HWND hWnd = nullptr;
-    RECT parentFrame;
-    RECT childFrame;
-    int parentFrameWidth = 0;
-    int parentFrameHeight = 0;
-    int childFrameWidth = 0;
-    int childFrameHeight = 0;
     #elif (defined(__APPLE__) && defined(__MACH__))
     NSWindow *nsWnd = nullptr;
     #elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
     Display *display = nullptr;
     Window xWnd = 0;
-    XWindowAttributes parentWA;
-    unsigned childFrameWidth = 0;
-    unsigned childFrameHeight = 0;
-    unsigned parentFrameWidth = 0;
-    unsigned parentFrameHeight = 0;
     #endif
     while (true) {
       while (SDL_PollEvent(&e)) {
@@ -589,48 +578,15 @@ namespace {
         0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
           EnableWindow((HWND)(void *)(std::uintptr_t)strtoull(
-          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), FALSE);
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), false);
           if (IsIconic((HWND)(void *)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)))
           ShowWindow((HWND)(void *)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), SW_RESTORE);
           SetWindowLongPtrW(hWnd, GWLP_HWNDPARENT, (LONG_PTR)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
-          GetWindowRect((HWND)(void *)(std::uintptr_t)strtoull(
-          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), &parentFrame);
-          parentFrameWidth = parentFrame.right - parentFrame.left;
-          parentFrameHeight = parentFrame.bottom - parentFrame.top;
-          GetWindowRect(hWnd, &childFrame);
-          childFrameWidth = childFrame.right - childFrame.left;
-          childFrameHeight = childFrame.bottom - childFrame.top;
-          if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1))
-          MoveWindow(hWnd, (parentFrame.left + (parentFrameWidth / 2)) - (childFrameWidth / 2),
-          (parentFrame.top + (parentFrameHeight / 2)) - (childFrameHeight / 2), childFrameWidth, childFrameHeight, true);
           PostMessage(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)GetIcon((HWND)(void *)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)));
-        }
-        SDL_Rect rect;
-        bool inside = false;
-        int x = 0, y = 0, w = 0, h = 0;
-        SDL_GetWindowPosition(window, &x, &y);
-        if (!SDL_GetRendererOutputSize(SDL_GetRenderer(window), &w, &h)) {
-          int numDisplays = SDL_GetNumVideoDisplays();
-          if (numDisplays >= 1) {
-            for (int i = 0; i < numDisplays; i++) {
-              message_pump();
-              if (!SDL_GetDisplayBounds(i, &rect)) {
-                if (x >= rect.x && y >= rect.y &&
-                x + w <= rect.x + rect.w && y + h <= rect.y + rect.h) {
-                  inside = true;
-                  break;
-                }
-              }
-            }
-          }
-        }
-        if (!inside) {
-          if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1))
-          SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         }
         #elif (defined(__APPLE__) && defined(__MACH__))
         SDL_SysWMinfo system_info;
@@ -649,7 +605,7 @@ namespace {
           addChildWindow:nsWnd ordered:NSWindowAbove];
           [[(NSWindow *)(void *)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)
-          standardWindowButton:NSWindowCloseButton] setEnabled:YES];
+          standardWindowButton:NSWindowCloseButton] setEnabled:NO];
         }
         #elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
         SDL_SysWMinfo system_info;
@@ -680,7 +636,7 @@ namespace {
     #if defined(_WIN32)
     if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
       EnableWindow((HWND)(void *)(std::uintptr_t)strtoull(
-      ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), TRUE);
+      ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), true);
     }
     #elif (defined(__APPLE__) && defined(__MACH__))
     if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
