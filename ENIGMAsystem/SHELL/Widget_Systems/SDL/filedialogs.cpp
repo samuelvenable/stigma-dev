@@ -10,7 +10,7 @@
  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  copies of the Software, and to permit persons to whom the Software is
  furnished to do so, subject to the following conditions:
-
+ 
  The above copyright notice and this permission notice shall be included in all
  copies or substantial portions of the Software.
 
@@ -683,7 +683,7 @@ namespace {
       ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), TRUE);
     }
     #elif (defined(__APPLE__) && defined(__MACH__))
-    if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty() && !windowIDExists) {
+    if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
       [[(NSWindow *)(void *)(std::uintptr_t)strtoull(
       ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)
       standardWindowButton:NSWindowCloseButton] setEnabled:YES];
