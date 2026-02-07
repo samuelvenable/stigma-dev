@@ -48,7 +48,7 @@
 #define IFD_DIALOG_SAVE      2
 
 #define IFD_DIALOG_WIDTH     (int)((!ngs::fs::environment_get_variable("IMGUI_DIALOG_WIDTH" ).empty()) ? strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_WIDTH" ).c_str(), nullptr, 10) : 720)
-#define IFD_DIALOG_HEIGHT    (int)((!ngs::fs::environment_get_variable("IMGUI_DIALOG_HEIGHT").empty()) ? strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_HEIGHT").c_str(), nullptr, 10) : ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? 394 : 424))
+#define IFD_DIALOG_HEIGHT    (int)((!ngs::fs::environment_get_variable("IMGUI_DIALOG_HEIGHT").empty()) ? strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_HEIGHT").c_str(), nullptr, 10) : 394)
 
 namespace ifd {
   class FileDialog {
@@ -253,4 +253,3 @@ namespace ifd {
     return (const char *)&file_icon[0];
   }
 }
-

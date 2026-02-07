@@ -267,12 +267,6 @@ namespace {
   SDL_Renderer *renderer = nullptr;
   SDL_Surface *surf = nullptr;
   ImFontAtlas *shared_font_atlas = nullptr;
-  #if (defined(__APPLE__) && defined(__MACH__))
-  bool mousedrag = false;
-  int startmx = 0, startmy = 0;
-  int xoffset = 0, yoffset = 0;
-  int startx = 0, starty = 0;
-  #endif
 
   string file_dialog_helper(string filter, string fname, string dir, string title, int type, string message = "", string def = "") {
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").empty()) {
@@ -306,7 +300,9 @@ namespace {
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
     SDL_WindowFlags windowFlags = (SDL_WindowFlags)(
     ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) ? SDL_WINDOW_ALWAYS_ON_TOP : 0) |
-    SDL_WINDOW_SKIP_TASKBAR | SDL_WINDOW_HIDDEN | SDL_WINDOW_BORDERLESS);
+    ((ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER") == std::to_string(1)) ? SDL_WINDOW_BORDERLESS : 0) |
+    ((ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") == std::to_string(1)) ? 0 : 
+    SDL_WINDOW_SKIP_TASKBAR) | SDL_WINDOW_HIDDEN);
     window = SDL_CreateWindow(title.c_str(),
     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, IFD_DIALOG_WIDTH, IFD_DIALOG_HEIGHT, windowFlags);
     if (window == nullptr) return "";
@@ -435,29 +431,6 @@ namespace {
     while (true) {
       while (SDL_PollEvent(&e)) {
         ImGui_ImplSDL2_ProcessEvent(&e);
-        #if (defined(__APPLE__) && defined(__MACH__))
-        if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1) && 
-          ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER") != std::to_string(1)) {
-          if (e.type == SDL_MOUSEBUTTONDOWN) {
-            int w = 0, h = 0;
-            SDL_GetMouseState(&startmx, &startmy);
-            if (!SDL_GetRendererOutputSize(SDL_GetRenderer(window), &w, &h)) {
-              if (startmx >= 0 && startmx <= w && startmy >= 0 && startmy <= 30) {
-                mousedrag = true;
-              }
-            }
-          }
-          if (mousedrag) {
-            int gmx = 0, gmy = 0;
-            SDL_GetGlobalMouseState(&gmx, &gmy);
-            xoffset = startx + startmx - gmx;
-            yoffset = starty + startmy - gmy; 
-          }
-          if (e.type == SDL_MOUSEBUTTONUP) {
-            mousedrag = false;
-          }
-        }
-        #endif
       }
       ImGui_ImplSDLRenderer2_NewFrame();
       ImGui_ImplSDL2_NewFrame();
@@ -606,7 +579,7 @@ namespace {
           ngs::fs::environment_get_variable("IMGUI_DIALOG_WIDTH").empty() &&
           ngs::fs::environment_get_variable("IMGUI_DIALOG_HEIGHT").empty() &&
           (type == openFile || type == openFiles || type == saveFile || type == selectFolder)) {
-          SDL_SetWindowSize(window, 720, ((int)(strtoul(ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER").c_str(), nullptr, 10) == 1) ? 394 : 424));
+          SDL_SetWindowSize(window, 720, 394);
           SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         }
         #if defined(_WIN32)
@@ -675,23 +648,13 @@ namespace {
         [[nsWnd standardWindowButton:NSWindowCloseButton] setEnabled:YES];
         [[nsWnd standardWindowButton:NSWindowMiniaturizeButton] setEnabled:NO];
         [[nsWnd standardWindowButton:NSWindowZoomButton] setEnabled:NO];
-        CFArrayRef windowList = CGWindowListCopyWindowInfo(kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
-        if (windowList) {
-          for (NSDictionary *windowInfo in (__bridge NSArray *)windowList) {
-            NSNumber *currentWindowID = windowInfo[(id)kCGWindowNumber];
-            if ([currentWindowID unsignedIntValue] == windowID) {
-              SDL_SetWindowAlwaysOnTop(window, SDL_TRUE);
-              windowIDExists = true;
-              break;
-            }
-          }
-          CFRelease(windowList);
-        }
-        if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty() && !windowIDExists) {
-          windowID = [(NSWindow *)(void *)(std::uintptr_t)strtoull(
-          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10) windowNumber];
-          SDL_SetWindowAlwaysOnTop(window, SDL_TRUE);
-          windowIDExists = true;
+        if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
+          [(NSWindow *)(void *)(std::uintptr_t)strtoull(
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10) 
+          addChildWindow:nsWnd ordered:NSWindowAbove];
+          [[(NSWindow *)(void *)(std::uintptr_t)strtoull(
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)
+          standardWindowButton:NSWindowCloseButton] setEnabled:YES];
         }
         #elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
         SDL_SysWMinfo system_info;
@@ -714,108 +677,9 @@ namespace {
       SDL_RenderClear(renderer);
       ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
       SDL_RenderPresent(renderer);
-      #if (defined(__APPLE__) && defined(__MACH__))
-      if (windowIDExists) {
-        CFArrayRef windowList = CGWindowListCopyWindowInfo(kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
-        if (windowList) {
-          windowIDClosed = true;
-          for (NSDictionary *windowInfo in (__bridge NSArray *)windowList) {
-            NSNumber *currentWindowID = windowInfo[(id)kCGWindowNumber];
-            if ([currentWindowID unsignedIntValue] == windowID) {
-              windowIDClosed = false;
-              break;
-            }
-          }
-          CFRelease(windowList);
-        }
-        if (windowIDClosed) {
-          result.clear();
-          goto finish;
-        }
-        CFArrayRef visibleWindowList = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
-        if (visibleWindowList) {
-          windowIDVisible = false;
-          for (NSDictionary *windowInfo in (__bridge NSArray *)visibleWindowList) {
-            NSNumber *currentWindowID = windowInfo[(id)kCGWindowNumber];
-            if ([currentWindowID unsignedIntValue] == windowID) {
-              CGRect windowBounds = CGRectZero;
-              CFDictionaryRef boundsDict = (__bridge CFDictionaryRef)windowInfo[(__bridge NSString *)kCGWindowBounds];
-              if (boundsDict && CGRectMakeWithDictionaryRepresentation(boundsDict, &windowBounds)) {
-                CGFloat parentX = windowBounds.origin.x;
-                CGFloat parentY = windowBounds.origin.y;
-                CGFloat parentWidth = windowBounds.size.width;
-                CGFloat parentHeight = windowBounds.size.height;
-                NSRect childFrame = [nsWnd frame];
-                if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1))
-                SDL_SetWindowPosition(window, (parentX + (parentWidth / 2)) - (childFrame.size.width / 2), 
-                (parentY + (parentHeight / 2)) - (childFrame.size.height / 2));
-                SDL_GetWindowPosition(window, &startx, &starty);
-              }
-              if (SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) {
-                SDL_ShowWindow(window);
-              }
-              windowIDVisible = true;
-              break;
-            }
-          }
-          CFRelease(visibleWindowList);
-        }
-        if (!windowIDVisible) {
-          if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN)) {
-            SDL_HideWindow(window);
-          }
-        }
+      if (SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) {
+        SDL_ShowWindow(window);
       }
-      #elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
-      if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
-        Window xwindow = (Window)(std::uintptr_t)strtoull(
-        ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10);
-        Window parentFrameRoot = 0; int parentFrameX = 0, parentFrameY = 0;
-        Window parentWindow = 0, rootWindow = 0, *childrenWindows = nullptr;
-        unsigned numberOfChildren = 0;
-        while (true) {
-          if (XQueryTree(display, xwindow, &rootWindow, &parentWindow, &childrenWindows, &numberOfChildren) == 0) {
-            break;
-          }
-          if (childrenWindows) {
-            XFree(childrenWindows);
-          }
-          if (xwindow == rootWindow || parentWindow == rootWindow) {
-            break;
-          } else {
-            xwindow = parentWindow;
-          }
-        }
-        XGetWindowAttributes(display, xwindow, &parentWA);
-        unsigned parentFrameBorder = 0, parentFrameDepth = 0;
-        XGetGeometry(display, xwindow, &parentFrameRoot, &parentFrameX, &parentFrameY,
-        &parentFrameWidth, &parentFrameHeight, &parentFrameBorder, &parentFrameDepth);
-        Window childFrameRoot = 0; int childFrameX = 0, childFrameY = 0;
-        unsigned childFrameBorder = 0, childFrameDepth = 0;
-        XGetGeometry(display, xWnd, &childFrameRoot, &childFrameX, &childFrameY,
-        &childFrameWidth, &childFrameHeight, &childFrameBorder, &childFrameDepth);
-        if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1))
-        XMoveWindow(display, xWnd, (parentWA.x + (parentFrameWidth / 2)) - (childFrameWidth / 2),
-        (parentWA.y + (parentFrameHeight / 2)) - (childFrameHeight / 2));
-      }
-      #endif
-      #if (defined(__APPLE__) && defined(__MACH__))
-      if (windowIDVisible) {
-      #endif
-        if (SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) {
-          SDL_ShowWindow(window);
-        }
-      #if (defined(__APPLE__) && defined(__MACH__))
-      }
-      if (windowIDExists) {
-        if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1) &&
-          !ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
-          int x = 0, y = 0;
-          SDL_GetWindowPosition(window, &x, &y);
-          SDL_SetWindowPosition(window, x - xoffset, y - yoffset);
-        }
-      }
-      #endif
     }
     finish:
     #if defined(_WIN32)
@@ -903,15 +767,15 @@ namespace ngs::imgui {
   }
   
   string show_message(string message) {
-    return file_dialog_helper("", "", "", "", oneButton, message);
+    return file_dialog_helper("", "", "", ngs::fs::environment_get_variable("IMGUI_DIALOG_CAPTION"), oneButton, message);
   }
 
   string show_question(string message) {
-    return file_dialog_helper("", "", "", "", twoButtons, message);
+    return file_dialog_helper("", "", "", ngs::fs::environment_get_variable("IMGUI_DIALOG_CAPTION"), twoButtons, message);
   }
 
   string show_question_ext(string message) {
-    return file_dialog_helper("", "", "", "", threeButtons, message);
+    return file_dialog_helper("", "", "", ngs::fs::environment_get_variable("IMGUI_DIALOG_CAPTION"), threeButtons, message);
   }
 
   string get_string(string message, string defstr) {
