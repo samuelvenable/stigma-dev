@@ -128,9 +128,7 @@ int ImGuiAl::MsgBox::Draw() {
     if (dialog && ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1)) {
       SDL_GetWindowSize(dialog, &sw, &sh);
       SDL_SetWindowSize(dialog, dw, dh);
-      if (ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
-        SDL_SetWindowPosition(dialog, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-      }
+      SDL_SetWindowPosition(dialog, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     }
     ImGui::Separator();
     ImVec2 size = ImVec2(4.875f * ImGui::GetFontSize(), 0.0f);
