@@ -44,7 +44,9 @@ SOFTWARE.
 #include <cstdio>
 #include <cstdlib>
 #include <cerrno>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
