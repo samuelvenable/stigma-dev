@@ -22,11 +22,11 @@
 #include "Universal_System/fileio.h"
 
 #if defined(_WIN32)
-#define LIBDLGMOD "./assets/libdlgmod.dll"
+#define LIBDLGMOD "./libdlgmod.dll"
 #elif (defined(__APPLE__) && defined(__MACH__))
-#define LIBDLGMOD "./assets/libdlgmod.dylib"
+#define LIBDLGMOD "./libdlgmod.dylib"
 #elif (defined(__linux__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__sun))
-#define LIBDLGMOD "./assets/libdlgmod.so"
+#define LIBDLGMOD "./libdlgmod.so"
 #endif
 
 using enigma_user::external_call;
@@ -232,5 +232,6 @@ namespace dialog_module {
   }
   
 } // namespace dialog_module
+
 
 
