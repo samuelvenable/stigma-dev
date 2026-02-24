@@ -212,7 +212,7 @@ namespace enigma_user {
   }
 
   std::string file_find_first(std::string mask, int attr) {
-    return filesystem::directory_contents_first(filename_path(mask), filename_name(mask), ((attr & fa_directory) ? true : false), false);
+    return filesystem::directory_contents_first(filename_path(mask), filename_name(mask), true, false);
   }
 
   std::string file_find_next() {
@@ -476,3 +476,4 @@ namespace enigma_user {
   }
 
 } // namespace enigma_user
+
