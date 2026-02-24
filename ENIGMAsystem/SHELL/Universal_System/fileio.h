@@ -30,14 +30,13 @@ namespace enigma_user {
 
   // File attribute constants
   enum {
+    fa_none      = 0,
     fa_readonly  = 1,
     fa_hidden    = 2,
     fa_sysfile   = 4,
     fa_volumeid  = 8,
     fa_directory = 16,
     fa_archive   = 32,
-    fa_files_all = fa_readonly | fa_hidden | fa_sysfile | fa_volumeid | fa_archive,
-    fa_all       = fa_files_all | fa_directory
   };
 
   std::string directory_get_current_working();
