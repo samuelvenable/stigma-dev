@@ -476,4 +476,3 @@ namespace enigma_user {
   }
 
 } // namespace enigma_user
-
