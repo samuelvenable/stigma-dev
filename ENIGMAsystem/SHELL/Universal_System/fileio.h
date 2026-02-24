@@ -73,6 +73,9 @@ namespace enigma_user {
   void directory_contents_set_completion_status(bool complete);
   std::string directory_contents_next();
   void directory_contents_close();
+  std::string file_find_first(std::string mask, int attr);
+  std::string file_find_next();
+  void file_find_close();
   std::string environment_get_variable(std::string name);
   bool environment_get_variable_exists(std::string name);
   bool environment_set_variable(std::string name, std::string value);
@@ -138,3 +141,4 @@ namespace enigma_user {
   int file_text_close(int fd);
 
 } // namespace enigma_user
+
