@@ -25,6 +25,7 @@
 */
 
 #include "fileio.h"
+#include "estring.h"
 
 namespace filesystem = ngs::fs;
 
@@ -207,6 +208,18 @@ namespace enigma_user {
   }
  
   void directory_contents_close() {
+    return filesystem::directory_contents_close();
+  }
+
+  std::string file_find_first(std::string mask, int attr) {
+    return filesystem::directory_contents_first(filename_path(mask), filename_name(mask), ((attr & fa_directory) ? true : false), false);
+  }
+
+  std::string file_find_next() {
+    return filesystem::directory_contents_next();
+  }
+
+  void file_find_close() {
     return filesystem::directory_contents_close();
   }
  
@@ -463,3 +476,4 @@ namespace enigma_user {
   }
 
 } // namespace enigma_user
+
