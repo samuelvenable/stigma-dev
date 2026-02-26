@@ -232,6 +232,3 @@ namespace dialog_module {
   }
   
 } // namespace dialog_module
-
-
-
