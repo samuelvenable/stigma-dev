@@ -152,4 +152,3 @@ namespace enigma_user {
   int file_text_close(int fd);
 
 } // namespace enigma_user
-
