@@ -146,7 +146,7 @@ int show_message_ext(string message, string button1, string button2, string butt
   SDL_RaiseWindow(enigma::windowHandle);
   string ok = (environment_get_variable("IMGUI_OK").empty() ? "OK" : environment_get_variable("IMGUI_OK"));
   string yes = (environment_get_variable("IMGUI_YES").empty() ? "Yes" : environment_get_variable("IMGUI_YES"));
-  string no = (environment_get_variable("IMGUI_NO").empty() ? "No" : environment_get_variable("IMGUI_YES"));
+  string no = (environment_get_variable("IMGUI_NO").empty() ? "No" : environment_get_variable("IMGUI_NO"));
   return ((result == ok || result == yes) ? 1 : ((result == no) ? 2 : 3));
 }
 
