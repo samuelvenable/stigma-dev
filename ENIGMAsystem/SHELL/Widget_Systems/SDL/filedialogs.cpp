@@ -730,7 +730,7 @@ namespace ngs::imgui {
   }
 
   string get_string(string message, string defstr) {
-    string result = file_dialog_helper("", "", "", "", stringInputBox, message, defstr);
+    string result = file_dialog_helper("", "", "", ngs::fs::environment_get_variable("IMGUI_DIALOG_CAPTION"), stringInputBox, message, defstr);
     string result2 = string_replace_all(result, " ", "");
     result2 = string_replace_all(result2, "\t", "");
     result2 = string_replace_all(result2, "\n", "");
@@ -742,7 +742,7 @@ namespace ngs::imgui {
   }
 
   double get_number(string message, double defnum) {
-    string strres = file_dialog_helper("", "", "", "", numberInputBox, message, remove_trailing_zeros(defnum));
+    string strres = file_dialog_helper("", "", "", ngs::fs::environment_get_variable("IMGUI_DIALOG_CAPTION"), numberInputBox, message, remove_trailing_zeros(defnum));
     bool isnumber = (!strres.empty() && ((strres.length() >= 2 && (strres[0] == '-' || strres[0] == '+') && isdigit(strres[1])) || isdigit(strres[0])));
     double result = strtod(((strres.empty() || !isnumber) ? remove_trailing_zeros(defnum).c_str() : strres.c_str()), nullptr);
     if (result < DIGITS_MIN) result = DIGITS_MIN;
