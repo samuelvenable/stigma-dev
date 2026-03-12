@@ -55,16 +55,16 @@ namespace ngs::imgui {
 #define EXPORTED_FUNCTION extern "C" __attribute__((visibility("default")))
 #endif
 EXPORTED_FUNCTION void ifd_load_fonts();
-EXPORTED_FUNCTION const char *show_message(const char *message);
-EXPORTED_FUNCTION const char *show_question(const char *message);
-EXPORTED_FUNCTION const char *show_question_ext(const char *message);
-EXPORTED_FUNCTION const char *get_string(const char *message, const char *value);
-EXPORTED_FUNCTION double get_number(const char *message, double value);
-EXPORTED_FUNCTION const char *get_open_filename(const char *filter, const char *fname);
-EXPORTED_FUNCTION const char *get_open_filename_ext(const char *filter, const char *fname, const char *dir, const char *title);
-EXPORTED_FUNCTION const char *get_open_filenames(const char *filter, const char *fname);
-EXPORTED_FUNCTION const char *get_open_filenames_ext(const char *filter, const char *fname, const char *dir, const char *title);
-EXPORTED_FUNCTION const char *get_save_filename(const char *filter, const char *fname);
-EXPORTED_FUNCTION const char *get_save_filename_ext(const char *filter, const char *fname, const char *dir, const char *title);
-EXPORTED_FUNCTION const char *get_directory(const char *dname);
-EXPORTED_FUNCTION const char *get_directory_alt(const char *capt, const char *root);
+EXPORTED_FUNCTION char *show_message(char *message);
+EXPORTED_FUNCTION char *show_question(char *message);
+EXPORTED_FUNCTION char *show_question_ext(char *message);
+EXPORTED_FUNCTION char *get_string(char *message, char *value);
+EXPORTED_FUNCTION double get_number(char *message, double value);
+EXPORTED_FUNCTION char *get_open_filename(char *filter, char *fname);
+EXPORTED_FUNCTION char *get_open_filename_ext(char *filter, char *fname, char *dir, char *title);
+EXPORTED_FUNCTION char *get_open_filenames(char *filter, char *fname);
+EXPORTED_FUNCTION char *get_open_filenames_ext(char *filter, char *fname, char *dir, char *title);
+EXPORTED_FUNCTION char *get_save_filename(char *filter, char *fname);
+EXPORTED_FUNCTION char *get_save_filename_ext(char *filter, char *fname, char *dir, char *title);
+EXPORTED_FUNCTION char *get_directory(char *dname);
+EXPORTED_FUNCTION char *get_directory_alt(char *capt, char *root);
