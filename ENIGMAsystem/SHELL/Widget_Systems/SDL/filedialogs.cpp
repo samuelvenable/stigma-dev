@@ -278,14 +278,22 @@ namespace {
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_CANCELABLE").empty()) {
       ngs::fs::environment_set_variable("IMGUI_DIALOG_CANCELABLE", std::to_string(0));
     }
+    if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED").empty()) {
+      ngs::fs::environment_set_variable("IMGUI_DIALOG_EMBEDDED", std::to_string(0));
+    }
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_NOBORDER") != std::to_string(0)) {
       ngs::fs::environment_set_variable("IMGUI_DIALOG_NOBORDER", std::to_string(1));
     }
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(0)) {
       ngs::fs::environment_set_variable("IMGUI_DIALOG_FULLSCREEN", std::to_string(1));
     }
+    #if !defined(_WIN32)
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") == std::to_string(1)) {
       ngs::fs::environment_unset_variable("IMGUI_DIALOG_PARENT");
+    }
+    #endif
+    if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(0)) {
+      ngs::fs::environment_set_variable("IMGUI_DIALOG_EMBEDDED", std::to_string(1));
     }
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_CANCELABLE") != std::to_string(0)) {
       ngs::fs::environment_set_variable("IMGUI_DIALOG_CANCELABLE", std::to_string(1));
@@ -576,6 +584,7 @@ namespace {
         SetWindowPos(hWnd, ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) ?  HWND_TOPMOST : HWND_TOP),
         0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
+          if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1))
           EnableWindow((HWND)(void *)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), false);
           if (IsIconic((HWND)(void *)(std::uintptr_t)strtoull(
@@ -586,6 +595,28 @@ namespace {
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
           PostMessage(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)GetIcon((HWND)(void *)(std::uintptr_t)strtoull(
           ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10)));
+          if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1)) {
+            SetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
+            ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE, 
+            (GetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
+            ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE) | WS_CLIPCHILDREN | WS_CLIPSIBLINGS));
+            SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
+            SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
+            ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
+            if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1)) {
+              SetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
+              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE, 
+              (GetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
+              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE) | WS_CLIPCHILDREN | WS_CLIPSIBLINGS));
+              SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
+              SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
+              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
+              RECT rect; GetClientRect((HWND)(void*)(std::uintptr_t)strtoull(
+              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), &rect);
+              int cw = 0, ch = 0; SDL_GetWindowSize(window, &cw, &ch);
+              SDL_SetWindowPosition(window, (rect.right / 2) - (cw / 2), (rect.bottom / 2) - (ch / 2));
+            }
+          }
         }
         #elif (defined(__APPLE__) && defined(__MACH__))
         SDL_SysWMinfo system_info;
@@ -620,6 +651,9 @@ namespace {
           }
         }
         #endif
+        #if defined(_WIN32)
+        if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1))
+        #endif
         SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         dialog = nullptr;
       }
@@ -635,6 +669,7 @@ namespace {
     finish:
     #if defined(_WIN32)
     if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
+      if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1))
       EnableWindow((HWND)(void *)(std::uintptr_t)strtoull(
       ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), true);
     }
@@ -752,84 +787,83 @@ namespace ngs::imgui {
 
 } // namespace ngs::imgui
 
-#if defined(IFD_SHARED_LIBRARY)
 void ifd_load_fonts() {
   ngs::imgui::ifd_load_fonts();
 }
 
-const char *get_open_filename(const char *filter, const char *fname) {
+char *get_open_filename(char *filter, char *fname) {
   static string result;
   result = ngs::imgui::get_open_filename(filter, fname);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_open_filename_ext(const char *filter, const char *fname, const char *dir, const char *title) {
+char *get_open_filename_ext(char *filter, char *fname, char *dir, char *title) {
   static string result;
   result = ngs::imgui::get_open_filename_ext(filter, fname, dir, title);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_open_filenames(const char *filter, const char *fname) {
+char *get_open_filenames(char *filter, char *fname) {
   static string result;
   result = ngs::imgui::get_open_filenames(filter, fname);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_open_filenames_ext(const char *filter, const char *fname, const char *dir, const char *title) {
+char *get_open_filenames_ext(char *filter, char *fname, char *dir, char *title) {
   static string result;
   result = ngs::imgui::get_open_filenames_ext(filter, fname, dir, title);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_save_filename(const char *filter, const char *fname) {
+char *get_save_filename(char *filter, char *fname) {
   static string result;
   result = ngs::imgui::get_save_filename(filter, fname);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_save_filename_ext(const char *filter, const char *fname, const char *dir, const char *title) {
+char *get_save_filename_ext(char *filter, char *fname, char *dir, char *title) {
   static string result;
   result = ngs::imgui::get_save_filename_ext(filter, fname, dir, title);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_directory(const char *dname) {
+char *get_directory(char *dname) {
   static string result;
   result = ngs::imgui::get_directory(dname);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_directory_alt(const char *capt, const char *root) {
+char *get_directory_alt(char *capt, char *root) {
   static string result;
   result = ngs::imgui::get_directory_alt(capt, root);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *show_message(const char *message) {
+char *show_message(char *message) {
   static string result;
   result = ngs::imgui::show_message(message);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *show_question(const char *message) {
+char *show_question(char *message) {
   static string result;
   result = ngs::imgui::show_question(message);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *show_question_ext(const char *message) {
+char *show_question_ext(char *message) {
   static string result;
   result = ngs::imgui::show_question_ext(message);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-const char *get_string(const char *message, const char *defstr) {
+char *get_string(char *message, char *defstr) {
   static string result;
   result = ngs::imgui::get_string(message, defstr);
-  return result.c_str();
+  return (char *)result.c_str();
 }
 
-double get_number(const char *message, double defnum) {
+double get_number(char *message, double defnum) {
   return ngs::imgui::get_number(message, defnum);
 }
 #endif
