@@ -866,4 +866,3 @@ char *get_string(char *message, char *defstr) {
 double get_number(char *message, double defnum) {
   return ngs::imgui::get_number(message, defnum);
 }
-#endif
