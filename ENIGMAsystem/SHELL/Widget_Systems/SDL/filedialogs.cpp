@@ -603,7 +603,8 @@ namespace {
             SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
             SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
             ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
-            if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1)) {
+            if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1) &&
+              (type == openFile || type == openFiles || type == saveFile || type == selectFolder)) {
               SetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
               ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE, 
               (GetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
@@ -611,10 +612,11 @@ namespace {
               SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
               SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
               ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
-              RECT rect; GetClientRect((HWND)(void*)(std::uintptr_t)strtoull(
-              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), &rect);
-              int cw = 0, ch = 0; SDL_GetWindowSize(window, &cw, &ch);
-              SDL_SetWindowPosition(window, (rect.right / 2) - (cw / 2), (rect.bottom / 2) - (ch / 2));
+              RECT prect; RECT crect; GetClientRect((HWND)(void*)(std::uintptr_t)strtoull(
+              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), &prect);
+              int cw = 0, ch = 0; GetWindowRect(hWnd, &crect);
+              cw = crect.right - crect.left; ch = crect.bottom - crect.top;
+              MoveWindow(hWnd, (prect.right / 2) - (cw / 2), (prect.bottom / 2) - (ch / 2), cw, ch, true);
             }
           }
         }
