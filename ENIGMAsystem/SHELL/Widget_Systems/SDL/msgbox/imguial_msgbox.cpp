@@ -46,6 +46,8 @@ SOFTWARE.
 #include <cerrno>
 #if !defined(_WIN32)
 #include <unistd.h>
+#else
+#include <SDL_syswm.h>
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -130,7 +132,30 @@ int ImGuiAl::MsgBox::Draw() {
     if (dialog && ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(1)) {
       SDL_GetWindowSize(dialog, &sw, &sh);
       SDL_SetWindowSize(dialog, dw, dh);
-      SDL_SetWindowPosition(dialog, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+      #if defined(_WIN32)
+      if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1)) {
+        SDL_SetWindowPosition(dialog, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+      } else {
+        SDL_SysWMinfo system_info;
+        SDL_VERSION(&system_info.version);
+        if (!SDL_GetWindowWMInfo(dialog, &system_info)) return index;
+        HWND hWnd = system_info.info.win.window;
+        if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1)) {
+          SetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE, 
+          (GetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE) | WS_CLIPCHILDREN | WS_CLIPSIBLINGS));
+          SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
+          SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
+          RECT prect; RECT crect; GetClientRect((HWND)(void*)(std::uintptr_t)strtoull(
+          ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), &prect);
+          int cw = 0, ch = 0; GetWindowRect(hWnd, &crect); 
+          cw = crect.right - crect.left; ch = crect.bottom - crect.top;
+          MoveWindow(hWnd, (prect.right / 2) - (cw / 2), (prect.bottom / 2) - (ch / 2), cw, ch, true);
+        }
+      }
+      #endif
     }
     ImGui::Separator();
     ImVec2 size = ImVec2(4.875f * ImGui::GetFontSize(), 0.0f);
