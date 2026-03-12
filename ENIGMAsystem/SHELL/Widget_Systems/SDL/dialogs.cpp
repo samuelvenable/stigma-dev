@@ -132,7 +132,7 @@ int show_message_ext(string message, string button1, string button2, string butt
   if (button1.empty() && button2.empty() && button3.empty()) {
     environment_set_variable("IMGUI_OK", "OK");
     result = ::show_message((char *)message.c_str());
-  } else if (!button1.empty() && button2.empty() && button3.empty()) result = ::show_message(message.c_str());
+  } else if (!button1.empty() && button2.empty() && button3.empty()) result = ::show_message((char *)message.c_str());
   else if (!button1.empty() && !button2.empty() && button3.empty()) result = ::show_question(message.c_str());
   else if (!button1.empty() && !button2.empty() && !button3.empty()) result = ::show_question_ext(message.c_str());
   environment_set_variable("IMGUI_OK", orig_ok);
