@@ -131,7 +131,9 @@ int ImGuiAl::MsgBox::Draw() {
       SDL_GetWindowSize(dialog, &sw, &sh);
       SDL_SetWindowSize(dialog, dw, dh);
       #if defined(_WIN32)
-      if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1))
+      if ((!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty() &&
+      ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1)) ||
+      ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty())
       #endif
       SDL_SetWindowPosition(dialog, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     }
@@ -181,3 +183,4 @@ int ImGuiAl::MsgBox::Draw() {
 void ImGuiAl::MsgBox::Open() {
   ImGui::OpenPopup(m_Title);
 }
+
