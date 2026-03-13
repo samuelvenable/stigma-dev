@@ -287,7 +287,14 @@ namespace {
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") != std::to_string(0)) {
       ngs::fs::environment_set_variable("IMGUI_DIALOG_FULLSCREEN", std::to_string(1));
     }
-    #if !defined(_WIN32)
+    #if defined(_WIN32)
+    if (ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty() ||
+      ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT") == std::to_string(0) ||
+      !IsWindow((HWND)(void *)(std::uintptr_t)strtoull(ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10))) {
+      ngs::fs::environment_unset_variable("IMGUI_DIALOG_PARENT");
+      ngs::fs::environment_set_variable("IMGUI_DIALOG_EMBEDDED", std::to_string(0));
+    }
+    #else
     if (ngs::fs::environment_get_variable("IMGUI_DIALOG_FULLSCREEN") == std::to_string(1)) {
       ngs::fs::environment_unset_variable("IMGUI_DIALOG_PARENT");
     }
@@ -603,20 +610,11 @@ namespace {
             SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
             SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
             ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
-            if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1)) {
-              SetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
-              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE, 
-              (GetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
-              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE) | WS_CLIPCHILDREN | WS_CLIPSIBLINGS));
-              SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
-              SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
-              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
-              RECT prect; RECT crect; GetClientRect((HWND)(void*)(std::uintptr_t)strtoull(
-              ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), &prect);
-              int cw = 0, ch = 0; GetWindowRect(hWnd, &crect);
-              cw = crect.right - crect.left; ch = crect.bottom - crect.top;
-              MoveWindow(hWnd, (prect.right / 2) - (cw / 2), (prect.bottom / 2) - (ch / 2), cw, ch, true);
-            }
+            RECT prect; RECT crect; GetClientRect((HWND)(void*)(std::uintptr_t)strtoull(
+            ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), &prect);
+            int cw = 0, ch = 0; GetWindowRect(hWnd, &crect);
+            cw = crect.right - crect.left; ch = crect.bottom - crect.top;
+            MoveWindow(hWnd, (prect.right / 2) - (cw / 2), (prect.bottom / 2) - (ch / 2), cw, ch, true);
           }
         }
         #elif (defined(__APPLE__) && defined(__MACH__))
@@ -653,7 +651,9 @@ namespace {
         }
         #endif
         #if defined(_WIN32)
-        if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1))
+        if ((!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty() &&
+        ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1)) ||
+        ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty())
         #endif
         SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         dialog = nullptr;
@@ -669,11 +669,10 @@ namespace {
     }
     finish:
     #if defined(_WIN32)
-    if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
-      if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1))
-      EnableWindow((HWND)(void *)(std::uintptr_t)strtoull(
-      ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), true);
-    }
+    if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty() &&
+    ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") != std::to_string(1))
+    EnableWindow((HWND)(void *)(std::uintptr_t)strtoull(
+    ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), true);
     #elif (defined(__APPLE__) && defined(__MACH__))
     if (!ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").empty()) {
       [[(NSWindow *)(void *)(std::uintptr_t)strtoull(
