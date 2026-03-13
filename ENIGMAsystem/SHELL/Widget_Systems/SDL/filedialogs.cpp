@@ -603,8 +603,7 @@ namespace {
             SetWindowLongPtrW(hWnd, GWL_STYLE, (GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CHILDWINDOW) & ~WS_POPUP);
             SetParent(hWnd, (HWND)(void *)(std::uintptr_t)strtoull(
             ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10));
-            if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1) &&
-              (type == openFile || type == openFiles || type == saveFile || type == selectFolder)) {
+            if (ngs::fs::environment_get_variable("IMGUI_DIALOG_EMBEDDED") == std::to_string(1)) {
               SetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
               ngs::fs::environment_get_variable("IMGUI_DIALOG_PARENT").c_str(), nullptr, 10), GWL_STYLE, 
               (GetWindowLongPtrW((HWND)(void*)(std::uintptr_t)strtoull(
