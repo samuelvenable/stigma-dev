@@ -68,8 +68,9 @@ void AlignForWidth(float width, float alignment = 0.5f) {
 std::string string_receive() {
   std::string str;
   #if defined(_WIN32)
-  const char *pipeName = R"(\\.\pipe\IMGUI_DIALOG_PIPE)";
-  HANDLE hPipe = CreateFileA(pipeName, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+  std::string pipeName = std::string("\\\\.\\pipe\\IMGUI_DIALOG_PIPE_") + 
+  ngs::fs::environment_get_variable("IMGUI_DIALOG_PPID");
+  HANDLE hPipe = CreateFileA(pipeName.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
   if (hPipe == INVALID_HANDLE_VALUE) {
     return "";
   }
@@ -83,13 +84,15 @@ std::string string_receive() {
   #else
   int fd = 0;
   struct stat st;
-  if (stat("/tmp/IMGUI_DIALOG_PIPE", &st) == 0 && S_ISFIFO(st.st_mode)) {
-    if (mkfifo("/tmp/IMGUI_DIALOG_PIPE", 0666) != 0) {
+  std::string pipeName = std::string("/tmp/IMGUI_DIALOG_PIPE_") + 
+  ngs::fs::environment_get_variable("IMGUI_DIALOG_PPID");
+  if (stat(pipeName.c_str(), &st) == 0 && S_ISFIFO(st.st_mode)) {
+    if (mkfifo(pipeName.c_str(), 0666) != 0) {
       if (errno != EEXIST) {
         return "";
       }
     }
-    fd = open("/tmp/IMGUI_DIALOG_PIPE", O_RDONLY);
+    fd = open(pipeName.c_str(), O_RDONLY);
     if (fd == -1) {
       return "";
     }
@@ -156,7 +159,8 @@ int ImGuiAl::MsgBox::Draw() {
         strcpy(m_Value, Value);
         init = true;
       }
-      enter_pressed = ImGui::InputTextEx("##inputBox", m_Value, Value, 1024, ImVec2(0, 0), ImGuiInputTextFlags_EnterReturnsTrue);
+      enter_pressed = ImGui::InputTextEx("##inputBox", m_Value, Value, 1024, ImVec2(0, 0), ImGuiInputTextFlags_EnterReturnsTrue | 
+      ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PASSWORD") == std::to_string(1)) ? ImGuiInputTextFlags_Password : 0));
     }
     AlignForWidth(width);
     for (count = 0; count < m_Captions.size(); count++) {
@@ -183,4 +187,3 @@ int ImGuiAl::MsgBox::Draw() {
 void ImGuiAl::MsgBox::Open() {
   ImGui::OpenPopup(m_Title);
 }
-
