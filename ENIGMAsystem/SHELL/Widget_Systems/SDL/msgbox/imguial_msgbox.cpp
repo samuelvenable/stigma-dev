@@ -65,6 +65,12 @@ void AlignForWidth(float width, float alignment = 0.5f) {
   ImGui::SetCursorPosY(ImGui::GetContentRegionMax().y - (ImGui::GetFontSize() + (ImGui::GetFontSize() / 2)));
 }
 
+std::string ReplaceAllChars(std::string str, char replacement) {
+  if (str.empty()) return "";
+  std::fill(str.begin(), str.end(), replacement);
+  return str;
+}
+
 std::string string_receive() {
   std::string str;
   #if defined(_WIN32)
@@ -159,7 +165,9 @@ int ImGuiAl::MsgBox::Draw() {
         strcpy(m_Value, Value);
         init = true;
       }
-      enter_pressed = ImGui::InputTextEx("##inputBox", m_Value, Value, 1024, ImVec2(0, 0), ImGuiInputTextFlags_EnterReturnsTrue | 
+      enter_pressed = ImGui::InputTextEx("##inputBox", 
+      ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PASSWORD") == std::to_string(1)) ? ReplaceAllChars(m_Value, '*').c_str() : m_Value),
+      Value, 1024, ImVec2(0, 0), ImGuiInputTextFlags_EnterReturnsTrue | 
       ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PASSWORD") == std::to_string(1)) ? ImGuiInputTextFlags_Password : 0));
     }
     AlignForWidth(width);
