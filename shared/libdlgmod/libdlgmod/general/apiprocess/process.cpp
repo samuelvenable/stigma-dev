@@ -54,6 +54,7 @@
 #include <tlhelp32.h>
 #include <winternl.h>
 #include <psapi.h>
+#include <io.h>
 #elif (defined(__APPLE__) && defined(__MACH__))
 #include <sys/sysctl.h>
 #include <libproc.h>
@@ -1755,22 +1756,44 @@ namespace ngs::ps {
   }
 
   std::string read_from_stdin_for_self() {
-    standard_input = "";
+    standard_input.clear();
     #if defined(_WIN32)
-    std::vector<char> buff;
-    HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
-    if (handle == INVALID_HANDLE_VALUE) {
-      return standard_input.c_str();
-    }
-    if (GetFileType(handle) == FILE_TYPE_PIPE) {
-      DWORD mode = 0;
-      if (GetConsoleMode(handle, &mode)) {
-        DWORD bytes_avail = 0;
-        if (PeekNamedPipe(handle, nullptr, 0, nullptr, &bytes_avail, nullptr)) {
-          DWORD bytes_read = 0;
-          buff.resize(bytes_avail);
-          if (PeekNamedPipe(handle, &buff[0], bytes_avail, &bytes_read, nullptr, nullptr)) {
-            standard_input = buff.data();
+    if (!_isatty(_fileno(stdin))) {
+      std::vector<char> buff;
+      HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
+      if (handle == INVALID_HANDLE_VALUE) {
+        return standard_input;
+      }
+      if (GetFileType(handle) == FILE_TYPE_PIPE) {
+        DWORD mode = 0;
+        if (GetConsoleMode(handle, &mode)) {
+          DWORD bytes_avail = 0;
+          if (PeekNamedPipe(handle, nullptr, 0, nullptr, &bytes_avail, nullptr)) {
+            DWORD bytes_read = 0;
+            buff.resize(bytes_avail);
+            if (PeekNamedPipe(handle, &buff[0], bytes_avail, &bytes_read, nullptr, nullptr)) {
+              standard_input = buff.data();
+            }
+          } else {
+            DWORD nRead = BUFSIZ;
+            buff.resize(nRead);
+            while (ReadFile(handle, &buff[0], nRead, &nRead, nullptr) && nRead) {
+              message_pump();
+              standard_input.append(buff.data(), nRead);
+            }
+          }
+        }
+      } else {
+        DWORD mode = 0;
+        if (GetConsoleMode(handle, &mode)) {
+          struct stat st;
+          if (!fstat(_fileno(stdin), &st)) {
+            std::vector<wchar_t> buff;
+            buff.resize(st.st_size + 1);
+            if (fgetws(&buff[0], st.st_size + 1, stdin)) {
+              std::wstring wstr(buff.begin(), buff.end());
+              standard_input = narrow(wstr);
+            }
           }
         } else {
           DWORD nRead = BUFSIZ;
@@ -1781,39 +1804,21 @@ namespace ngs::ps {
           }
         }
       }
-    } else {
-      DWORD mode = 0;
-      if (GetConsoleMode(handle, &mode)) {
-        struct stat st;
-        if (!fstat(_fileno(stdin), &st)) {
-          std::vector<wchar_t> buff;
-          buff.resize(st.st_size + 1);
-          if (fgetws(&buff[0], st.st_size + 1, stdin)) {
-            std::wstring wstr(buff.begin(), buff.end());
-            standard_input = narrow(wstr);
-          }
-        }
-      } else {
-        DWORD nRead = BUFSIZ;
-        buff.resize(nRead);
-        while (ReadFile(handle, &buff[0], nRead, &nRead, nullptr) && nRead) {
-          message_pump();
-          standard_input.append(buff.data(), nRead);
-        }
-      }
     }
     #else
-    std::vector<char> buff;
-    ssize_t nread = BUFSIZ;
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    if (flags != -1) {
-      buff.resize(nread);
-      while ((nread = read(fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK), &buff[0], nread)) > 0) {
-        standard_input.append(buff.data(), nread);
+    if (!isatty(fileno(stdin))) {
+      std::vector<char> buff;
+      ssize_t nread = BUFSIZ;
+      int flags = fcntl(fileno(stdin), F_GETFL, 0);
+      if (flags != -1) {
+        buff.resize(nread);
+        while ((nread = read(fcntl(fileno(stdin), F_SETFL, flags | O_NONBLOCK), &buff[0], nread)) > 0) {
+          standard_input.append(buff.data(), nread);
+        }
       }
     }
     #endif
-    return standard_input.c_str();
+    return standard_input;
   }
 
   bool free_stdout_for_child_proc_id(NGS_PROCID proc_id) {
