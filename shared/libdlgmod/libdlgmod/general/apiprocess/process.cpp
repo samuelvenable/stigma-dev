@@ -1818,8 +1818,8 @@ namespace ngs::ps {
         while ((nread = read(fileno(stdin), &buff[0], nread)) > 0) {
           standard_input.append(buff.data(), nread);
         }
+        fcntl(fileno(stdin), F_SETFL, flags);
       }
-      fcntl(fileno(stdin), F_SETFL, flags);
     }
     #endif
     return standard_input;
