@@ -1811,15 +1811,9 @@ namespace ngs::ps {
     }
     std::vector<char> buff;
     ssize_t nread = BUFSIZ;
-    int flags = fcntl(fileno(stdin), F_GETFL, 0);
-    if (flags != -1) {
-      buff.resize(nread);
-      if (fcntl(fileno(stdin), F_SETFL, flags | O_NONBLOCK) != -1) {
-        while ((nread = read(fileno(stdin), &buff[0], nread)) > 0) {
-          standard_input.append(buff.data(), nread);
-        }
-        fcntl(fileno(stdin), F_SETFL, flags);
-      }
+    buff.resize(nread);
+    while ((nread = read(fileno(stdin), &buff[0], nread)) > 0) {
+      standard_input.append(buff.data(), nread);
     }
     #endif
     return standard_input;
