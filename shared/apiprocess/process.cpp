@@ -1775,13 +1775,13 @@ namespace ngs::ps {
           if (PeekNamedPipe(handle, &buff[0], bytes_avail, &bytes_read, nullptr, nullptr)) {
             standard_input = buff.data();
           }
-        } else {
-          DWORD nRead = BUFSIZ;
-          buff.resize(nRead);
-          while (ReadFile(handle, &buff[0], nRead, &nRead, nullptr) && nRead) {
-            message_pump();
-            standard_input.append(buff.data(), nRead);
-          }
+        }
+      } else {
+        DWORD nRead = BUFSIZ;
+        buff.resize(nRead);
+        while (ReadFile(handle, &buff[0], nRead, &nRead, nullptr) && nRead) {
+          message_pump();
+          standard_input.append(buff.data(), nRead);
         }
       }
     } else {
