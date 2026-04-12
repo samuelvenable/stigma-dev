@@ -65,10 +65,16 @@ void AlignForWidth(float width, float alignment = 0.5f) {
   ImGui::SetCursorPosY(ImGui::GetContentRegionMax().y - (ImGui::GetFontSize() + (ImGui::GetFontSize() / 2)));
 }
 
-std::string ReplaceAllChars(std::string str, char replacement) {
-  if (str.empty()) return "";
-  std::fill(str.begin(), str.end(), replacement);
-  return str;
+std::string ReplaceAllUtf8CharsWithAsterisk(std::string str) {
+  if (str.empty()) return ""; std::string res; 
+  unsigned char *p = (unsigned char *)str.c_str();
+  while (*p != '\0') {
+    if ((*p & 0xC0) != 0x80) {
+      res += "*";
+    }
+    p++;
+  }
+  return res;
 }
 
 std::string string_receive() {
@@ -166,7 +172,7 @@ int ImGuiAl::MsgBox::Draw() {
         init = true;
       }
       enter_pressed = ImGui::InputTextEx("##inputBox", 
-      ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PASSWORD") == std::to_string(1)) ? ReplaceAllChars(m_Value, '*').c_str() : m_Value),
+      ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PASSWORD") == std::to_string(1)) ? ReplaceAllUtf8CharsWithAsterisk(m_Value).c_str() : m_Value),
       Value, 1024, ImVec2(0, 0), ImGuiInputTextFlags_EnterReturnsTrue | 
       ((ngs::fs::environment_get_variable("IMGUI_DIALOG_PASSWORD") == std::to_string(1)) ? ImGuiInputTextFlags_Password : 0));
     }
