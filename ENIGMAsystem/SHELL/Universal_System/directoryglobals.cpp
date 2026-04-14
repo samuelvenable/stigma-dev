@@ -65,7 +65,7 @@ std::string get_game_save_id() {
   std::error_code ec;
   #if defined(_WIN32)
   std::string result = add_slash(ngs::fs::environment_get_variable("LOCALAPPDATA")) + 
-  add_slash(get_program_filename());
+  add_slash(filename_change_ext(get_program_filename(), ""));
   #else
   std::string result = add_slash(ngs::fs::environment_get_variable("HOME")) + 
   string(".config/") + add_slash(get_program_filename());
