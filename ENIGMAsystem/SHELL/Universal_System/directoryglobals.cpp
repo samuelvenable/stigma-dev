@@ -51,4 +51,26 @@ bool set_working_directory(std::string dname) {
   return ngs::fs::directory_set_current_working(dname);
 }
 
+std::string get_game_save_id() {
+  auto add_slash = [](std::string dir) {
+    #if defined(_WIN32)
+    if (!dir.empty() && *dir.rbegin() != '\\')
+    return std::string(dir + "\\");
+    #else
+    if (!dir.empty() && *dir.rbegin() != '/') 
+    return std::string(dir + "/");
+    #endif
+    return dir;
+  };
+  std::error_code ec;
+  #if defined(_WIN32)
+  enigma_user::game_save_id = add_slash(ngs::fs::environment_get_variable("LOCALAPPDATA")) + 
+  add_slash(std::to_string(enigma_user::game_id));
+  #else
+  enigma_user::game_save_id = add_slash(ngs::fs::environment_get_variable("HOME")) + 
+  string(".config/") + add_slash(std::to_string(enigma_user::game_id));
+  #endif
+  std::filesystem::create_directories(enigma_user::game_save_id, ec);
+}
+
 } // namespace enigma_user
