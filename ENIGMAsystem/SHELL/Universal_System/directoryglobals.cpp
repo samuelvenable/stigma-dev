@@ -64,13 +64,14 @@ std::string get_game_save_id() {
   };
   std::error_code ec;
   #if defined(_WIN32)
-  enigma_user::game_save_id = add_slash(ngs::fs::environment_get_variable("LOCALAPPDATA")) + 
+  std::string result = add_slash(ngs::fs::environment_get_variable("LOCALAPPDATA")) + 
   add_slash(std::to_string(enigma_user::game_id));
   #else
-  enigma_user::game_save_id = add_slash(ngs::fs::environment_get_variable("HOME")) + 
+  std::string result = add_slash(ngs::fs::environment_get_variable("HOME")) + 
   string(".config/") + add_slash(std::to_string(enigma_user::game_id));
   #endif
-  std::filesystem::create_directories(enigma_user::game_save_id, ec);
+  std::filesystem::create_directories(result, ec);
+  return result;
 }
 
 } // namespace enigma_user
