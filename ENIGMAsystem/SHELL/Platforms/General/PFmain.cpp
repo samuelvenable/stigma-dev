@@ -430,7 +430,6 @@ int os_type = os_sunos;
 int os_type = os_unknown;
 #endif
 
-std::string game_save_id = "";
 std::string keyboard_string = "";
 double fps = 0;
 unsigned long delta_time = 0;
