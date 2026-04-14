@@ -70,7 +70,7 @@ std::string get_game_save_id() {
   std::string result = add_slash(ngs::fs::environment_get_variable("HOME")) + 
   string(".config/") + add_slash(std::to_string(enigma_user::game_id));
   #endif
-  std::filesystem::create_directories(result, ec);
+  ghc::filesystem::create_directories(result, ec);
   return result;
 }
 
