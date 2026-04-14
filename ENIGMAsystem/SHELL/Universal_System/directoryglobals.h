@@ -34,6 +34,7 @@
 namespace enigma_user {
 
 std::string get_working_directory();
+bool set_working_directory(std::string dname);
 std::string get_program_directory();
 std::string get_program_filename();
 std::string get_program_pathname();
