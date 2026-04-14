@@ -65,10 +65,10 @@ std::string get_game_save_id() {
   std::error_code ec;
   #if defined(_WIN32)
   std::string result = add_slash(ngs::fs::environment_get_variable("LOCALAPPDATA")) + 
-  add_slash(std::to_string(enigma_user::game_id));
+  add_slash(std::to_string(get_program_filename()));
   #else
   std::string result = add_slash(ngs::fs::environment_get_variable("HOME")) + 
-  string(".config/") + add_slash(std::to_string(enigma_user::game_id));
+  string(".config/") + add_slash(std::to_string(get_program_filename()));
   #endif
   ghc::filesystem::create_directories(result, ec);
   return result;
