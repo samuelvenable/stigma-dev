@@ -31,6 +31,8 @@
 
 namespace enigma_user {
 
+extern int game_id;
+
 std::string get_working_directory() {
   return ngs::fs::directory_get_current_working();
 }
@@ -65,12 +67,11 @@ std::string get_game_save_id() {
   std::error_code ec;
   #if defined(_WIN32)
   std::string result = add_slash(ngs::fs::environment_get_variable("LOCALAPPDATA")) + 
-  add_slash(filename_change_ext(get_program_filename(), ""));
+  add_slash(game_id);
   #else
   std::string result = add_slash(ngs::fs::environment_get_variable("HOME")) + 
-  string(".config/") + add_slash(get_program_filename());
+  string(".config/") + add_slash(game_id);
   #endif
-  ghc::filesystem::create_directories(result, ec);
   return result;
 }
 
