@@ -31,7 +31,7 @@
 
 namespace enigma_user {
 
-extern int game_id;
+extern unsigned game_id;
 
 std::string get_working_directory() {
   return ngs::fs::directory_get_current_working();
