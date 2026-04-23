@@ -780,8 +780,8 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
   std::filesystem::path resFname = filename_path(gameFname.u8string()) + "assets";
   std::filesystem::create_directories(resFname, ec);
   resFname = filename_path(gameFname.u8string()) + "assets/data.res";
-  std::filesystem::copy("fonts", filename_path(gameFname.u8string()) + "assets/fonts", std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
-  std::filesystem::copy(LIBDLGMOD_SRC, filename_path(gameFname.u8string()) + LIBDLGMOD_DST, std::filesystem::copy_options::overwrite_existing, ec);
+  if (std::string(extensions::targetAPI.widgetSys) == std::string("SDL")) std::filesystem::copy("fonts", filename_path(gameFname.u8string()) + "assets/fonts", std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+  if (std::string(extensions::targetAPI.widgetSys) == std::string("Native")) std::filesystem::copy(LIBDLGMOD_SRC, filename_path(gameFname.u8string()) + LIBDLGMOD_DST, std::filesystem::copy_options::overwrite_existing, ec);
   std::filesystem::rename(datares, resFname, ec);
  
   auto resname = resFname.u8string();
