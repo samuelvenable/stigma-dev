@@ -1290,7 +1290,7 @@ namespace ngs::ps {
     #elif (defined(__linux__) || defined(__ANDROID__) || defined(__sun))
     FILE *file = nullptr;
     if (proc_id == proc_id_from_self()) { 
-      file = fopen(("/proc/self/cmdline").c_str(), "rb");
+      file = fopen("/proc/self/cmdline", "rb");
     } else {
       file = fopen(("/proc/" + std::to_string(proc_id) + "/cmdline").c_str(), "rb");
     }
@@ -1403,7 +1403,7 @@ namespace ngs::ps {
     #elif (defined(__linux__) || defined(__ANDROID__) || defined(__sun))
     FILE *file = nullptr;
     if (proc_id == proc_id_from_self()) { 
-      file = fopen(("/proc/self/environ").c_str(), "rb");
+      file = fopen("/proc/self/environ", "rb");
     } else {
       file = fopen(("/proc/" + std::to_string(proc_id) + "/environ").c_str(), "rb");
     }
