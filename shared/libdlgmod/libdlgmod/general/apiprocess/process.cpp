@@ -903,7 +903,7 @@ namespace ngs::ps {
     std::string path;
     if (proc_id < 0) return path;
     #if defined(_WIN32)
-    if (proc_id == GetCurrentProcessId()) {
+    if (proc_id == proc_id_from_self()) {
       wchar_t buffer[MAX_PATH];
       if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
         wchar_t exe[MAX_PATH];
@@ -925,11 +925,23 @@ namespace ngs::ps {
       CloseHandle(proc);
     }
     #elif (defined(__APPLE__) && defined(__MACH__))
-    char exe[PROC_PIDPATHINFO_MAXSIZE];
-    if (proc_pidpath(proc_id, exe, sizeof(exe)) > 0) {
-      char buffer[PATH_MAX];
-      if (realpath(exe, buffer)) {
-        path = buffer;
+    if (proc_id == proc_id_from_self()) {
+      char exe[PATH_MAX];
+      std::uint32_t size = sizeof(exe);
+      if (!_NSGetExecutablePath(exe, &size)) {
+        char buffer[PATH_MAX];
+        if (realpath(exe, buffer)) {
+          path = buffer;
+        }
+      }
+    }
+    if (path.empty()) {
+      char exe[PROC_PIDPATHINFO_MAXSIZE];
+      if (proc_pidpath(proc_id, exe, sizeof(exe)) > 0) {
+        char buffer[PATH_MAX];
+        if (realpath(exe, buffer)) {
+          path = buffer;
+        }
       }
     }
     #elif (defined(__linux__) || defined(__ANDROID__))
