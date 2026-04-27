@@ -52,16 +52,12 @@
 #include <share.h>
 #include <io.h>
 #else
-#if defined(__APPLE__) && defined(__MACH__)
+#if (defined(__APPLE__) && defined(__MACH__))
 #include <sysdir.h>
-#include <TargetConditionals.h>
-#if (defined(TARGET_OS_OSX) && TARGET_OS_OSX)
-#include <libproc.h>
 #include <mach-o/dyld.h>
-#endif
-#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#elif (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
 #include <sys/sysctl.h>
-#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__)
+#if (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__))
 #if defined(__OpenBSD__)
 #include <kvm.h>
 #endif
@@ -73,13 +69,14 @@
 
 #if defined(_WIN32)
 using std::wstring;
+#elif (defined(__APPLE__) && defined(__MACH__))
+using std::uint32_t;
 #endif
 
 using std::string;
 using std::stringstream;
 using std::vector;
 using std::size_t;
-using std::uint32_t;
 
 namespace ngs::fs {
 
@@ -392,7 +389,7 @@ namespace ngs::fs {
         }
       }
       CoTaskMemFree(ptr); 
-      #elif defined(__APPLE__) && defined(__MACH__)
+      #elif (defined(__APPLE__) && defined(__MACH__))
       char buf[PATH_MAX];
       sysdir_search_path_directory_t fid;
       sysdir_search_path_enumeration_state state;
@@ -520,7 +517,7 @@ namespace ngs::fs {
         path = narrow(exe);
       }
     }
-    #elif (defined(__APPLE__) && defined(__MACH__) && defined(TARGET_OS_OSX) && TARGET_OS_OSX)
+    #elif (defined(__APPLE__) && defined(__MACH__))
     char exe[PATH_MAX];
     uint32_t size = sizeof(exe);
     if (!_NSGetExecutablePath(exe, &size)) {
@@ -529,21 +526,12 @@ namespace ngs::fs {
         path = buffer;
       }
     }
-    if (path.empty()) {
-      char exe[PROC_PIDPATHINFO_MAXSIZE];
-      if (proc_pidpath(getpid(), exe, sizeof(exe)) > 0) {
-        char buffer[PATH_MAX];
-        if (realpath(exe, buffer)) {
-          path = buffer;
-        }
-      }
-    }
     #elif defined(__linux__)
     char exe[PATH_MAX];
     if (realpath("/proc/self/exe", exe)) {
       path = exe;
     }
-    #elif defined(__FreeBSD__) || defined(__DragonFly__)
+    #elif (defined(__FreeBSD__) || defined(__DragonFly__))
     int mib[4]; 
     size_t len = 0;
     mib[0] = CTL_KERN;
