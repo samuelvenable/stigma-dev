@@ -75,8 +75,10 @@ using std::wstring;
 #endif
 
 using std::string;
+using std::stringstream;
 using std::vector;
 using std::size_t;
+using std::uint32_t;
 
 namespace ngs::fs {
 
@@ -220,7 +222,7 @@ namespace ngs::fs {
 
     vector<string> string_split(string str, char delimiter) {
       vector<string> vec;
-      std::stringstream sstr(str);
+      stringstream sstr(str);
       string tmp;
       while (std::getline(sstr, tmp, delimiter)) {
         message_pump();
@@ -508,7 +510,7 @@ namespace ngs::fs {
   }
 
   string executable_get_pathname() {
-    std::string path;
+    string path;
     #if defined(_WIN32)
     wchar_t buffer[MAX_PATH];
     if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
@@ -519,7 +521,7 @@ namespace ngs::fs {
     }
     #elif (defined(__APPLE__) && defined(__MACH__) && defined(TARGET_OS_OSX) && TARGET_OS_OSX)
     char exe[PATH_MAX];
-    std::uint32_t size = sizeof(exe);
+    uint32_t size = sizeof(exe);
     if (!_NSGetExecutablePath(exe, &size)) {
       char buffer[PATH_MAX];
       if (realpath(exe, buffer)) {
@@ -542,13 +544,13 @@ namespace ngs::fs {
     }
     #elif defined(__FreeBSD__) || defined(__DragonFly__)
     int mib[4]; 
-    std::size_t len = 0;
+    size_t len = 0;
     mib[0] = CTL_KERN;
     mib[1] = KERN_PROC;
     mib[2] = KERN_PROC_PATHNAME;
     mib[3] = -1;
     if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
-      std::string strbuff;
+      string strbuff;
       strbuff.resize(len, '\0');
       char *exe = strbuff.data();
       if (!sysctl(mib, 4, exe, &len, nullptr, 0)) {
@@ -560,13 +562,13 @@ namespace ngs::fs {
     }
     #elif defined(__NetBSD__)
     int mib[4]; 
-    std::size_t len = 0;
+    size_t len = 0;
     mib[0] = CTL_KERN;
     mib[1] = KERN_PROC_ARGS;
     mib[2] = -1;
     mib[3] = KERN_PROC_PATHNAME;
     if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
-      std::string strbuff;
+      string strbuff;
       strbuff.resize(len, '\0');
       char *exe = strbuff.data();
       if (!sysctl(mib, 4, exe, &len, nullptr, 0)) {
@@ -577,9 +579,9 @@ namespace ngs::fs {
       }
     }
     #elif defined(__OpenBSD__)
-    auto is_exe = [](std::string exe) {
+    auto is_exe = [](string exe) {
       int cntp = 0;
-      std::string res;
+      string res;
       kvm_t *kd = nullptr;
       kinfo_file *kif = nullptr;
       bool error = false;
@@ -598,8 +600,8 @@ namespace ngs::fs {
             }
             if (res.empty() && !error) {
               error = true;
-              std::size_t last_slash_pos = exe.find_last_of("/");
-              if (last_slash_pos != std::string::npos) {
+              size_t last_slash_pos = exe.find_last_of("/");
+              if (last_slash_pos != string::npos) {
                 exe = exe.substr(0, last_slash_pos + 1) + kif[i].p_comm;
                 goto fallback;
               }
@@ -611,15 +613,15 @@ namespace ngs::fs {
       kvm_close(kd);
       return res;
     };
-    auto cppstr_getenv = [](std::string name) {
+    auto cppstr_getenv = [](string name) {
       const char *cresult = getenv(name.c_str());
-      std::string result = cresult ? cresult : "";
+      string result = cresult ? cresult : "";
       return result;
     };
     int cntp = 0;
     kvm_t *kd = nullptr;
     kinfo_proc *proc_info = nullptr;
-    std::vector<std::string> buffer;
+    std::vector<string> buffer;
     bool error = false, retried = false;
     kd = kvm_openfiles(nullptr, nullptr, nullptr, KVM_NO_FILES, nullptr);
     if (!kd) {
@@ -636,20 +638,20 @@ namespace ngs::fs {
     }
     kvm_close(kd);
     if (!buffer.empty()) {
-      std::string argv0;
+      string argv0;
       if (!buffer[0].empty()) {
         fallback:
-        std::size_t slash_pos = buffer[0].find('/');
-        std::size_t colon_pos = buffer[0].find(':');
+        size_t slash_pos = buffer[0].find('/');
+        size_t colon_pos = buffer[0].find(':');
         if (slash_pos == 0) {
           argv0 = buffer[0];
           path = is_exe(argv0);
-        } else if (slash_pos == std::string::npos || slash_pos > colon_pos) { 
-          std::string penv = cppstr_getenv("PATH");
+        } else if (slash_pos == string::npos || slash_pos > colon_pos) { 
+          string penv = cppstr_getenv("PATH");
           if (!penv.empty()) {
             retry:
-            std::string tmp;
-            std::stringstream sstr(penv);
+            string tmp;
+            stringstream sstr(penv);
             while (std::getline(sstr, tmp, ':')) {
               argv0 = tmp + "/" + buffer[0];
               path = is_exe(argv0);
@@ -664,7 +666,7 @@ namespace ngs::fs {
           if (path.empty() && !retried) {
             retried = true;
             penv = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin";
-            std::string home = cppstr_getenv("HOME");
+            string home = cppstr_getenv("HOME");
             if (!home.empty()) {
               penv = home + "/bin:" + penv;
             }
@@ -672,7 +674,7 @@ namespace ngs::fs {
           }
         }
         if (path.empty() && slash_pos > 0) {
-          std::string pwd = cppstr_getenv("PWD");
+          string pwd = cppstr_getenv("PWD");
           if (!pwd.empty()) {
             argv0 = pwd + "/" + buffer[0];
             path = is_exe(argv0);
@@ -680,7 +682,7 @@ namespace ngs::fs {
           if (path.empty()) {
             char cwd[PATH_MAX];
             if (getcwd(cwd, PATH_MAX)) {
-              argv0 = std::string(cwd) + "/" + buffer[0];
+              argv0 = string(cwd) + "/" + buffer[0];
               path = is_exe(argv0);
             }
           }
@@ -689,7 +691,7 @@ namespace ngs::fs {
       if (path.empty() && !error) {
         error = true;
         buffer.clear();
-        std::string underscore = cppstr_getenv("_");
+        string underscore = cppstr_getenv("_");
         if (!underscore.empty()) {
           buffer.push_back(underscore);
           goto fallback;
