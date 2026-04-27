@@ -695,18 +695,19 @@ namespace ngs::fs {
       }
     }
     #elif defined(__sun)
-    char exe[PATH_MAX];
     const char *execname = getexecname();
     if (execname) {
+      char exe[PATH_MAX];
       if (realpath(execname, exe)) {
         path = exe;
-        goto finish;
       }
     }
-    if (realpath("/proc/self/path/a.out", exe)) {
-      path = exe;
+    if (path.empty()) {
+      char exe[PATH_MAX];
+      if (realpath("/proc/self/path/a.out", exe)) {
+        path = exe;
+      }
     }
-    finish:
     #endif
     return path;
   }
