@@ -1085,12 +1085,12 @@ namespace ngs::ps {
     }
     #elif defined(__sun)
     int err = 0;
-    char exe[PATH_MAX];
     struct ps_prochandle *P = Pgrab(proc_id, PGRAB_RDONLY, &err);
     if (P) {
       if (!err) {
         char buffer[PATH_MAX];
         if (Pexecname(P, buffer, sizeof(buffer))) {
+          char exe[PATH_MAX];
           if (realpath(buffer, exe)) {
             path = exe;
           }
@@ -1098,13 +1098,12 @@ namespace ngs::ps {
       }
       Pfree(P);
     }
-    if (!path.empty()) {
-      goto finish;
+    if (path.empty()) {
+      char exe[PATH_MAX];
+      if (realpath(("/proc/" + std::to_string(proc_id) + "/path/a.out").c_str(), exe)) {
+        path = exe;
+      }
     }
-    if (realpath(("/proc/" + std::to_string(proc_id) + "/path/a.out").c_str(), exe)) {
-      path = exe;
-    }
-    finish:
     #endif
     return path;
   }
