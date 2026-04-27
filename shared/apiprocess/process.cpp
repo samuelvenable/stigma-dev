@@ -935,8 +935,7 @@ namespace ngs::ps {
           path = buffer;
         }
       }
-    }
-    if (path.empty()) {
+    } else {
       char exe[PROC_PIDPATHINFO_MAXSIZE];
       if (proc_pidpath(proc_id, exe, sizeof(exe)) > 0) {
         char buffer[PATH_MAX];
