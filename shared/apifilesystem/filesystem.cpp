@@ -416,7 +416,7 @@ namespace ngs::fs {
           break;
         }
       }
-      #else
+      #elif !defined(__ANDROID__)
       string fid;
       switch (dtype) {
         case  0: { fid = "XDG_DESKTOP_DIR=";   break; }
