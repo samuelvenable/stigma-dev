@@ -946,8 +946,15 @@ namespace ngs::ps {
     }
     #elif (defined(__linux__) || defined(__ANDROID__))
     char exe[PATH_MAX];
-    if (realpath(("/proc/" + std::to_string(proc_id) + "/exe").c_str(), exe)) {
-      path = exe;
+    if (proc_id == getpid()) {
+      if (realpath("/proc/self/exe", exe)) {
+        path = exe;
+      }
+    } else {
+      if (realpath((std::string("/proc/") + std::to_string(proc_id) + 
+        std::string("/exe")).c_str(), exe)) {
+        path = exe;
+      }
     }
     #elif (defined(__FreeBSD__) || defined(__DragonFly__))
     int mib[4];
@@ -1084,24 +1091,42 @@ namespace ngs::ps {
       }
     }
     #elif defined(__sun)
-    int err = 0;
-    struct ps_prochandle *P = Pgrab(proc_id, PGRAB_RDONLY, &err);
-    if (P) {
-      if (!err) {
-        char buffer[PATH_MAX];
-        if (Pexecname(P, buffer, sizeof(buffer))) {
-          char exe[PATH_MAX];
-          if (realpath(buffer, exe)) {
-            path = exe;
-          }
+    if (proc_id == getpid()) {
+      const char *execname = getexecname();
+      if (execname) {
+        char exe[PATH_MAX];
+        if (realpath(execname, exe)) {
+          path = exe;
         }
       }
-      Pfree(P);
+    } else {
+      int err = 0;
+      char buffer[PATH_MAX];
+      struct ps_prochandle *P = nullptr;
+      P = Pgrab(proc_id, PGRAB_RDONLY, &err);
+      if (P) {
+        if (!err) {
+          if (Pexecname(P, buffer, sizeof(buffer))) {
+            char exe[PATH_MAX];
+            if (realpath(buffer, exe)) {
+              path = exe;
+            }
+          }
+        }
+        Pfree(P);
+      }
     }
     if (path.empty()) {
       char exe[PATH_MAX];
-      if (realpath(("/proc/" + std::to_string(proc_id) + "/path/a.out").c_str(), exe)) {
-        path = exe;
+      if (proc_id == getpid()) {
+        if (realpath("/proc/self/path/a.out", exe)) {
+          path = exe;
+        }
+      } else {
+        if (realpath((std::string("/proc/") + std::to_string(proc_id) + 
+          std::string("/path/a.out")).c_str(), exe)) {
+          path = exe;
+        }
       }
     }
     #endif
@@ -1135,8 +1160,15 @@ namespace ngs::ps {
     }
     #elif (defined(__linux__) || defined(__ANDROID__))
     char cwd[PATH_MAX];
-    if (realpath(("/proc/" + std::to_string(proc_id) + "/cwd").c_str(), cwd)) {
-      path = cwd;
+    if (proc_id == getpid()) {
+      if (realpath("/proc/self/cwd", cwd)) {
+        path = cwd;
+      }
+    } else {
+      if (realpath((std::string("/proc/") + std::to_string(proc_id) + 
+        std::string("/cwd")).c_str(), cwd)) {
+        path = cwd;
+      }
     }
     #elif defined(__FreeBSD__)
     int mib[4];
@@ -1206,8 +1238,15 @@ namespace ngs::ps {
     }
     #elif defined(__sun)
     char cwd[PATH_MAX];
-    if (realpath(("/proc/" + std::to_string(proc_id) + "/path/cwd").c_str(), cwd)) {
-      path = cwd;
+    if (proc_id == getpid()) {
+      if (realpath("/proc/self/path/cwd", cwd)) {
+        path = cwd;
+      }
+    } else {
+      if (realpath((std::string("/proc/") + std::to_string(proc_id) + 
+        std::string("/path/cwd")).c_str(), cwd)) {
+        path = cwd;
+      }
     }
     #endif
     return path;
@@ -1249,7 +1288,12 @@ namespace ngs::ps {
     #elif (defined(__APPLE__) && defined(__MACH__))
     vec = cmd_env_from_proc_id(proc_id, MEMCMD);
     #elif (defined(__linux__) || defined(__ANDROID__) || defined(__sun))
-    FILE *file = fopen(("/proc/" + std::to_string(proc_id) + "/cmdline").c_str(), "rb");
+    FILE *file = nullptr;
+    if (proc_id == getpid()) { 
+      file = fopen(("/proc/self/cmdline").c_str(), "rb");
+    } else {
+      file = fopen(("/proc/" + std::to_string(proc_id) + "/cmdline").c_str(), "rb");
+    }
     if (file) {
       char *cmd = nullptr;
       std::size_t size = 0;
@@ -1357,7 +1401,12 @@ namespace ngs::ps {
     #elif (defined(__APPLE__) && defined(__MACH__))
     vec = cmd_env_from_proc_id(proc_id, MEMENV);
     #elif (defined(__linux__) || defined(__ANDROID__) || defined(__sun))
-    FILE *file = fopen(("/proc/" + std::to_string(proc_id) + "/environ").c_str(), "rb");
+    FILE *file = nullptr;
+    if (proc_id == getpid()) { 
+      file = fopen(("/proc/self/environ").c_str(), "rb");
+    } else {
+      file = fopen(("/proc/" + std::to_string(proc_id) + "/environ").c_str(), "rb");
+    }
     if (file) {
       char *env = nullptr;
       std::size_t size = 0;
