@@ -32,6 +32,7 @@
 #include <random>
 #include <thread>
 
+#include <cstdint>
 #include <climits>
 #include <cstdlib>
 #include <cstring>
