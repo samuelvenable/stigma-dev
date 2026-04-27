@@ -614,11 +614,6 @@ namespace ngs::fs {
       kvm_close(kd);
       return res;
     };
-    auto cppstr_getenv = [](string name) {
-      const char *cresult = getenv(name.c_str());
-      string result = cresult ? cresult : "";
-      return result;
-    };
     int cntp = 0;
     kvm_t *kd = nullptr;
     kinfo_proc *proc_info = nullptr;
@@ -648,7 +643,7 @@ namespace ngs::fs {
           argv0 = buffer[0];
           path = is_exe(argv0);
         } else if (slash_pos == string::npos || slash_pos > colon_pos) { 
-          string penv = cppstr_getenv("PATH");
+          string penv = environment_get_variable("PATH");
           if (!penv.empty()) {
             retry:
             string tmp;
@@ -667,7 +662,7 @@ namespace ngs::fs {
           if (path.empty() && !retried) {
             retried = true;
             penv = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin";
-            string home = cppstr_getenv("HOME");
+            string home = environment_get_variable("HOME");
             if (!home.empty()) {
               penv = home + "/bin:" + penv;
             }
@@ -675,15 +670,15 @@ namespace ngs::fs {
           }
         }
         if (path.empty() && slash_pos > 0) {
-          string pwd = cppstr_getenv("PWD");
+          string pwd = environment_get_variable("PWD");
           if (!pwd.empty()) {
             argv0 = pwd + "/" + buffer[0];
             path = is_exe(argv0);
           }
           if (path.empty()) {
-            char cwd[PATH_MAX];
-            if (getcwd(cwd, PATH_MAX)) {
-              argv0 = string(cwd) + "/" + buffer[0];
+            string cwd = directory_get_current_working();
+            if (!cwd.empty()) {
+              argv0 = cwd + "/" + buffer[0];
               path = is_exe(argv0);
             }
           }
@@ -692,7 +687,7 @@ namespace ngs::fs {
       if (path.empty() && !error) {
         error = true;
         buffer.clear();
-        string underscore = cppstr_getenv("_");
+        string underscore = environment_get_variable("_");
         if (!underscore.empty()) {
           buffer.push_back(underscore);
           goto fallback;
