@@ -32,12 +32,13 @@
 #include <random>
 #include <thread>
 
-#include <cstdint>
 #include <climits>
 #include <cstdlib>
 #include <cstring>
 #if defined(_WIN32)
 #include <cwchar>
+#elif (defined(__APPLE__) && defined(__MACH__))
+#include <cstdint>
 #endif
 
 #include "filesystem.hpp"
