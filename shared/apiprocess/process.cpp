@@ -56,6 +56,7 @@
 #include <psapi.h>
 #include <io.h>
 #elif (defined(__APPLE__) && defined(__MACH__))
+#include <mach-o/dyld.h>
 #include <sys/sysctl.h>
 #include <libproc.h>
 #elif (defined(__linux__) || defined(__ANDROID__))
