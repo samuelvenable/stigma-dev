@@ -70,6 +70,7 @@
 #include <sys/sysctl.h>
 #include <kvm.h>
 #elif defined(__sun)
+#include <cerrno>
 #include <kvm.h>
 #include <dirent.h>
 #include <libproc.h>
@@ -1070,15 +1071,12 @@ namespace ngs::ps {
         }
       }
     }
-    if (!path.empty()) {
-      errno = 0;
-    }
     #elif defined(__sun)
     int err = 0;
     char exe[PATH_MAX];
     struct ps_prochandle *P = Pgrab(proc_id, PGRAB_RDONLY, &err);
     if (P) {
-      if (!err && !errno) {
+      if (!err) {
         char buffer[PATH_MAX];
         if (Pexecname(P, buffer, sizeof(buffer))) {
           if (realpath(buffer, exe)) {
