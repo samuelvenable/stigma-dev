@@ -446,7 +446,7 @@ namespace ngs::ps {
     DIR *proc = opendir("/proc");
     struct dirent *ent = nullptr;
     NGS_PROCID tgid = 0;
-    if (proc == nullptr) return vec;
+    if (!proc) return vec;
     while ((ent = readdir(proc))) {
       if (!isdigit(*ent->d_name))
         continue;
@@ -550,7 +550,7 @@ namespace ngs::ps {
     return (!kill(proc_id, SIGSTOP));
     #else
     HANDLE proc = open_process_with_debug_privilege(proc_id);
-    if (proc == nullptr) return false;
+    if (!proc) return false;
     typedef NTSTATUS (__stdcall *NTSP)(IN HANDLE ProcessHandle);
     HMODULE hModule = GetModuleHandleW(L"ntdll.dll");
     if (!hModule) return false;
@@ -570,7 +570,7 @@ namespace ngs::ps {
     return (!kill(proc_id, SIGCONT));
     #else
     HANDLE proc = open_process_with_debug_privilege(proc_id);
-    if (proc == nullptr) return false;
+    if (!proc) return false;
     typedef NTSTATUS (__stdcall *NTRP)(IN HANDLE ProcessHandle);
     HMODULE hModule = GetModuleHandleW(L"ntdll.dll");
     if (!hModule) return false;
@@ -590,7 +590,7 @@ namespace ngs::ps {
     return (!kill(proc_id, SIGKILL));
     #else
     HANDLE proc = open_process_with_debug_privilege(proc_id);
-    if (proc == nullptr) return false;
+    if (!proc) return false;
     bool result = TerminateProcess(proc, 0);
     CloseHandle(proc);
     return result;
@@ -914,7 +914,7 @@ namespace ngs::ps {
       }
     } else {
       HANDLE proc = open_process_with_debug_privilege(proc_id);
-      if (proc == nullptr) return path;
+      if (!proc) return path;
       wchar_t buffer[MAX_PATH];
       DWORD size = sizeof(buffer);
       if (QueryFullProcessImageNameW(proc, 0, buffer, &size)) {
@@ -1147,7 +1147,7 @@ namespace ngs::ps {
       }
     } else {
       HANDLE proc = open_process_with_debug_privilege(proc_id);
-      if (proc == nullptr) return path;
+      if (!proc) return path;
       std::vector<wchar_t> cwd = cmd_env_cwd_from_proc(proc, MEMCWD);
       if (!buffer.empty()) {
         wchar_t buffer[MAX_PATH];
@@ -1337,7 +1337,7 @@ namespace ngs::ps {
     if (proc_id < 0) return vec;
     #if defined(_WIN32)
     HANDLE proc = open_process_with_debug_privilege(proc_id);
-    if (proc == nullptr) return vec;
+    if (!proc) return vec;
     int cmdsize = 0;
     std::vector<wchar_t> buffer = cmd_env_cwd_from_proc(proc, MEMCMD);
     if (!buffer.empty()) {
@@ -1453,7 +1453,7 @@ namespace ngs::ps {
     if (proc_id < 0) return vec;
     #if defined(_WIN32)
     HANDLE proc = open_process_with_debug_privilege(proc_id);
-    if (proc == nullptr) return vec;
+    if (!proc) return vec;
     std::vector<wchar_t> buffer = cmd_env_cwd_from_proc(proc, MEMENV);
     int i = 0;
     if (!buffer.empty()) {
@@ -1664,12 +1664,12 @@ namespace ngs::ps {
       }
       close(p_stdin[0]);
       close(p_stdout[1]);
-      if (infp == nullptr) {
+      if (!infp) {
         close(p_stdin[1]);
       } else {
         *infp = p_stdin[1];
       }
-      if (outfp == nullptr) {
+      if (!outfp) {
         close(p_stdout[0]);
       } else {
         *outfp = p_stdout[0];
