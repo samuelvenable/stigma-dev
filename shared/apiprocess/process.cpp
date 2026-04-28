@@ -1137,32 +1137,55 @@ namespace ngs::ps {
     std::string path;
     if (proc_id < 0) return path;
     #if defined(_WIN32)
-    HANDLE proc = open_process_with_debug_privilege(proc_id);
-    if (proc == nullptr) return path;
-    std::vector<wchar_t> buffer = cmd_env_cwd_from_proc(proc, MEMCWD);
-    if (!buffer.empty()) {
+    if (proc_id == proc_id_from_self()) {
       wchar_t cwd[MAX_PATH];
-      if (_wfullpath(cwd, &buffer[0], MAX_PATH)) {
-        path = narrow(cwd);
-        if (!path.empty() && std::count(path.begin(), path.end(), '\\') > 1 && path.back() == '\\') {
-          path = path.substr(0, path.length() - 1);
+      if (GetCurrentDirectoryW(MAX_PATH, cwd)) {
+        wchar_t buffer[MAX_PATH];
+        if (_wfullpath(buffer, cwd, MAX_PATH)) {
+          path = narrow(buffer);
+        } 
+      }
+    } else {
+      HANDLE proc = open_process_with_debug_privilege(proc_id);
+      if (proc == nullptr) return path;
+      std::vector<wchar_t> cwd = cmd_env_cwd_from_proc(proc, MEMCWD);
+      if (!buffer.empty()) {
+        wchar_t buffer[MAX_PATH];
+        if (_wfullpath(buffer, &cwd[0], MAX_PATH)) {
+          path = narrow(buffer);
+          if (!path.empty() && std::count(path.begin(), path.end(), '\\') > 1 && path.back() == '\\') {
+            path = path.substr(0, path.length() - 1);
+          }
         }
       }
     }
     CloseHandle(proc);
     #elif (defined(__APPLE__) && defined(__MACH__))
-    proc_vnodepathinfo vpi;
-    if (proc_pidinfo(proc_id, PROC_PIDVNODEPATHINFO, 0, &vpi, sizeof(vpi)) > 0) {
-      char buffer[PATH_MAX];
-      if (realpath(vpi.pvi_cdir.vip_path, buffer)) {
-        path = buffer;
+    if (proc_id == proc_id_from_self()) {
+      char cwd[PATH_MAX];
+      if (getcwd(cwd, PATH_MAX)) {
+        char buffer[PATH_MAX];
+        if (realpath(cwd, buffer)) {
+           path = buffer;
+        }
+      }
+    } else {
+      proc_vnodepathinfo vpi;
+      if (proc_pidinfo(proc_id, PROC_PIDVNODEPATHINFO, 0, &vpi, sizeof(vpi)) > 0) {
+        char cwd[PATH_MAX];
+        if (realpath(vpi.pvi_cdir.vip_path, cwd)) {
+          path = cwd;
+        }
       }
     }
     #elif (defined(__linux__) || defined(__ANDROID__))
     char cwd[PATH_MAX];
     if (proc_id == proc_id_from_self()) {
-      if (realpath("/proc/self/cwd", cwd)) {
-        path = cwd;
+      if (getcwd(cwd, PATH_MAX)) {
+        char buffer[PATH_MAX];
+        if (realpath(cwd, buffer)) {
+           path = buffer;
+        }
       }
     } else {
       if (realpath((std::string("/proc/") + std::to_string(proc_id) + 
@@ -1171,47 +1194,49 @@ namespace ngs::ps {
       }
     }
     #elif defined(__FreeBSD__)
-    int mib[4];
-    struct kinfo_file kif;
-    std::size_t len = sizeof(kif);
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_PROC;
-    mib[2] = KERN_PROC_CWD;
-    mib[3] = proc_id;
-    if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
-      memset(&kif, 0, len);
-      if (!sysctl(mib, 4, &kif, &len, nullptr, 0)) {
+    if (proc_id == proc_id_from_self()) {
+      char cwd[PATH_MAX];
+      if (getcwd(cwd, PATH_MAX)) {
         char buffer[PATH_MAX];
-        if (realpath(kif.kf_path, buffer)) {
+        if (realpath(cwd, buffer)) {
            path = buffer;
+        }
+      }
+    } else {
+      int mib[4];
+      struct kinfo_file kif;
+      std::size_t len = sizeof(kif);
+      mib[0] = CTL_KERN;
+      mib[1] = KERN_PROC;
+      mib[2] = KERN_PROC_CWD;
+      mib[3] = proc_id;
+      if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
+        memset(&kif, 0, len);
+        if (!sysctl(mib, 4, &kif, &len, nullptr, 0)) {
+          char cwd[PATH_MAX];
+          if (realpath(kif.kf_path, cwd)) {
+             path = cwd;
+          }
         }
       }
     }
     #elif defined(__DragonFly__)
-    int mib[4];
-    char cwd[PATH_MAX];
-    std::size_t len = sizeof(cwd);
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_PROC;
-    mib[2] = KERN_PROC_CWD;
-    mib[3] = proc_id;
-    if (!sysctl(mib, 4, cwd, &len, nullptr, 0)) {
-      char buffer[PATH_MAX];
-      if (realpath(cwd, buffer)) {
-        path = buffer;
+    if (proc_id == proc_id_from_self()) {
+      char cwd[PATH_MAX];
+      if (getcwd(cwd, PATH_MAX)) {
+        char buffer[PATH_MAX];
+        if (realpath(cwd, buffer)) {
+           path = buffer;
+        }
       }
-    }
-    #elif defined(__NetBSD__)
-    int mib[4];
-    std::size_t len = 0;
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_PROC_ARGS;
-    mib[2] = proc_id;
-    mib[3] = KERN_PROC_CWD;
-    if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
-      std::vector<char> vecbuff;
-      vecbuff.resize(len);
-      char *cwd = &vecbuff[0];
+    } else {
+      int mib[4];
+      char cwd[PATH_MAX];
+      std::size_t len = sizeof(cwd);
+      mib[0] = CTL_KERN;
+      mib[1] = KERN_PROC;
+      mib[2] = KERN_PROC_CWD;
+      mib[3] = proc_id;
       if (!sysctl(mib, 4, cwd, &len, nullptr, 0)) {
         char buffer[PATH_MAX];
         if (realpath(cwd, buffer)) {
@@ -1219,28 +1244,69 @@ namespace ngs::ps {
         }
       }
     }
-    #elif defined(__OpenBSD__)
-    int mib[3];
-    std::size_t len = 0;
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_PROC_CWD;
-    mib[2] = proc_id;
-    if (!sysctl(mib, 3, nullptr, &len, nullptr, 0)) {
-      std::vector<char> vecbuff;
-      vecbuff.resize(len);
-      char *cwd = &vecbuff[0];
-      if (!sysctl(mib, 3, cwd, &len, nullptr, 0)) {
+    #elif defined(__NetBSD__)
+    if (proc_id == proc_id_from_self()) {
+      char cwd[PATH_MAX];
+      if (getcwd(cwd, PATH_MAX)) {
         char buffer[PATH_MAX];
         if (realpath(cwd, buffer)) {
-          path = buffer;
+           path = buffer;
+        }
+      }
+    } else {
+      int mib[4];
+      std::size_t len = 0;
+      mib[0] = CTL_KERN;
+      mib[1] = KERN_PROC_ARGS;
+      mib[2] = proc_id;
+      mib[3] = KERN_PROC_CWD;
+      if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
+        std::vector<char> vecbuff;
+        vecbuff.resize(len);
+        char *cwd = &vecbuff[0];
+        if (!sysctl(mib, 4, cwd, &len, nullptr, 0)) {
+          char buffer[PATH_MAX];
+          if (realpath(cwd, buffer)) {
+            path = buffer;
+          }
+        }
+      }
+    }
+    #elif defined(__OpenBSD__)
+    if (proc_id == proc_id_from_self()) {
+      char cwd[PATH_MAX];
+      if (getcwd(cwd, PATH_MAX)) {
+        char buffer[PATH_MAX];
+        if (realpath(cwd, buffer)) {
+           path = buffer;
+        }
+      }
+    } else {
+      int mib[3];
+      std::size_t len = 0;
+      mib[0] = CTL_KERN;
+      mib[1] = KERN_PROC_CWD;
+      mib[2] = proc_id;
+      if (!sysctl(mib, 3, nullptr, &len, nullptr, 0)) {
+        std::vector<char> vecbuff;
+        vecbuff.resize(len);
+        char *cwd = &vecbuff[0];
+        if (!sysctl(mib, 3, cwd, &len, nullptr, 0)) {
+          char buffer[PATH_MAX];
+          if (realpath(cwd, buffer)) {
+            path = buffer;
+          }
         }
       }
     }
     #elif defined(__sun)
     char cwd[PATH_MAX];
     if (proc_id == proc_id_from_self()) {
-      if (realpath("/proc/self/path/cwd", cwd)) {
-        path = cwd;
+      if (getcwd(cwd, PATH_MAX)) {
+        char buffer[PATH_MAX];
+        if (realpath(cwd, buffer)) {
+           path = buffer;
+        }
       }
     } else {
       if (realpath((std::string("/proc/") + std::to_string(proc_id) + 
