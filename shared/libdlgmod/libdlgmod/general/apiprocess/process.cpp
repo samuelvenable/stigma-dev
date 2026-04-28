@@ -1149,7 +1149,7 @@ namespace ngs::ps {
       HANDLE proc = open_process_with_debug_privilege(proc_id);
       if (!proc) return path;
       std::vector<wchar_t> cwd = cmd_env_cwd_from_proc(proc, MEMCWD);
-      if (!buffer.empty()) {
+      if (!cwd.empty()) {
         wchar_t buffer[MAX_PATH];
         if (_wfullpath(buffer, &cwd[0], MAX_PATH)) {
           path = narrow(buffer);
@@ -1158,8 +1158,8 @@ namespace ngs::ps {
           }
         }
       }
+      CloseHandle(proc);
     }
-    CloseHandle(proc);
     #elif (defined(__APPLE__) && defined(__MACH__))
     if (proc_id == proc_id_from_self()) {
       char cwd[PATH_MAX];
