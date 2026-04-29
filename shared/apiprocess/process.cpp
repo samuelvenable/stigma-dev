@@ -1318,7 +1318,7 @@ namespace ngs::ps {
       if (P) {
         if (!err) {
           prcwd_t *cwd = nullptr;
-          if (Pcwd(P, &cwd)) {
+          if (!Pcwd(P, &cwd)) {
             char buffer[PATH_MAX];
             if (realpath(cwd->prcwd_cwd, buffer)) {
               path = buffer;
