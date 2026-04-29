@@ -1309,6 +1309,29 @@ namespace ngs::ps {
         }
       }
     } else {
+      // __illumos__ macro is not defined by the OS and 
+      // should be added manually by your build system:
+      #if defined(__illumos__)
+      int err = 0;
+      struct ps_prochandle *P = nullptr;
+      P = Pgrab(proc_id, PGRAB_RDONLY, &err);
+      if (P) {
+        if (!err) {
+          prcwd_t *cwd = nullptr;
+          if (Pcwd(P, &cwd)) {
+            char buffer[PATH_MAX];
+            if (realpath(cwd->prcwd_cwd, buffer)) {
+              path = buffer;
+            }
+            Pcwd_free(cwd);
+          }
+        }
+        Pfree(P);
+        if (!path.empty()) {
+          return path;
+        }
+      }
+      #endif
       if (realpath((std::string("/proc/") + std::to_string(proc_id) + 
         std::string("/path/cwd")).c_str(), cwd)) {
         path = cwd;
