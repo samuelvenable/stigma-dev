@@ -66,14 +66,14 @@ std::string get_game_save_id() {
   };
   std::error_code ec;
   #if defined(_WIN32)
-  std::string localappdata = environment_get_variable("LOCALAPPDATA");
+  std::string localappdata = ngs::fs::environment_get_variable("LOCALAPPDATA");
   while (!localappdata.empty() && (*localappdata.rbegin() == '\\' || *localappdata.rbegin() == '/')) 
   { localappdata.pop_back(); } ghc::filesystem::create_directories(localappdata, ec);
-  std::string result = add_slash(environment_get_variable("LOCALAPPDATA")) + 
+  std::string result = add_slash(ngs::fs::environment_get_variable("LOCALAPPDATA")) + 
   add_slash(std::to_string(game_id));
   #else
-  ghc::filesystem::create_directories(add_slash(environment_get_variable("HOME")) + std::string(".config"), ec);
-  std::string result = add_slash(environment_get_variable("HOME")) + 
+  ghc::filesystem::create_directories(add_slash(ngs::fs::environment_get_variable("HOME")) + std::string(".config"), ec);
+  std::string result = add_slash(ngs::fs::environment_get_variable("HOME")) + 
   std::string(".config/") + add_slash(std::to_string(game_id));
   #endif
   return result;
