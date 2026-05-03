@@ -27,6 +27,7 @@
 #include <string>
 
 #include "Platforms/General/PFmain.h"
+#include "Platforms/General/PFprogdir.h"
 #include "apifilesystem/ghc/filesystem.hpp"
 
 namespace enigma_user {
