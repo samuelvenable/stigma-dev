@@ -37,8 +37,8 @@ std::string get_working_directory() {
   return ngs::fs::directory_get_current_working();
 }
 
-std::string get_program_filename() {
-  return ngs::fs::executable_get_filename();
+std::string get_program_filename() { 
+  return ngs::fs::executable_get_filename(); 
 }
 
 std::string get_program_directory() { 
