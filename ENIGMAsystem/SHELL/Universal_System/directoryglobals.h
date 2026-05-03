@@ -27,8 +27,9 @@
 #include <string>
 
 #include "estring.h"
-
+#include "Platforms/General/PFmain.h"
 #include "apifilesystem/filesystem.hpp"
+#include "__getexecname/internal.h"
 #include "tempdir/tempdir.h"
 
 namespace enigma_user {
