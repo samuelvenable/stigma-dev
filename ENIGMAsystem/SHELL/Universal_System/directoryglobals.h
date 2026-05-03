@@ -29,7 +29,7 @@
 #include "estring.h"
 
 #include "apifilesystem/filesystem.hpp"
-#include "__getexecname/external.h"
+#include "__getexecname/internal.h"
 #include "tempdir/tempdir.h"
 
 namespace enigma_user {
