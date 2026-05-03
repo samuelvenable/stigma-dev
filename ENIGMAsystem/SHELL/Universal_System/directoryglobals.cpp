@@ -26,7 +26,8 @@
 
 #include <string>
 
-#include "directoryglobals.h"
+#include "Platforms/General/PFmain.h"
+#include "apifilesystem/ghc/filesystem.hpp"
 
 namespace enigma_user {
 
@@ -37,18 +38,15 @@ std::string get_working_directory() {
 }
 
 std::string get_program_filename() {
-  const char *execname = __getexecname();
-  return execname ? filename_name(execname) : ""; 
+  return ngs::fs::executable_get_filename();
 }
 
 std::string get_program_directory() { 
-  const char *execname = __getexecname();
-  return execname ? filename_path(execname) : ""; 
+  return ngs::fs::executable_get_directory(); 
 }
 
 std::string get_program_pathname() { 
-  const char *execname = __getexecname();
-  return execname ? execname : ""; 
+  return ngs::fs::executable_get_pathname(); 
 }
 
 bool set_working_directory(std::string dname) {
