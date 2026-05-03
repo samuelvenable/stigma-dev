@@ -26,8 +26,7 @@
 
 #include <string>
 
-#include "Platforms/General/PFmain.h"
-#include "apifilesystem/ghc/filesystem.hpp"
+#include "directoryglobals.h"
 
 namespace enigma_user {
 
