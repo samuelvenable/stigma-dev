@@ -37,16 +37,19 @@ std::string get_working_directory() {
   return ngs::fs::directory_get_current_working();
 }
 
-std::string get_program_filename() { 
-  return ngs::fs::executable_get_filename(); 
+std::string get_program_filename() {
+  const char *execname = __getexecname();
+  return execname ? filename_name(execname) : "";
 }
 
 std::string get_program_directory() { 
-  return ngs::fs::executable_get_directory(); 
+  const char *execname = __getexecname();
+  return execname ? filename_path(execname) : "";
 }
 
 std::string get_program_pathname() { 
-  return ngs::fs::executable_get_pathname(); 
+  const char *execname = __getexecname();
+  return execname ? execname : "";
 }
 
 bool set_working_directory(std::string dname) {
