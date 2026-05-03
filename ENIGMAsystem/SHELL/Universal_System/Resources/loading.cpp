@@ -79,16 +79,18 @@ namespace enigma
     input_initialize();
     joystick_init();
 
+    const char *c_execname = __getexecname();
+    std::string cpp_execname = c_execname ? c_execname : "";
     // Open the exe for resource load
     do { // Allows break
-      FILE* resfile = nullptr; 
+      FILE *resfile = nullptr;
       #if !defined(_WIN32)
-      resfile = fopen((enigma_user::executable_get_directory() + "assets/data.res").c_str(),"rb");
+      resfile = fopen((cpp_execname + "assets/data.res").c_str(),"rb");
       #else
-      resfile = _wfopen(ghc::filesystem::path(enigma_user::executable_get_directory() + "assets/data.res").wstring().c_str(), L"rb");
+      resfile = _wfopen(ghc::filesystem::path(cpp_execname + "assets/data.res").wstring().c_str(), L"rb");
       #endif
 
-      if (!enigma_user::file_exists(enigma_user::executable_get_directory() + "assets/data.res") || !resfile) {
+      if (!enigma_user::file_exists(cpp_execname + "assets/data.res") || !resfile) {
         exit(0);
         break;
       }
