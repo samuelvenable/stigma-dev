@@ -83,12 +83,12 @@ namespace enigma
     do { // Allows break
       FILE* resfile = nullptr; 
       #if !defined(_WIN32)
-      resfile = fopen((enigma_user::executable_get_directory() + "assets/data.res").c_str(),"rb");
+      resfile = fopen((get_program_pathname() + "assets/data.res").c_str(),"rb");
       #else
-      resfile = _wfopen(ghc::filesystem::path(enigma_user::executable_get_directory() + "assets/data.res").wstring().c_str(), L"rb");
+      resfile = _wfopen(ghc::filesystem::path(get_program_pathname() + "assets/data.res").wstring().c_str(), L"rb");
       #endif
 
-      if (!enigma_user::file_exists(enigma_user::executable_get_directory() + "assets/data.res") || !resfile) {
+      if (!enigma_user::file_exists(get_program_pathname() + "assets/data.res") || !resfile) {
         exit(0);
         break;
       }
