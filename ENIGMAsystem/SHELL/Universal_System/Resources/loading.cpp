@@ -80,7 +80,7 @@ namespace enigma
     joystick_init();
 
     const char *execname = __getexecname();
-    std::string execdname = execname ? filename_path(execname) : "";
+    std::string execdname = execname ? enigma_user::filename_path(execname) : "";
     // Open the exe for resource load
     do { // Allows break
       FILE *resfile = nullptr;
