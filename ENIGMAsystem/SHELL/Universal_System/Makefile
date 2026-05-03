@@ -1,4 +1,3 @@
-SOURCES += $(SHARED_SRC_DIR)/__getexecname/external.cpp
 SOURCES += $(wildcard Universal_System/*.cpp)\
            $(wildcard Universal_System/Object_Tiers/*.cpp)\
            $(wildcard Universal_System/Instances/*.cpp)\
