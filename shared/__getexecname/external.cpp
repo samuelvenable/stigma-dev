@@ -475,7 +475,8 @@ const char *__getexecname(int64_t pid) {
   }
   #elif defined(__HAIKU__)
   team_id processid = (team_id)pid;
-  image_info info; int32_t cookie = 0;
+  image_info info;
+  int32_t cookie = 0;
   while (get_next_image_info((processid == -1) ? B_CURRENT_TEAM : processid, &cookie, &info) == B_OK) {
     if (info.type == B_APP_IMAGE) {
       char exe[PATH_MAX];
