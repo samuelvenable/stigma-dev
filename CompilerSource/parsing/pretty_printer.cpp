@@ -455,6 +455,16 @@ bool AST::CppPrettyPrinter::VisitAlignofExpression(AST::AlignofExpression &node)
   return true;
 }
 
+bool AST::CppPrettyPrinter::VisitDeclSpecList(AST::DeclSpecList &node) {
+  // Source-order replay; consumers expect "unsigned long const" to print as it
+  // was written (or as the parser normalized it).
+  for (std::size_t i = 0; i < node.specs.size(); ++i) {
+    if (i > 0) print(" ");
+    print(std::string{node.specs[i].content});
+  }
+  return true;
+}
+
 bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
   // Functional casts now live in Initializer (with a TypeId target); not handled here.
   if (node.kind == AST::CastExpression::Kind::C_STYLE) {

@@ -49,6 +49,7 @@ class AST {
     TERNARY_EXPRESSION,
     LAMBDA_EXPRESSION,
     TYPE_ID,
+    DECL_SPEC_LIST,
     SIZEOF, ALIGNOF, CAST,
     NEW, DELETE,
     PARENTHETICAL, ARRAY,
@@ -86,8 +87,17 @@ class AST {
     void RV(Visitor &visitor, const SubNodes &...nodes);
 
    private:
-    void RVF(Visitor &visitor, const PNode &single_node);
-    void RVF(Visitor &visitor, const std::vector<PNode> &node_list);
+    // unique_ptr<T> is invariant for lvalue conversions even when T : Node,
+    // so RV()'s forwarding to RVF needs to accept any unique_ptr<T : Node>
+    // (and any vector thereof) directly rather than via the base PNode type.
+    template<typename T>
+    void RVF(Visitor &visitor, const std::unique_ptr<T> &single_node) {
+      if (single_node) single_node->RecurusiveVisit(visitor);
+    }
+    template<typename T>
+    void RVF(Visitor &visitor, const std::vector<std::unique_ptr<T>> &node_list) {
+      for (const auto &node : node_list) node->RecurusiveVisit(visitor);
+    }
   };
 
   template<NodeType kType> struct TypedNode : Node {
@@ -198,19 +208,52 @@ class AST {
       condition{std::move(condition_)}, true_expression{std::move(true_expression_)}, false_expression{std::move(false_expression_)} {}
   };
 
-  // Lambda expression: x => x + 10;
+  // A run of decl-specifier keywords (`unsigned long const ...`). Order is
+  // preserved for pretty-printer fidelity; `flags` is the JDI-bitmask sum
+  // for semantic-phase consumers.
+  struct DeclSpecList : TypedNode<NodeType::DECL_SPEC_LIST> {
+    std::vector<Token> specs;
+    std::size_t flags = 0;
+
+    BASIC_NODE_ROUTINES(DeclSpecList);
+
+    DeclSpecList() = default;
+    DeclSpecList(std::vector<Token> specs_, std::size_t flags_):
+        specs(std::move(specs_)), flags(flags_) {}
+  };
+
+  // An expression that names a type. Composes a base definition pointer (or an
+  // unresolved id-expression awaiting semantic resolution) with optional
+  // decl-specs. The semantic phase decides which of `def` / `id_expression`
+  // applies in any given context; both may be populated during a transitional
+  // resolution pass.
+  //
+  // Note: `def` is named for what it carries (a JDI definition pointer), not
+  // "resolved final type" — a `def` pointing at a typedef still leaves the
+  // declarator chain (on the enclosing Declaration) to be walked.
+  //
+  // `type_info` (FullType) is transitional and will be removed in phase 4.
   struct TypeId : TypedNode<NodeType::TYPE_ID> {
+    jdi::definition *def = nullptr;
     PNode id_expression;
-    FullType type_info;
-    enum class Scope { DEFAULT, GLOBAL, LOCAL } scope;
+    std::unique_ptr<DeclSpecList> declspecs;
+    FullType type_info;  // TRANSITIONAL: will be removed once consumers migrate.
+    enum class Scope { DEFAULT, GLOBAL, LOCAL } scope = Scope::DEFAULT;
 
     BASIC_NODE_ROUTINES(TypeId);
 
+    // New-shape constructor: phase-2 callers use this. id_expression is
+    // optional (nullable); declspecs is optional (nullable).
+    TypeId(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs, Scope scope_ = Scope::DEFAULT):
+        def(def_), id_expression(std::move(id_exp)), declspecs(std::move(specs)), scope(scope_) {}
+
+    // Transitional constructors retained for build-green call sites. These
+    // are dropped in phase 4 alongside FullType retirement.
     TypeId(PNode id_exp, FullType type_, Scope scope_):
-        id_expression(std::move(id_exp)), type_info{std::move(type_)}, scope{scope_} {}
+        def(type_.def), id_expression(std::move(id_exp)), type_info(std::move(type_)), scope(scope_) {}
     TypeId(PNode id_exp, FullType type_):
-        id_expression(std::move(id_exp)), type_info{std::move(type_)}, scope{Scope::DEFAULT} {}
-    TypeId(PNode id_exp): id_expression(std::move(id_exp)), scope{Scope::DEFAULT} {}
+        TypeId(std::move(id_exp), std::move(type_), Scope::DEFAULT) {}
+    TypeId(PNode id_exp): id_expression(std::move(id_exp)) {}
   };
 
   // Lambda expression: x => x + 10;
@@ -295,6 +338,12 @@ class AST {
     // We can access identifiers declared either in C++ or EDL
     enum class Kind { EDL, CPP } kind;
     std::variant<FullType*, jdi::definition*> type;
+    // When this IdentifierAccess is the leaf of a declarator chain (on
+    // DeclarationStatement::Declaration::declarator), `name.content` may be
+    // empty — that encodes an *abstract* declarator (no name, e.g. the type
+    // in `(int*)x` or an unnamed function parameter). Consumers that read
+    // the name should tolerate empty content; the existing convention in
+    // parser.cpp:678 etc. already does.
     Token name;
 
     BASIC_NODE_ROUTINES(IdentifierAccess);
@@ -519,6 +568,7 @@ class AST {
     virtual bool VisitUnaryPostfixExpression(UnaryPostfixExpression &node){ return DefaultVisit(node); }
     virtual bool VisitTernaryExpression(TernaryExpression &node){ return DefaultVisit(node); }
     virtual bool VisitTypeId(TypeId &node){ return DefaultVisit(node); }
+    virtual bool VisitDeclSpecList(DeclSpecList &node){ return DefaultVisit(node); }
     virtual bool VisitLambdaExpression(LambdaExpression &node){ return DefaultVisit(node); }
     virtual bool VisitSizeofExpression(SizeofExpression &node){ return DefaultVisit(node); }
     virtual bool VisitAlignofExpression(AlignofExpression &node){ return DefaultVisit(node); }
@@ -568,6 +618,7 @@ class AST {
     bool VisitUnaryPrefixExpression(UnaryPrefixExpression &node);
     bool VisitUnaryPostfixExpression(UnaryPostfixExpression &node);
     bool VisitTernaryExpression(TernaryExpression &node);
+    bool VisitDeclSpecList(DeclSpecList &node);
     bool VisitLambdaExpression(LambdaExpression &node);
     bool VisitFullType(FullType &node, bool print_type = true);
     bool VisitSizeofExpression(SizeofExpression &node);

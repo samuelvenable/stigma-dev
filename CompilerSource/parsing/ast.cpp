@@ -64,13 +64,6 @@ template<typename... SubNodes>
 void AST::Node::RV(AST::Visitor &visitor, const SubNodes &...nodes) {
   (RVF(visitor, nodes), ...);
 }
-void AST::Node::RVF(AST::Visitor &visitor, const PNode &single_node) {
-  if (single_node) single_node->RecurusiveVisit(visitor);
-}
-void AST::Node::RVF(AST::Visitor &visitor,
-                    const std::vector<PNode> &node_list) {
-  for (const PNode &node : node_list) node->RecurusiveVisit(visitor);
-}
 
 void AST::CodeBlock::RecursiveSubVisit(AST::Visitor &visitor) {
   RV(visitor, statements);
@@ -97,7 +90,10 @@ void AST::TernaryExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, condition, true_expression, false_expression);
 }
 void AST::TypeId::RecursiveSubVisit(Visitor &visitor) {
-  if (id_expression) RV(visitor, id_expression);
+  RV(visitor, id_expression, declspecs);
+}
+void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
+  (void) visitor;  // Leaf: specs are Tokens, not AST nodes.
 }
 void AST::LambdaExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, parameters, body);
@@ -161,17 +157,17 @@ void AST::Initializer::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, values);
 }
 void AST::NewExpression::RecursiveSubVisit(Visitor &visitor) {
-  RV(visitor, placement_args);
-  if (initializer) initializer->RecurusiveVisit(visitor);
+  RV(visitor, placement_args, initializer);
 }
 void AST::DeleteExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expression);
 }
 void AST::DeclarationStatement::RecursiveSubVisit(Visitor &visitor) {
-  if (type) RV(visitor, type);
-  for (auto &decl : declarations) {
-    if (decl.init) decl.init->RecurusiveVisit(visitor);
-  }
+  RV(visitor, type);
+  // TRANSITIONAL: this loop disappears in phase 2 step 4 when Declaration
+  // becomes an AST::Node and declarations becomes vector<unique_ptr<Declaration>>.
+  // Then the line is just: RV(visitor, declarations);
+  for (auto &decl : declarations) RV(visitor, decl.init);
 }
 
 const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
@@ -182,6 +178,8 @@ const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
     UNARY_POSTFIX_EXPRESSION,
     TERNARY_EXPRESSION,
     LAMBDA_EXPRESSION,
+    TYPE_ID,
+    DECL_SPEC_LIST,
     SIZEOF,
     ALIGNOF,
     CAST,
