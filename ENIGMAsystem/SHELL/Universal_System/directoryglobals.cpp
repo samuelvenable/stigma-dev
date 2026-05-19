@@ -38,13 +38,13 @@ std::string get_working_directory() {
 }
 
 std::string get_program_filename() {
-  const char *execname = __getexecname();
-  return execname ? filename_name(execname) : "";
+  const char *progname = __getprogname();
+  return progname ? progname : "";
 }
 
 std::string get_program_directory() { 
-  const char *execname = __getexecname();
-  return execname ? filename_path(execname) : "";
+  const char *basepath = __getbasepath();
+  return basepath ? basepath : "";
 }
 
 std::string get_program_pathname() { 
