@@ -30,6 +30,8 @@
 
 #include "apifilesystem/filesystem.hpp"
 #include "__getexecname/internal.h"
+#include "__getbasepath/internal.h"
+#include "__getprogname/internal.h"
 #include "tempdir/tempdir.h"
 
 namespace enigma_user {
