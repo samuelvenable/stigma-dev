@@ -367,7 +367,9 @@ bool next_maybe_functional_cast() {
 }
 
 std::unique_ptr<AST::DeclarationStatement> parse_declarations(
-    AST::DeclarationStatement::StorageClass sc, FullType &ft, AST::DeclaratorType decl_type, bool parse_unbounded,
+    AST::DeclarationStatement::StorageClass sc, FullType &ft,
+    std::unique_ptr<AST::DeclSpecList> declspecs,
+    AST::DeclaratorType decl_type, bool parse_unbounded,
     std::vector<AST::DeclarationStatement::Declaration> decls, bool already_parsed_first = false) {
   while (true) {
     if (!already_parsed_first) {
@@ -382,7 +384,7 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     }
   }
 
-  auto type_node = std::make_unique<AST::TypeId>(nullptr, FullType{ft.def});
+  auto type_node = std::make_unique<AST::TypeId>(ft.def, nullptr, std::move(declspecs));
   return std::make_unique<AST::DeclarationStatement>(sc, std::move(type_node), std::move(decls));
 }
 
@@ -511,7 +513,10 @@ void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool
       } else {
         FunctionParameterNode::Parameter param;
         FullType type;
-        TryParseDeclSpecifierSeq(&type);
+        // declspecs is collected for fidelity but not used here (Parameter still
+        // stores a FullType, not a TypeId). Migrates in phase-2 step 4.
+        auto declspecs_ = std::make_unique<AST::DeclSpecList>();
+        TryParseDeclSpecifierSeq(&type, declspecs_.get());
         TryParseDeclarator(&type, AST::DeclaratorType::MAYBE_ABSTRACT);
         param.type = std::make_unique<FullType>(std::move(type));
         if (token.type == TT_EQUALS) {
@@ -707,7 +712,12 @@ void TryParseTemplateArgs(jdi::definition *def) {
     std::size_t args_given = 0;
     for (; token.type != TT_GREATER && token.type != TT_ENDOFCODE;) {
       if (template_def->params[args_given]->flags & jdi::DEF_TYPENAME) {
-        FullType type = TryParseTypeID();
+        // TRANSITIONAL: pilfering type_info out of TypeId. Step 4 retires
+        // type_info; this site needs the JDI bridge (to_jdi_fulltype) to
+        // operate on TypeId directly, or template args to stop going through
+        // the legacy FullType path entirely.
+        auto type_node = TryParseTypeID();
+        FullType type = std::move(type_node->type_info);
         if (type.def) {
           jdi::full_type t = type.to_jdi_fulltype();
           argk[args_given].ft().swap(t);
@@ -931,7 +941,7 @@ jdi::definition *get_builtin(std::string_view name) {
   return frontend->look_up(std::string(name));
 }
 
-void TryParseTypeSpecifier(FullType *type) {
+void TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
   switch (token.type) {
     case TT_TYPE_NAME: {
       if (token.content == "long" || token.content == "short") {
@@ -939,6 +949,9 @@ void TryParseTypeSpecifier(FullType *type) {
            if (token.content == "long") {
              type->flags &= ~jdi_decflag_bitmask("long").second;
              type->flags |= jdi_decflag_bitmask("long long").second;
+             specs->flags &= ~jdi_decflag_bitmask("long").second;
+             specs->flags |= jdi_decflag_bitmask("long long").second;
+             specs->specs.push_back(token);
            } else if (token.content == "short") {
              herr->Error(token) << "Conflicting usage of 'long' and 'short' in the same type specifier";
            }
@@ -952,6 +965,8 @@ void TryParseTypeSpecifier(FullType *type) {
           }
         } else {
           type->flags |= jdi_decflag_bitmask(token.content).second;
+          specs->flags |= jdi_decflag_bitmask(token.content).second;
+          specs->specs.push_back(token);
         }
       } else {
         maybe_assign_full_type(type, get_builtin(token.content), token);
@@ -1003,6 +1018,8 @@ void TryParseTypeSpecifier(FullType *type) {
           herr->Warning(token) << "Duplicate usage of flags in type specifier";
         } else {
           type->flags |= jdi_decflag_bitmask(token.content).second;
+          specs->flags |= jdi_decflag_bitmask(token.content).second;
+          specs->specs.push_back(token);
         }
         token = lexer->ReadToken();
       } else if (next_is_class_key() || token.type == TT_ENUM) {
@@ -1015,7 +1032,7 @@ void TryParseTypeSpecifier(FullType *type) {
   }
 }
 
-std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type) {
+std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList *specs) {
   std::pair<bool, bool> global_local = {false, false};
   while (next_is_type_specifier() || token.content == "global" || token.content == "local") {
     if (token.content == "global") {
@@ -1025,7 +1042,7 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type) {
       global_local.second = true;
       token = lexer->ReadToken();
     } else {
-      TryParseTypeSpecifier(type);
+      TryParseTypeSpecifier(type, specs);
     }
   }
   return global_local;
@@ -1099,21 +1116,29 @@ void TryParseMaybeNestedPtrOperator(FullType *type) {
   }
 }
 
-FullType TryParseTypeID() {
+// Build the TypeId for a `<type-id>` grammar production. The parser
+// unconditionally records the decl-spec chain (declspecs) and the resolved
+// base type (def); the returned node owns both. type_info (FullType) is
+// retained transitionally for downstream code that still wants the legacy
+// flat representation.
+std::unique_ptr<AST::TypeId> TryParseTypeID() {
   FullType type;
+  auto declspecs = std::make_unique<AST::DeclSpecList>();
   while (next_is_type_specifier()) {
-    TryParseTypeSpecifier(&type);
+    TryParseTypeSpecifier(&type, declspecs.get());
   }
 
   maybe_infer_int(type);
 
-  return type;
+  auto result = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
+  result->type_info = std::move(type);
+  return result;
 }
 
-void TryParseDeclSpecifier(FullType *type) {
+void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs) {
   switch (token.type) {
     case TT_TYPEDEF: {
-      TryParseTypeSpecifierSeq(type);
+      TryParseTypeSpecifierSeq(type, specs);
       TryParseDeclarator(type, AST::DeclaratorType::NON_ABSTRACT);
       break;
     }
@@ -1132,19 +1157,21 @@ void TryParseDeclSpecifier(FullType *type) {
     case TT_INLINE:
     case TT_STATIC: {
       type->flags |= jdi_decflag_bitmask(token.content).second;
+      specs->flags |= jdi_decflag_bitmask(token.content).second;
+      specs->specs.push_back(token);
       token = lexer->ReadToken();
       break;
     }
 
     default:
       if (next_is_type_specifier()) {
-        TryParseTypeSpecifier(type);
+        TryParseTypeSpecifier(type, specs);
         break;
       }
   }
 }
 
-std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type) {
+std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList *specs) {
   std::pair<bool, bool> global_local = {false, false};
   while (next_is_decl_specifier() || token.content == "global" || token.content == "local") {
     if (token.content == "global") {
@@ -1154,7 +1181,7 @@ std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type) {
       global_local.second = true;
       token = lexer->ReadToken();
     } else
-      TryParseDeclSpecifier(type);
+      TryParseDeclSpecifier(type, specs);
   }
   return global_local;
 }
@@ -1406,7 +1433,8 @@ std::unique_ptr<AST::Node> TryParseDeclarations(bool parse_unbounded) {
   bool is_local = token.content == "local";
   if (next_is_decl_specifier() || is_global || is_local) {
     FullType type;
-    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(&type);
+    auto declspecs = std::make_unique<AST::DeclSpecList>();
+    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(&type, declspecs.get());
     if (global_local.first && global_local.second) {
       herr->Error(token) << "Cannot have both 'global' and 'local' in the same declaration";
       return nullptr;
@@ -1421,7 +1449,7 @@ std::unique_ptr<AST::Node> TryParseDeclarations(bool parse_unbounded) {
     auto sc = is_global || global_local.first   ? AST::DeclarationStatement::StorageClass::GLOBAL
               : is_local || global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                                 : AST::DeclarationStatement::StorageClass::TEMPORARY;
-    return parse_declarations(sc, type, AST::DeclaratorType::NON_ABSTRACT, parse_unbounded, {});
+    return parse_declarations(sc, type, std::move(declspecs), AST::DeclaratorType::NON_ABSTRACT, parse_unbounded, {});
   }
   return nullptr;
 }
@@ -1437,7 +1465,10 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
   if (token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
     if (next_is_type_specifier()) {
-      type = TryParseTypeID();
+      // TRANSITIONAL: pilfering type_info out of TypeId. Step 4 moves
+      // NewExpression::ft off FullType, and this hop disappears.
+      auto type_node = TryParseTypeID();
+      type = std::move(type_node->type_info);
       require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
       if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
         initializer = TryParseInitializer(true);
@@ -1472,10 +1503,14 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
   // This code path is taken only when <new-placement> is present, otherwise the paren would've been picked up earlier
   if (token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
-    type = TryParseTypeID();
+    // TRANSITIONAL: pilfering type_info out of TypeId (see step-4 task).
+    auto type_node = TryParseTypeID();
+    type = std::move(type_node->type_info);
     require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
   } else {
-    TryParseTypeSpecifierSeq(&type);
+    // declspecs unused: NewExpression still stores a flat FullType (step-4 retirement target).
+    auto declspecs_ = std::make_unique<AST::DeclSpecList>();
+    TryParseTypeSpecifierSeq(&type, declspecs_.get());
     while (next_maybe_ptr_decl_operator()) {
       if (next_maybe_nested_name()) {
         TryParseMaybeNestedPtrOperator(&type);
@@ -1584,10 +1619,9 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       auto paren = token;
       token = lexer->ReadToken();
       if (next_is_type_specifier()) {
-        FullType type = TryParseTypeID();
+        auto type_node = TryParseTypeID();
         require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
         auto expr = TryParseExpression(Precedence::kUnaryPrefix);
-        auto type_node = std::make_unique<AST::TypeId>(nullptr, std::move(type));
         return std::make_unique<AST::CastExpression>(
             AST::CastExpression::Kind::C_STYLE, paren, std::move(type_node), std::move(expr));
       } else {
@@ -1622,9 +1656,8 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       token = lexer->ReadToken();
       if (token.type == TT_BEGINPARENTH) {
         token = lexer->ReadToken();
-        FullType type = TryParseTypeID();
+        auto type_node = TryParseTypeID();
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after sizeof-expression");
-        auto type_node = std::make_unique<AST::TypeId>(nullptr, std::move(type));
         return std::make_unique<AST::SizeofExpression>(std::move(type_node));
       } else if (token.type == TT_ELLIPSES) {
         token = lexer->ReadToken();
@@ -1647,9 +1680,8 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_ALIGNOF: {
       token = lexer->ReadToken();
       if (require_token(TT_BEGINPARENTH, "Expected opening parenthesis ('(') after 'alignof'")) {
-        FullType type = TryParseTypeID();
+        auto type_node = TryParseTypeID();
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after alignof-expression");
-        auto type_node = std::make_unique<AST::TypeId>(nullptr, std::move(type));
         return std::make_unique<AST::AlignofExpression>(std::move(type_node));
       } else {
         return nullptr;
@@ -1685,12 +1717,11 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       Token oper = token;
       token = lexer->ReadToken();
       require_token(TT_LESS, "Expected '<' after '", oper.content, "'");
-      FullType type = TryParseTypeID();
+      auto type_node = TryParseTypeID();
       require_token(TT_GREATER, "Expected '>' after '", oper.content, "' type");
       require_token(TT_BEGINPARENTH, "Expected '(' before '", oper.content, "' expression");
       auto expr = TryParseExpression(Precedence::kAll);
       require_token(TT_ENDPARENTH, "Expected ')' after '", oper.content, "' expression");
-      auto type_node = std::make_unique<AST::TypeId>(nullptr, std::move(type));
       return std::make_unique<AST::CastExpression>(oper, std::move(type_node), std::move(expr));
     }
 
@@ -1734,19 +1765,20 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_LOCAL: {
       if (next_maybe_functional_cast()) {
         FullType type;
-        TryParseTypeSpecifier(&type);
+        auto declspecs = std::make_unique<AST::DeclSpecList>();
+        TryParseTypeSpecifier(&type, declspecs.get());
         if (token.type == TT_BEGINPARENTH) {
           token = lexer->ReadToken();
           std::vector<AST::PNode> args;
           args.push_back(TryParseExpression(Precedence::kAll));
           require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after functional cast");
           return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
-                                                    std::make_unique<AST::TypeId>(nullptr, std::move(type)),
+                                                    std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs)),
                                                     std::move(args));
         } else if (token.type == TT_BEGINBRACE) {
           auto init = TryParseInitializer(false);
           require_token(TT_ENDBRACE, "Expected closing brace ('}') after temporary object initializer");
-          init->target = std::make_unique<AST::TypeId>(nullptr, std::move(type));
+          init->target = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
           return init;
         } else {
           herr->Error(token) << "Expected opening parenthesis ('(') or brace ('{') after functional-cast type";
@@ -2230,12 +2262,13 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
     bool maybe_c_style_cast, AST::DeclarationStatement::StorageClass sc) {
   if (next_maybe_functional_cast()) {
     FullType type;
-    TryParseTypeSpecifier(&type);
+    auto declspecs = std::make_unique<AST::DeclSpecList>();
+    TryParseTypeSpecifier(&type, declspecs.get());
     if (next_is_type_specifier() ||
         // Make sure we don't accidentally consume a c-style cast when its required
         (!(maybe_c_style_cast && token.type == TT_ENDPARENTH) &&
          (token.type != TT_BEGINBRACE && token.type != TT_BEGINPARENTH))) {
-      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(&type);
+      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(&type, declspecs.get());
       if (global_local.first && global_local.second) {
         herr->Error(token) << "Cannot have both `global` and `local` storage class specifiers";
       }
@@ -2243,10 +2276,10 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
            : global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                  : sc;
       maybe_assign_def(&type);
-      return parse_declarations(sc, type, decl_type, parse_unbounded, {});
+      return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, {});
     } else if (token.type == TT_BEGINBRACE) {
       auto init = TryParseBraceInitializer();
-      init->target = std::make_unique<AST::TypeId>(nullptr, FullType{type.def});
+      init->target = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
       return init;
     } else if (token.type == TT_BEGINPARENTH) {
       auto declarator = TryParseNoPtrDeclarator(&type, decl_type, true);
@@ -2254,7 +2287,7 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
         std::vector<AST::PNode> args;
         args.push_back(std::move(declarator));
         return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
-                                                  std::make_unique<AST::TypeId>(nullptr, FullType{type.def}),
+                                                  std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs)),
                                                   std::move(args));
       } else {
         if (type.decl.has_nested_declarator && type.decl.nested_declarator == 0) {
@@ -2267,9 +2300,9 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
         decls.emplace_back(std::move(type), next_is_start_of_initializer() ? TryParseInitializer() : nullptr);
         if (token.type == TT_COMMA && parse_unbounded) {
           maybe_assign_def(&type);
-          return parse_declarations(sc, type, decl_type, parse_unbounded, std::move(decls), true);
+          return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, std::move(decls), true);
         } else {
-          auto type_node = std::make_unique<AST::TypeId>(nullptr, FullType{decls[0].declarator->def});
+          auto type_node = std::make_unique<AST::TypeId>(decls[0].declarator->def, nullptr, std::move(declspecs));
           return std::make_unique<AST::DeclarationStatement>(sc, std::move(type_node), std::move(decls));
         }
       }

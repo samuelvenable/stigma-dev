@@ -47,7 +47,7 @@ class AstBuilderTestAPI {
   virtual std::unique_ptr<AST::CodeBlock> ParseCode() = 0;
   virtual const Token &current_token() = 0;
   virtual std::unique_ptr<AST::CodeBlock> ParseCodeBlock() = 0;
-  virtual FullType TryParseTypeID() = 0;
+  virtual std::unique_ptr<AST::TypeId> TryParseTypeID() = 0;
 
   virtual ~AstBuilderTestAPI() = default;
 };
