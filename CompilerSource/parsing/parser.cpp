@@ -2568,58 +2568,29 @@ class SyntaxChecker : public AST::Visitor {
   }
 
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) {
-    if (node.declarations.size()) {
-      auto &type = node.declarations[0].declarator;
-      if (type) {
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "unsigned") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "signed")) {
-          Token tok;
-          tok.content = "unsigned";
-          tok.type = TT_DECLSPEC;
-          herr->Error(tok) << "Conflicting use of 'unsigned' and 'signed' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "long") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "short")) {
-          Token tok;
-          tok.content = "long";
-          tok.type = TT_TYPE_NAME;
-          herr->Error(tok) << "Conflicting use of 'long' and 'short' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "const") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "mutable")) {
-          Token tok;
-          tok.content = "const";
-          tok.type = TT_DECLSPEC;
-          herr->Error(tok) << "Conflicting use of 'const' and 'mutable' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "static") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "register")) {
-          Token tok;
-          tok.content = "static";
-          tok.type = TT_STATIC;
-          herr->Error(tok) << "Conflicting use of 'static' and 'register' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "inline") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "register")) {
-          Token tok;
-          tok.content = "inline";
-          tok.type = TT_INLINE;
-          herr->Error(tok) << "Conflicting use of 'inline' and 'register' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "extern") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "register")) {
-          Token tok;
-          tok.content = "extern";
-          tok.type = TT_EXTERN;
-          herr->Error(tok) << "Conflicting use of 'extern' and 'register' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "mutable") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "static")) {
-          Token tok;
-          tok.content = "mutable";
-          tok.type = TT_MUTABLE;
-          herr->Error(tok) << "Conflicting use of 'mutable' and 'static' in the same type specifier";
-        }
+    // TODO: belongs in a dedicated semantic-validation pass, not interleaved
+    // with syntactic checks. Tracked separately.
+    //
+    // Flag conflicts are properties of the shared decl-spec sequence, read
+    // from node.type->declspecs (per-declarator FullType::flags is a
+    // transitional mirror, retired in step 4).
+    auto *type_id = node.type ? node.type->As<AST::TypeId>() : nullptr;
+    std::size_t flags = (type_id && type_id->declspecs) ? type_id->declspecs->flags : 0;
+    static constexpr struct { const char *a, *b; TokenType reporter; } conflicts[] = {
+      {"unsigned", "signed",   TT_DECLSPEC },
+      {"long",     "short",    TT_TYPE_NAME},
+      {"const",    "mutable",  TT_DECLSPEC },
+      {"static",   "register", TT_STATIC   },
+      {"inline",   "register", TT_INLINE   },
+      {"extern",   "register", TT_EXTERN   },
+      {"mutable",  "static",   TT_MUTABLE  },
+    };
+    for (const auto &c : conflicts) {
+      if (AstBuilder::contains_decflag_bitmask(flags, c.a) &&
+          AstBuilder::contains_decflag_bitmask(flags, c.b)) {
+        Token tok; tok.content = c.a; tok.type = c.reporter;
+        herr->Error(tok) << "Conflicting use of '" << c.a << "' and '" << c.b
+                         << "' in the same type specifier";
       }
     }
     node.RecursiveSubVisit(*this);

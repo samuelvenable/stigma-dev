@@ -618,6 +618,7 @@ class AST {
     bool VisitUnaryPrefixExpression(UnaryPrefixExpression &node);
     bool VisitUnaryPostfixExpression(UnaryPostfixExpression &node);
     bool VisitTernaryExpression(TernaryExpression &node);
+    bool VisitTypeId(TypeId &node);
     bool VisitDeclSpecList(DeclSpecList &node);
     bool VisitLambdaExpression(LambdaExpression &node);
     bool VisitFullType(FullType &node, bool print_type = true);

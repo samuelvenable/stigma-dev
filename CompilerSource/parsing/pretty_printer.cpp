@@ -465,6 +465,22 @@ bool AST::CppPrettyPrinter::VisitDeclSpecList(AST::DeclSpecList &node) {
   return true;
 }
 
+bool AST::CppPrettyPrinter::VisitTypeId(AST::TypeId &node) {
+  // Prints the shared part of a type — decl-specs + base type name. Per-
+  // declaration declarator chains (`*x`, `[10]`) are printed by their
+  // owning Declaration via VisitFullType with print_type=false.
+  if (node.declspecs && !node.declspecs->specs.empty()) {
+    if (!node.declspecs->accept(*this)) return false;
+    print(" ");
+  }
+  if (node.def) {
+    print(node.def->name);
+  } else if (node.id_expression) {
+    VISIT_AND_CHECK(node.id_expression);
+  }
+  return true;
+}
+
 bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
   // Functional casts now live in Initializer (with a TypeId target); not handled here.
   if (node.kind == AST::CastExpression::Kind::C_STYLE) {
@@ -585,8 +601,14 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
     return true;
   }
 
+  // The shared type (declspecs + base type name) prints once via VisitTypeId.
+  // Each declaration then contributes only its own declarator chain + init.
+  if (node.type) {
+    VISIT_AND_CHECK(node.type);
+    print(" ");
+  }
   for (std::size_t i = 0; i < node.declarations.size(); i++) {
-    if (!VisitFullType(*node.declarations[i].declarator, !i)) return false;
+    if (!VisitFullType(*node.declarations[i].declarator, /*print_type=*/false)) return false;
     if (node.declarations[i].init) {
       print(" = ");  // TODO: corner case: int x {}, maybe we need extra flag in the AST?
       if (!VisitInitializer(*node.declarations[i].init)) return false;
