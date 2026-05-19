@@ -1,5 +1,7 @@
 SHARED_SRC_DIR := ../../shared
 SOURCES += $(SHARED_SRC_DIR)/__getexecname/internal.cpp
+SOURCES += $(SHARED_SRC_DIR)/__getbasepath/internal.cpp
+SOURCES += $(SHARED_SRC_DIR)/__getprogname/internal.cpp
 SOURCES += $(wildcard Universal_System/*.cpp)\
            $(wildcard Universal_System/Object_Tiers/*.cpp)\
            $(wildcard Universal_System/Instances/*.cpp)\
