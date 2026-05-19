@@ -2,8 +2,7 @@ include ../../Config.mk
 
 SHARED_SRC_DIR := ../../shared
 
-# PROTO_DIR should use the shared/protos OBJ_DIR, which is .eobjs (protos don't use ASAN-specific dirs)
-PROTO_DIR := $(SHARED_SRC_DIR)/protos/.eobjs
+PROTO_DIR := $(SHARED_SRC_DIR)/protos/$(OBJ_DIR)
 
 ifeq ($(OS), Darwin)
 	OS_LIBS=-lboost_program_options -lpthread -ldl -lgmock
@@ -13,8 +12,8 @@ else
 	OS_LIBS=-lboost_system-mt -Wl,--no-as-needed -Wl,-rpath,./ -lboost_program_options-mt -lpthread -lgmock
 endif
 
-CXXFLAGS  += -I../../CompilerSource -I$(PROTO_DIR) -I../libEGM -I../libEGM -I../../ENIGMAsystem/SHELL $(GRPC_CFLAGS) $(PROTOBUF_CFLAGS) $(PUGI_CFLAGS) $(YAML_CFLAGS) $(PNG_CFLAGS) $(ZLIB_CFLAGS) $(FALLBACK_INC)
-LDFLAGS   += $(FALLBACK_LIB_PATH) $(OS_LIBS) -L../../ -lcompileEGMf -lEGM -lENIGMAShared -lProtocols $(GRPC_LDFLAGS) $(GRPC_LIBS) $(PROTOBUF_LDFLAGS) $(PROTOBUF_LIBS) $(PUGI_LDFLAGS) $(PUGI_LIBS) $(YAML_LDFLAGS) $(YAML_LIBS) $(PNG_LDFLAGS) $(PNG_LIBS) $(ZLIB_LDFLAGS) $(ZLIB_LIBS)
+CXXFLAGS  += -I../../CompilerSource -I../../CompilerSource/JDI/src -I$(PROTO_DIR) -I../libEGM -I../libEGM -I../../ENIGMAsystem/SHELL $(GRPC_CFLAGS) $(PROTOBUF_CFLAGS) $(PUGI_CFLAGS) $(YAML_CFLAGS) $(PNG_CFLAGS) $(ZLIB_CFLAGS) $(FALLBACK_INC)
+LDFLAGS   += $(FALLBACK_LIB_PATH) $(FALLBACK_LDFLAGS_EXTRA) $(OS_LIBS) -L../../ -lcompileEGMf -lEGM -lENIGMAShared -lProtocols $(GRPC_LDFLAGS) $(GRPC_LIBS) $(PROTOBUF_LDFLAGS) $(PROTOBUF_LIBS) $(PUGI_LDFLAGS) $(PUGI_LIBS) $(YAML_LDFLAGS) $(YAML_LIBS) $(PNG_LDFLAGS) $(PNG_LIBS) $(ZLIB_LDFLAGS) $(ZLIB_LIBS)
 
 ifneq ($(CUSTOM_LIB_SEARCH_PRIORITY), system)
 	LDFLAGS += -labseil_dll
