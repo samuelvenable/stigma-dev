@@ -48,6 +48,7 @@ class AST {
     UNARY_POSTFIX_EXPRESSION,
     TERNARY_EXPRESSION,
     LAMBDA_EXPRESSION,
+    TYPE_ID,
     SIZEOF, ALIGNOF, CAST,
     NEW, DELETE,
     PARENTHETICAL, ARRAY,
@@ -164,6 +165,10 @@ class AST {
     PNode operand;
     Operation operation;
 
+    // Returns true iff this operation can be used in a declaration.
+    // (e.g. `*x`, `&x`, `&&x`)
+    bool CanBeTypeSpecifier() const;
+
     BASIC_NODE_ROUTINES(UnaryPrefixExpression);
 
     UnaryPrefixExpression(PNode operand_, Operation operation_):
@@ -194,6 +199,21 @@ class AST {
   };
 
   // Lambda expression: x => x + 10;
+  struct TypeId : TypedNode<NodeType::TYPE_ID> {
+    PNode id_expression;
+    FullType type_info;
+    enum class Scope { DEFAULT, GLOBAL, LOCAL } scope;
+
+    BASIC_NODE_ROUTINES(TypeId);
+
+    TypeId(PNode id_exp, FullType type_, Scope scope_):
+        id_expression(std::move(id_exp)), type_info{std::move(type_)}, scope{scope_} {}
+    TypeId(PNode id_exp, FullType type_):
+        id_expression(std::move(id_exp)), type_info{std::move(type_)}, scope{Scope::DEFAULT} {}
+    TypeId(PNode id_exp): id_expression(std::move(id_exp)), scope{Scope::DEFAULT} {}
+  };
+
+  // Lambda expression: x => x + 10;
   struct LambdaExpression : TypedNode<NodeType::LAMBDA_EXPRESSION> {
     PNode parameters;
     PNode body;
@@ -207,50 +227,48 @@ class AST {
   // Sizeof expression
   struct SizeofExpression : TypedNode<NodeType::SIZEOF> {
     enum class Kind { EXPR, VARIADIC, TYPE } kind;
-    std::variant<PNode, std::string, FullType> argument;
+    PNode argument;
 
     BASIC_NODE_ROUTINES(SizeofExpression);
 
     explicit SizeofExpression(PNode arg): kind{Kind::EXPR}, argument{std::move(arg)} {}
-    explicit SizeofExpression(std::string ident): kind{Kind::VARIADIC}, argument{std::move(ident)} {}
-    explicit SizeofExpression(FullType ft): kind{Kind::TYPE}, argument{std::move(ft)} {}
   };
 
   // Alignof expression
   struct AlignofExpression : TypedNode<NodeType::ALIGNOF> {
-    FullType ft;
+    PNode type;
 
     BASIC_NODE_ROUTINES(AlignofExpression);
 
-    explicit AlignofExpression(FullType type): ft{std::move(type)} {}
+    explicit AlignofExpression(PNode type_): type{std::move(type_)} {}
   };
 
   // Cast expressions
   struct CastExpression : TypedNode<NodeType::CAST> {
-    enum class Kind { C_STYLE, STATIC, DYNAMIC, REINTERPRET, CONST, FUNCTIONAL } kind;
-    FullType ft;
+    // Note that FUNCTIONAL casts are now modeled as initializing a TypeId.
+    enum class Kind { C_STYLE, STATIC, DYNAMIC, REINTERPRET, CONST } kind;
+    PNode type;
     PNode expr;
-    TokenType functional_cast_type; // ???
+
     static const std::vector<std::string> KindNames;
 
     BASIC_NODE_ROUTINES(CastExpression);
     static std::string KindToString(Kind k);
 
-    CastExpression(const Token &token, FullType type, PNode expr, TokenType cast_type):
-       ft{std::move(type)}, expr{std::move(expr)}, functional_cast_type{cast_type} {
+    CastExpression(const Token &token, PNode type_, PNode expr_):
+       type{std::move(type_)}, expr{std::move(expr_)} {
       switch (token.type) {
-        case TT_BEGINPARENTH:     kind = Kind::C_STYLE; break;
+        case TT_ENDPARENTH:     kind = Kind::C_STYLE; break;
         case TT_STATIC_CAST:      kind = Kind::STATIC; break;
         case TT_DYNAMIC_CAST:     kind = Kind::DYNAMIC; break;
         case TT_REINTERPRET_CAST: kind = Kind::REINTERPRET; break;
         case TT_CONST_CAST:       kind = Kind::CONST; break;
-        case TT_BEGINBRACE:       kind = Kind::FUNCTIONAL; break;
         default:                  break;
       }
     }
 
-    CastExpression(Kind kind_, const Token &token, FullType type, PNode expr, TokenType cast_type):
-      CastExpression(token, std::move(type), std::move(expr), cast_type) {
+    CastExpression(Kind kind_, const Token &token, PNode type_, PNode expr_):
+      CastExpression(token, std::move(type_), std::move(expr_)) {
       kind = kind_;
     }
   };
@@ -276,13 +294,14 @@ class AST {
   struct IdentifierAccess : TypedNode<NodeType::IDENTIFIER> {
     // We can access identifiers declared either in C++ or EDL
     enum class Kind { EDL, CPP } kind;
-    std::variant<FullType *, jdi::definition *> type;
+    std::variant<FullType*, jdi::definition*> type;
     Token name;
 
     BASIC_NODE_ROUTINES(IdentifierAccess);
 
     IdentifierAccess(FullType *type, Token name): kind{Kind::EDL}, type{type}, name{name} {}
     IdentifierAccess(jdi::definition *type, Token name): kind{Kind::CPP}, type{type}, name{name} {}
+    IdentifierAccess(Token name): kind{Kind::CPP}, type{}, name{name} {}
   };
 
   struct Literal : TypedNode<NodeType::LITERAL> {
@@ -411,74 +430,38 @@ class AST {
   };
 
   struct Initializer;
-  struct BraceOrParenInitializer;
-  struct AssignmentInitializer;
 
   using InitializerNode = std::unique_ptr<Initializer>;
-  using BraceOrParenInitNode = std::unique_ptr<BraceOrParenInitializer>;
-  using AssignmentInitNode = std::unique_ptr<AssignmentInitializer>;
-
-  struct BraceOrParenInitializer {
-    enum class Kind { BRACE_INIT, DESIGNATED_INIT, PAREN_INIT } kind;
-    std::vector<std::pair<std::string, InitializerNode>> values{};
-    template <typename T>
-    static BraceOrParenInitNode from(T&& value, Kind kind = Kind::BRACE_INIT) {
-      return std::make_unique<BraceOrParenInitializer>(kind, std::forward<T>(value));
-    }
-  };
-
-  struct AssignmentInitializer {
-    enum class Kind { BRACE_INIT, EXPR } kind;
-    std::variant<BraceOrParenInitNode, PNode> initializer{};
-
-    explicit AssignmentInitializer(BraceOrParenInitNode init): kind{Kind::BRACE_INIT}, initializer{std::move(init)} {}
-    explicit AssignmentInitializer(PNode expr): kind{Kind::EXPR}, initializer{std::move(expr)} {}
-    // I think there is no need for the kind in this struct
-
-    template <typename T>
-    static AssignmentInitNode from(T&& value) {
-      return std::make_unique<AssignmentInitializer>(std::forward<T>(value));
-    }
-  };
 
   struct Initializer : TypedNode<NodeType::INITIALIZER> {
-    enum class Kind { BRACE_INIT, ASSIGN_EXPR, PLACEMENT_NEW } kind;
-    std::variant<BraceOrParenInitNode, AssignmentInitNode> initializer;
-    bool is_variadic{};
+    enum class Kind {
+      ASSIGN,          // = expr
+      EXPR,            // expr (also used for pack expansions like args...)
+      BRACE,           // { ... }
+      PAREN            // ( ... )
+    } kind;
 
+    PNode target;
+    std::vector<PNode> values;
     BASIC_NODE_ROUTINES(Initializer);
 
-    explicit Initializer(BraceOrParenInitNode init, bool is_variadic = false):
-      kind{Kind::BRACE_INIT}, initializer{std::move(init)}, is_variadic{is_variadic} {}
-    explicit Initializer(BraceOrParenInitializer init, bool is_variadic = false):
-      Initializer(std::make_unique<BraceOrParenInitializer>(std::move(init)), is_variadic) {}
-    explicit Initializer(AssignmentInitNode node, bool is_variadic = false):
-      kind{Kind::ASSIGN_EXPR}, initializer{std::move(node)}, is_variadic{is_variadic} {}
-    explicit Initializer(AssignmentInitializer node, bool is_variadic = false):
-      Initializer(std::make_unique<AssignmentInitializer>(std::move(node)), is_variadic) {}
-    explicit Initializer(PNode node, bool is_variadic = false):
-      Initializer(std::make_unique<AssignmentInitializer>(std::move(node)), is_variadic) {}
-
-    template <typename T>
-    static InitializerNode from(T&& value, bool is_variadic = false) {
-      // I don't have the energy to constrain T
-      return std::make_unique<Initializer>(std::forward<T>(value), is_variadic);
-    }
+    Initializer(Kind k, PNode target, std::vector<PNode> vals):
+      kind(k), target(std::move(target)), values(std::move(vals)) {}
   };
 
   // New expression
   struct NewExpression : TypedNode<NodeType::NEW> {
     bool is_global;
     bool is_array;
-    std::unique_ptr<Initializer> placement;
+    std::vector<PNode> placement_args;
     FullType ft;
     std::unique_ptr<Initializer> initializer;
 
     BASIC_NODE_ROUTINES(NewExpression);
 
-    NewExpression(bool is_global, bool is_array, std::unique_ptr<Initializer> placement, FullType type,
+    NewExpression(bool is_global, bool is_array, std::vector<PNode> placement_args, FullType type,
                   std::unique_ptr<Initializer> initializer):
-      is_global{is_global}, is_array{is_array}, placement{std::move(placement)}, ft{std::move(type)},
+      is_global{is_global}, is_array{is_array}, placement_args{std::move(placement_args)}, ft{std::move(type)},
       initializer{std::move(initializer)} {}
   };
 
@@ -509,7 +492,7 @@ class AST {
       GLOBAL,
     };
 
-    jdi::definition *def;
+    PNode type;
     StorageClass storage_class;
     std::vector<Declaration> declarations;
     static const std::vector<std::string> StorageNames; // what is the use of this?
@@ -517,10 +500,10 @@ class AST {
     BASIC_NODE_ROUTINES(DeclarationStatement);
     static std::string StorageToString(StorageClass st);
 
-    DeclarationStatement(StorageClass sc, jdi::definition *type,
-                         std::vector<Declaration> declarations):
-        def{type}, storage_class{sc},
-        declarations{std::move(declarations)} {}
+    DeclarationStatement(StorageClass sc, PNode type_,
+                         std::vector<Declaration> declarations_):
+        type{std::move(type_)}, storage_class{sc},
+        declarations{std::move(declarations_)} {}
   };
 
   class Visitor {
@@ -535,6 +518,7 @@ class AST {
     virtual bool VisitUnaryPrefixExpression(UnaryPrefixExpression &node){ return DefaultVisit(node); }
     virtual bool VisitUnaryPostfixExpression(UnaryPostfixExpression &node){ return DefaultVisit(node); }
     virtual bool VisitTernaryExpression(TernaryExpression &node){ return DefaultVisit(node); }
+    virtual bool VisitTypeId(TypeId &node){ return DefaultVisit(node); }
     virtual bool VisitLambdaExpression(LambdaExpression &node){ return DefaultVisit(node); }
     virtual bool VisitSizeofExpression(SizeofExpression &node){ return DefaultVisit(node); }
     virtual bool VisitAlignofExpression(AlignofExpression &node){ return DefaultVisit(node); }
@@ -604,8 +588,6 @@ class AST {
     bool VisitBreakStatement(BreakStatement &node);
     bool VisitContinueStatement(ContinueStatement &node);
     bool VisitWithStatement(WithStatement &node);
-    bool VisitBraceOrParenInitializer(BraceOrParenInitializer &node);
-    bool VisitAssignmentInitializer(AssignmentInitializer &node);
     bool VisitInitializer(Initializer &node);
     bool VisitNewExpression(NewExpression &node);
     bool VisitDeleteExpression(DeleteExpression &node);

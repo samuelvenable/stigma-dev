@@ -438,54 +438,38 @@ bool AST::CppPrettyPrinter::VisitFullType(FullType &ft, bool print_type) {
 }
 
 bool AST::CppPrettyPrinter::VisitSizeofExpression(AST::SizeofExpression &node) {
-  print("sizeof");
-
-  if (node.kind == AST::SizeofExpression::Kind::EXPR) {
-    print(" ");
-    auto &arg = std::get<AST::PNode>(node.argument);
-    VISIT_AND_CHECK(arg);
-  } else if (node.kind == AST::SizeofExpression::Kind::VARIADIC) {
-    print("...(");
-    std::string arg = std::get<std::string>(node.argument);
-    print(arg + ")");
-  } else {
-    print("(");
-
-    FullType &ft = std::get<FullType>(node.argument);
-    if (!VisitFullType(ft)) return false;
-
-    print(")");
+  print("sizeof(");
+  if (node.argument) {
+    VISIT_AND_CHECK(node.argument);
   }
-
+  print(")");
   return true;
 }
 
 bool AST::CppPrettyPrinter::VisitAlignofExpression(AST::AlignofExpression &node) {
   print("alignof(");
-  if (!VisitFullType(node.ft)) return false;
+  if (node.type) {
+    VISIT_AND_CHECK(node.type);
+  }
   print(")");
   return true;
 }
 
 bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
-  if (node.kind == AST::CastExpression::Kind::FUNCTIONAL) {
-    if (!VisitFullType(node.ft)) return false;
+  // Functional casts now live in Initializer (with a TypeId target); not handled here.
+  if (node.kind == AST::CastExpression::Kind::C_STYLE) {
     print("(");
-  } else if (node.kind == AST::CastExpression::Kind::C_STYLE) {
-    print("(");
-    if (!VisitFullType(node.ft)) return false;
+    if (node.type) VISIT_AND_CHECK(node.type);
     print(")");
   } else {
-    if (node.kind == AST::CastExpression::Kind::STATIC) {
-      print("static_cast<");
-    } else if (node.kind == AST::CastExpression::Kind::DYNAMIC) {
-      print("dynamic_cast<");
-    } else if (node.kind == AST::CastExpression::Kind::CONST) {
-      print("const_cast<");
-    } else if (node.kind == AST::CastExpression::Kind::REINTERPRET) {
-      print("reinterpret_cast<");
+    switch (node.kind) {
+      case AST::CastExpression::Kind::STATIC:      print("static_cast<");      break;
+      case AST::CastExpression::Kind::DYNAMIC:     print("dynamic_cast<");     break;
+      case AST::CastExpression::Kind::CONST:       print("const_cast<");       break;
+      case AST::CastExpression::Kind::REINTERPRET: print("reinterpret_cast<"); break;
+      default: break;
     }
-    if (!VisitFullType(node.ft)) return false;
+    if (node.type) VISIT_AND_CHECK(node.type);
     print(">(");
   }
 
@@ -493,9 +477,7 @@ bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
     VISIT_AND_CHECK(node.expr);
   }
 
-  if (node.kind == AST::CastExpression::Kind::FUNCTIONAL) {
-    print(")");
-  } else if (node.kind != AST::CastExpression::Kind::C_STYLE) {
+  if (node.kind != AST::CastExpression::Kind::C_STYLE) {
     print(")");
   }
 
@@ -511,61 +493,38 @@ bool AST::CppPrettyPrinter::VisitArray(AST::Array &node) {
   return true;
 }
 
-bool AST::CppPrettyPrinter::VisitBraceOrParenInitializer(AST::BraceOrParenInitializer &node) {
-  if (node.kind == AST::BraceOrParenInitializer::Kind::PAREN_INIT) {
-    print("(");
-  } else {
-    print("{");
-  }
-
-  for (auto &val : node.values) {
-    if (node.kind == AST::BraceOrParenInitializer::Kind::DESIGNATED_INIT) {
-      print(".");
-    }
-
-    if (val.first != "") {
-      print(val.first + "=");
-    }
-
-    if (!VisitInitializer(*val.second)) return false;
-
-    if (&val != &node.values.back()) {
-      print(", ");
-    }
-  }
-
-  if (node.kind == AST::BraceOrParenInitializer::Kind::PAREN_INIT) {
-    print(")");
-  } else {
-    print("}");
-  }
-
-  return true;
-}
-
-bool AST::CppPrettyPrinter::VisitAssignmentInitializer(AST::AssignmentInitializer &node) {
-  if (node.kind == AST::AssignmentInitializer::Kind::BRACE_INIT) {
-    if (!VisitBraceOrParenInitializer(*std::get<AST::BraceOrParenInitNode>(node.initializer))) return false;
-  } else {
-    auto &expr = std::get<AST::PNode>(node.initializer);
-    VISIT_AND_CHECK(expr);
-  }
-  return true;
-}
-
 bool AST::CppPrettyPrinter::VisitInitializer(AST::Initializer &node) {
-  if (node.kind == AST::Initializer::Kind::BRACE_INIT || node.kind == AST::Initializer::Kind::PLACEMENT_NEW) {
-    auto &init = std::get<AST::BraceOrParenInitNode>(node.initializer);
-    if (!VisitBraceOrParenInitializer(*init)) return false;
-  } else if (node.kind == AST::Initializer::Kind::ASSIGN_EXPR) {
-    auto &init = std::get<AST::AssignmentInitNode>(node.initializer);
-    if (!VisitAssignmentInitializer(*init)) return false;
+  if (node.kind == AST::Initializer::Kind::ASSIGN) {
+    // target is the optional designator (`.name`); values[0] is the value.
+    if (node.target) {
+      print(".");
+      VISIT_AND_CHECK(node.target);
+    }
+    print(" = ");
+    if (!node.values.empty()) {
+      VISIT_AND_CHECK(node.values[0]);
+    }
+    return true;
   }
 
-  if (node.is_variadic) {
-    print("...");
+  if (node.kind == AST::Initializer::Kind::EXPR) {
+    if (!node.values.empty()) {
+      VISIT_AND_CHECK(node.values[0]);
+    }
+    return true;
   }
 
+  // BRACE or PAREN. A non-null target represents a functional-cast / temporary
+  // construction: TypeId( values... ) or TypeId{ values... }.
+  if (node.target) {
+    VISIT_AND_CHECK(node.target);
+  }
+  print(node.kind == AST::Initializer::Kind::PAREN ? "(" : "{");
+  for (std::size_t i = 0; i < node.values.size(); ++i) {
+    if (i > 0) print(", ");
+    VISIT_AND_CHECK(node.values[i]);
+  }
+  print(node.kind == AST::Initializer::Kind::PAREN ? ")" : "}");
   return true;
 }
 
@@ -576,9 +535,13 @@ bool AST::CppPrettyPrinter::VisitNewExpression(AST::NewExpression &node) {
 
   print("new ");
 
-  if (node.placement) {
-    if (!VisitInitializer(*node.placement)) return false;
-    print(" ");
+  if (!node.placement_args.empty()) {
+    print("(");
+    for (size_t i = 0; i < node.placement_args.size(); ++i) {
+      if (i > 0) print(", ");
+      VISIT_AND_CHECK(node.placement_args[i]);
+    }
+    print(") ");
   }
 
   print("(");

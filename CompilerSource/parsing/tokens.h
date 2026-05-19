@@ -131,10 +131,7 @@ enum TokenType {
   TT_CLASS,           // class declaration keyword
   TT_STRUCT,          // struct declaration keyword
   TT_UNION,           // union declaration keyword
-  TT_SIGNED,          // signed
-  TT_UNSIGNED,        // unsigned
-  TT_CONST,           // const
-  TT_VOLATILE,        // volatile
+  TT_DECLSPEC,        // long, sort, signed, unsigned, const, volatile
   TT_DECLTYPE,        // decltype
   TTM_WHITESPACE,     // Preprocessing token: whitespace
   TTM_CONCAT,         // Preprocessing token: ##

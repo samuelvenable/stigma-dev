@@ -18,6 +18,7 @@
 #include "ast.h"
 #include "parser.h"
 #include "parser/collect_variables.h"  // collect_variables
+#include "macro_helper.h"
 
 #include <string>
 #include <memory>
@@ -25,8 +26,6 @@
 #include <vector>
 
 namespace enigma::parsing {
-  
-#define REGISTER(enum, name) [[fallthrough]]; case enum::name: res[(int) enum::name] = #name
 
 bool AST::empty() const { return !root_; }
 
@@ -85,21 +84,29 @@ void AST::FunctionCallExpression::RecursiveSubVisit(Visitor &visitor) {
 void AST::UnaryPrefixExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, operand);
 }
+bool AST::UnaryPrefixExpression::CanBeTypeSpecifier() const {
+  // C++ pointer/reference declarator operators: *, &, &&.
+  return operation.type == TT_STAR
+      || operation.type == TT_AMPERSAND
+      || operation.type == TT_AND;
+}
 void AST::UnaryPostfixExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, operand);
 }
 void AST::TernaryExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, condition, true_expression, false_expression);
 }
+void AST::TypeId::RecursiveSubVisit(Visitor &visitor) {
+  if (id_expression) RV(visitor, id_expression);
+}
 void AST::LambdaExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, parameters, body);
 }
 void AST::SizeofExpression::RecursiveSubVisit(Visitor &visitor) {
-  if (std::holds_alternative<PNode>(argument))
-    RV(visitor, std::get<PNode>(argument));
+  RV(visitor, argument);
 }
 void AST::AlignofExpression::RecursiveSubVisit(Visitor &visitor) {
-  (void) visitor;  // Nothing to visit.
+  RV(visitor, type);
 }
 void AST::CastExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expr);
@@ -150,88 +157,66 @@ void AST::WithStatement::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, object, body);
 }
 void AST::Initializer::RecursiveSubVisit(Visitor &visitor) {
-  
+  if (target) RV(visitor, target);
+  RV(visitor, values);
 }
 void AST::NewExpression::RecursiveSubVisit(Visitor &visitor) {
-  
+  RV(visitor, placement_args);
+  if (initializer) initializer->RecurusiveVisit(visitor);
 }
 void AST::DeleteExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expression);
 }
 void AST::DeclarationStatement::RecursiveSubVisit(Visitor &visitor) {
-  
+  if (type) RV(visitor, type);
+  for (auto &decl : declarations) {
+    if (decl.init) decl.init->RecurusiveVisit(visitor);
+  }
 }
 
-const std::vector<std::string> AST::NodesNames = [](){
-  std::vector<std::string> res;
-  int nsize = static_cast<int>(NodeType::INITIALIZER)+1;
-  res.resize(nsize);
+const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
+    ERROR,
+    BLOCK,
+    BINARY_EXPRESSION,
+    UNARY_PREFIX_EXPRESSION,
+    UNARY_POSTFIX_EXPRESSION,
+    TERNARY_EXPRESSION,
+    LAMBDA_EXPRESSION,
+    SIZEOF,
+    ALIGNOF,
+    CAST,
+    NEW,
+    DELETE,
+    PARENTHETICAL,
+    ARRAY,
+    IDENTIFIER,
+    SCOPE_ACCESS,
+    LITERAL,
+    FUNCTION_CALL,
+    IF,
+    FOR,
+    WHILE,
+    DO,
+    WITH,
+    REPEAT,
+    SWITCH,
+    CASE,
+    DEFAULT,
+    BREAK,
+    CONTINUE,
+    RETURN,
+    DECLARATION,
+    INITIALIZER);
 
-  switch (NodeType::ERROR) {
-    case NodeType::ERROR: res[(int)NodeType::ERROR] = "ERROR";
-    REGISTER(NodeType, BLOCK);
-    REGISTER(NodeType, BINARY_EXPRESSION);
-    REGISTER(NodeType, UNARY_PREFIX_EXPRESSION);
-    REGISTER(NodeType, UNARY_POSTFIX_EXPRESSION);
-    REGISTER(NodeType, TERNARY_EXPRESSION);
-    REGISTER(NodeType, LAMBDA_EXPRESSION);
-    REGISTER(NodeType, SIZEOF);
-    REGISTER(NodeType, ALIGNOF);
-    REGISTER(NodeType, CAST);
-    REGISTER(NodeType, NEW);
-    REGISTER(NodeType, DELETE);
-    REGISTER(NodeType, PARENTHETICAL);
-    REGISTER(NodeType, ARRAY);
-    REGISTER(NodeType, IDENTIFIER);
-    REGISTER(NodeType, SCOPE_ACCESS);
-    REGISTER(NodeType, LITERAL);
-    REGISTER(NodeType, FUNCTION_CALL);
-    REGISTER(NodeType, IF);
-    REGISTER(NodeType, FOR);
-    REGISTER(NodeType, WHILE);
-    REGISTER(NodeType, DO);
-    REGISTER(NodeType, WITH);
-    REGISTER(NodeType, REPEAT);
-    REGISTER(NodeType, SWITCH);
-    REGISTER(NodeType, CASE);
-    REGISTER(NodeType, DEFAULT);
-    REGISTER(NodeType, BREAK);
-    REGISTER(NodeType, CONTINUE);
-    REGISTER(NodeType, RETURN);
-    REGISTER(NodeType, DECLARATION);
-    REGISTER(NodeType, INITIALIZER);
-  }
-  return res;
-}();
+const std::vector<std::string> AST::DeclarationStatement::StorageNames =
+    ENUM_NAME_VECTOR(StorageClass, TEMPORARY, LOCAL, GLOBAL);
 
-const std::vector<std::string> AST::DeclarationStatement::StorageNames = [](){
-  std::vector<std::string> res;
-  int stsize = static_cast<int>(StorageClass::GLOBAL)+1;
-  res.resize(stsize);
-
-  switch (StorageClass::TEMPORARY) {
-    case StorageClass::TEMPORARY: res[(int)StorageClass::TEMPORARY] = "TEMPORARY";
-    REGISTER(StorageClass, LOCAL);
-    REGISTER(StorageClass, GLOBAL);
-  }
-  return res;
-}();
-
-const std::vector<std::string> AST::CastExpression::KindNames = [](){
-  std::vector<std::string> res;
-  int ksize = static_cast<int>(Kind::FUNCTIONAL)+1;
-  res.resize(ksize);
-
-  switch (Kind::C_STYLE) {
-    case Kind::C_STYLE: res[(int)Kind::C_STYLE] = "C_STYLE";
-    REGISTER(Kind, STATIC);
-    REGISTER(Kind, DYNAMIC);
-    REGISTER(Kind, REINTERPRET);
-    REGISTER(Kind, CONST);
-    REGISTER(Kind, FUNCTIONAL);
-  }
-  return res;
-}();
+const std::vector<std::string> AST::CastExpression::KindNames = ENUM_NAME_VECTOR(Kind,
+    C_STYLE,
+    STATIC,
+    DYNAMIC,
+    REINTERPRET,
+    CONST);
 
 std::string AST::NodeToString(NodeType nt){
   return NodesNames[(int)nt];

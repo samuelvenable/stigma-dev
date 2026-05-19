@@ -44,7 +44,7 @@ else
 endif
 
 # Global g++ flags
-CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -g -I.
+CXXFLAGS := -std=c++17 -Wno-c++20-extensions -Wall -Wextra -Wpedantic -g -I.
 LDFLAGS := -g
 
 # Enable ASAN only if ENABLE_ASAN=1

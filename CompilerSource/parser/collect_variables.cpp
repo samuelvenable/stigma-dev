@@ -244,7 +244,7 @@ class DeclGatheringVisitor : public AST::Visitor {
       if (is_global) parsed_scope->globals[name] = dtrip;
       if (is_local) parsed_scope->locals[name] = dtrip;
       cs->add_dot_accessed_local(name);
-      parsed_scope->declarations[name] = node.def;
+      parsed_scope->declarations[name] = decl.declarator->def;
     }
 
     for (const auto &decl : node.declarations) {
@@ -303,149 +303,13 @@ class DeclGatheringVisitor : public AST::Visitor {
     return false;
   }
 
-  bool VisitIfStatement(AST::IfStatement &node) {
-    AddLocal(node.condition);
-    AddLocal(node.true_branch);
-    AddLocal(node.false_branch);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitUnaryPrefixExpression(AST::UnaryPrefixExpression &node) {
-    AddLocal(node.operand);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitUnaryPostfixExpression(AST::UnaryPostfixExpression &node) {
-    AddLocal(node.operand);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitTernaryExpression(AST::TernaryExpression &node) {
-    AddLocal(node.condition);
-    AddLocal(node.true_expression);
-    AddLocal(node.false_expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitLambdaExpression(AST::LambdaExpression &node) {
-    // I think no need to add locals for the arguments, because we give them `auto` in the pretty printer
-    AddLocal(node.body);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  virtual bool VisitSizeofExpression(AST::SizeofExpression &node) {
-    if (node.kind == AST::SizeofExpression::Kind::EXPR) {
-      AddLocal(std::get<AST::PNode>(node.argument));
-    }
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitCastExpression(AST::CastExpression &node) {
-    AddLocal(node.expr);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitParenthetical(AST::Parenthetical &node) {
-    AddLocal(node.expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitArray(AST::Array &node) {
-    for (auto &elem : node.elements) AddLocal(elem);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitForLoop(AST::ForLoop &node) {
-    AddLocal(node.assignment);
-    AddLocal(node.condition);
-    AddLocal(node.increment);
-    AddLocal(node.body);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitWhileLoop(AST::WhileLoop &node) {
-    AddLocal(node.condition);
-    AddLocal(node.body);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  virtual bool VisitDoLoop(AST::DoLoop &node) {
-    AddLocal(node.body);
-    AddLocal(node.condition);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitCaseStatement(AST::CaseStatement &node) {
-    AddLocal(node.value);
-    // CaseStatement::statements is code block, no need to add locals here
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitDefaultStatement(AST::DefaultStatement &node) {
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitSwitchStatement(AST::SwitchStatement &node) {
-    AddLocal(node.expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitReturnStatement(AST::ReturnStatement &node) {
-    AddLocal(node.expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitBreakStatement(AST::BreakStatement &node) {
-    AddLocal(node.count);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitContinueStatement(AST::ContinueStatement &node) {
-    AddLocal(node.count);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitBraceOrParenInitializer(AST::BraceOrParenInitializer &node) {
-    for (auto &val : node.values) VisitInitializer(*val.second);
-    return false;
-  }
-
-  bool VisitAssignmentInitializer(AST::AssignmentInitializer &node) {
-    if (node.kind == AST::AssignmentInitializer::Kind::BRACE_INIT) {
-      VisitBraceOrParenInitializer(*std::get<AST::BraceOrParenInitNode>(node.initializer));
-    } else {
-      auto &expr = std::get<AST::PNode>(node.initializer);
-      AddLocal(expr);
-      expr->accept(*this);
-    }
-    return false;
-  }
-
   bool VisitInitializer(AST::Initializer &node) {
-    if (node.kind == AST::Initializer::Kind::ASSIGN_EXPR) {
-      auto &init = std::get<AST::AssignmentInitNode>(node.initializer);
-      VisitAssignmentInitializer(*init);
-    } else if (node.kind == AST::Initializer::Kind::BRACE_INIT) {
-      auto &init = std::get<AST::BraceOrParenInitNode>(node.initializer);
-      VisitBraceOrParenInitializer(*init);
+    if (node.target) {
+      // Target is usually a type or identifier, not a variable usage in the expression sense
+      node.target->accept(*this);
+    }
+    for (auto &val : node.values) {
+      val->accept(*this);
     }
     return false;
   }
