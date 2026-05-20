@@ -230,30 +230,46 @@ class AST {
   //
   // Note: `def` is named for what it carries (a JDI definition pointer), not
   // "resolved final type" — a `def` pointing at a typedef still leaves the
-  // declarator chain (on the enclosing Declaration) to be walked.
+  // declarator chain (post-4e, on this TypeId itself) to be walked.
   //
-  // `type_info` (FullType) is transitional and will be removed in phase 4.
+  // `type_info` is the cached/synthesized FullType (the JDI-bridge layer's
+  // form of this same type). It's populated either at construction (when a
+  // caller already has a FullType in hand) or, post-4e, lazily by
+  // `to_jdi_fulltype()` walking declspecs + declarator-expr-tree. Not
+  // transitional — FullType stays as ENIGMA's intra-system bridge to JDI.
   struct TypeId : TypedNode<NodeType::TYPE_ID> {
     jdi::definition *def = nullptr;
     PNode id_expression;
     std::unique_ptr<DeclSpecList> declspecs;
-    FullType type_info;  // TRANSITIONAL: will be removed once consumers migrate.
+    FullType type_info;
     enum class Scope { DEFAULT, GLOBAL, LOCAL } scope = Scope::DEFAULT;
 
     BASIC_NODE_ROUTINES(TypeId);
 
-    // New-shape constructor: phase-2 callers use this. id_expression is
-    // optional (nullable); declspecs is optional (nullable).
+    // Primary constructor: phase-2 callers use this. id_expression is
+    // optional (nullable); declspecs is optional (nullable). `type_info` is
+    // left empty; populate via lazy synthesis or a follow-up assignment.
     TypeId(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs, Scope scope_ = Scope::DEFAULT):
         def(def_), id_expression(std::move(id_exp)), declspecs(std::move(specs)), scope(scope_) {}
 
-    // Transitional constructors retained for build-green call sites. These
-    // are dropped in phase 4 alongside FullType retirement.
+    // "Construct from already-built FullType" overloads — used by call sites
+    // that produce a FullType in the legacy spec-seq + declarator parse
+    // (still the path for things like new-expression bare type-ids until 4e
+    // gives us native declarator-expression-tree parsing). The FullType
+    // populates the type_info cache.
     TypeId(PNode id_exp, FullType type_, Scope scope_):
         def(type_.def), id_expression(std::move(id_exp)), type_info(std::move(type_)), scope(scope_) {}
     TypeId(PNode id_exp, FullType type_):
         TypeId(std::move(id_exp), std::move(type_), Scope::DEFAULT) {}
     TypeId(PNode id_exp): id_expression(std::move(id_exp)) {}
+
+    // JDI bridge. Used by sites that need to feed a TypeId into the legacy
+    // JDI machinery (template-arg keys, function-parameter ref-stacks). Today
+    // it delegates to the transitional FullType inside this TypeId; once 4e
+    // gives us a declarator expression tree on TypeId itself, this synthesizes
+    // the jdi::full_type directly. Non-const because the underlying
+    // Declarator::to_jdi_refstack walk is non-const.
+    jdi::full_type to_jdi_fulltype();
   };
 
   // Lambda expression: x => x + 10;

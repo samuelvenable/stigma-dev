@@ -92,6 +92,14 @@ void AST::TernaryExpression::RecursiveSubVisit(Visitor &visitor) {
 void AST::TypeId::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, id_expression, declspecs);
 }
+jdi::full_type AST::TypeId::to_jdi_fulltype() {
+  // Routes through the cached FullType (the JDI-bridge layer's form of this
+  // type). Today type_info is populated at construction by the spec-seq +
+  // declarator parse; post-4e it gets lazily synthesized from declspecs +
+  // declarator-expression-tree on first call. Returned by value because
+  // downstream callers `swap_in` the result into JDI structures.
+  return type_info.to_jdi_fulltype();
+}
 void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Leaf: specs are Tokens, not AST nodes.
 }

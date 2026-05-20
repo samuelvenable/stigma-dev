@@ -511,12 +511,16 @@ void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool
             params.as<void *>())->arguments.emplace_back(TryParseExpression(Precedence::kTernary));
         }
       } else {
+        // Parameter type lives at the FullType (JDI-bridge) layer, below the
+        // AST. Decl-specs are folded into FullType::flags by the spec-seq
+        // parser; the parallel DeclSpecList we feed it is a throwaway here
+        // (Token-fidelity isn't needed at this layer). Task #15 redesigns
+        // these spec-parsing functions to return the list rather than take
+        // an out-param, at which point this throwaway disappears.
         FunctionParameterNode::Parameter param;
         FullType type;
-        // declspecs is collected for fidelity but not used here (Parameter still
-        // stores a FullType, not a TypeId). Migrates in phase-2 step 4.
-        auto declspecs_ = std::make_unique<AST::DeclSpecList>();
-        TryParseDeclSpecifierSeq(&type, declspecs_.get());
+        AST::DeclSpecList unused_specs;
+        TryParseDeclSpecifierSeq(&type, &unused_specs);
         TryParseDeclarator(&type, AST::DeclaratorType::MAYBE_ABSTRACT);
         param.type = std::make_unique<FullType>(std::move(type));
         if (token.type == TT_EQUALS) {
@@ -712,14 +716,9 @@ void TryParseTemplateArgs(jdi::definition *def) {
     std::size_t args_given = 0;
     for (; token.type != TT_GREATER && token.type != TT_ENDOFCODE;) {
       if (template_def->params[args_given]->flags & jdi::DEF_TYPENAME) {
-        // TRANSITIONAL: pilfering type_info out of TypeId. Step 4 retires
-        // type_info; this site needs the JDI bridge (to_jdi_fulltype) to
-        // operate on TypeId directly, or template args to stop going through
-        // the legacy FullType path entirely.
         auto type_node = TryParseTypeID();
-        FullType type = std::move(type_node->type_info);
-        if (type.def) {
-          jdi::full_type t = type.to_jdi_fulltype();
+        if (type_node && type_node->def) {
+          jdi::full_type t = type_node->to_jdi_fulltype();
           argk[args_given].ft().swap(t);
         }
       } else if (next_can_begin_id_expression()) {
@@ -1118,9 +1117,9 @@ void TryParseMaybeNestedPtrOperator(FullType *type) {
 
 // Build the TypeId for a `<type-id>` grammar production. The parser
 // unconditionally records the decl-spec chain (declspecs) and the resolved
-// base type (def); the returned node owns both. type_info (FullType) is
-// retained transitionally for downstream code that still wants the legacy
-// flat representation.
+// base type (def). type_info (FullType cache) is populated from the same
+// parse — it's the JDI-bridge view of this same type, used by to_jdi_fulltype
+// and any downstream code that wants the declarator chain in flat form.
 std::unique_ptr<AST::TypeId> TryParseTypeID() {
   FullType type;
   auto declspecs = std::make_unique<AST::DeclSpecList>();
@@ -1454,10 +1453,9 @@ std::unique_ptr<AST::Node> TryParseDeclarations(bool parse_unbounded) {
   return nullptr;
 }
 
-// TRANSITIONAL helper (step 4a→4e): an honest path for "did the parsed type
-// have an outermost array bound?" still has to walk the declarator. Once 4e
-// gives us a declarator expression tree on TypeId, this becomes a structural
-// check on that tree instead of a FullType pilfer.
+// Reads "did the parsed type have an outermost array bound?" off the
+// FullType cache for now. Post-4e it inspects TypeId's native
+// declarator-expression-tree instead.
 static bool TypeIdIsArray(const std::unique_ptr<AST::TypeId> &t) {
   if (!t) return false;
   const auto &components = t->type_info.decl.components;
