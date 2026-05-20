@@ -58,16 +58,17 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   bool b3 = true;
   auto *expected_def = static_cast<jdi::definition*>(decl_type);
   for (size_t i = 0; i < decls.size(); i++) {
-    auto &decli = decl->declarations[i].declarator->decl;
-    auto *parsed_def = decl->declarations[i].declarator->def;
-    b3 = b3 && decl->declarations[i].init != nullptr;
+    auto &init_decl = *decl->declarations[i];
+    auto &decli = init_decl.declarator->decl;
+    auto *parsed_def = init_decl.declarator->def;
+    b3 = b3 && init_decl.init != nullptr;
     // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
     // Otherwise, compare pointers OR compare by name for builtin types
-    bool type_matches = (expected_def == nullptr) || 
+    bool type_matches = (expected_def == nullptr) ||
                         (parsed_def == expected_def) ||
                         (parsed_def && expected_def && parsed_def->name == expected_def->name);
     b3 = b3 && type_matches;
-    b3 = b3 && decl->declarations[i].declarator->flags == 0;
+    b3 = b3 && init_decl.declarator->flags == 0;
     b3 = b3 && decli.name.content == decls[i];
     b3 = b3 && decli.components.size() == 0;
     if (!b3) {
@@ -79,9 +80,9 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
           "] has init != nullptr, def = " + expected_type + ", flags = 0, name.content = " +
           decls[i] + ", components.size() = 0\n";
       *result_listener << " got Declaration [" << to_string(i) << "] has init "
-                       << ((decl->declarations[i].init) ? "!=" : "=")
+                       << ((init_decl.init) ? "!=" : "=")
                        << " nullptr, def = " << got_type << ", flags = "
-                       << to_string(decl->declarations[i].declarator->flags)
+                       << to_string(init_decl.declarator->flags)
                        << ", name.content = " << decli.name.content
                        << ", components.size() = " << to_string(decli.components.size()) << "\n";
     }
@@ -111,14 +112,24 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
     return false;
   }
 
+  // cast->type is a PNode wrapping the AST::TypeId; type_info is the cached
+  // FullType (JDI-bridge form) populated by the parser.
+  auto *typeid_node = cast->type ? cast->type->template As<AST::TypeId>() : nullptr;
+  if (!typeid_node) {
+    ExpectedMsg += "From IsCast Matcher: cast->type is a TypeId\n";
+    *result_listener << "got cast->type = "
+                     << (cast->type ? AST::NodeToString(cast->type->type) : std::string{"nullptr"}) << "\n";
+    return false;
+  }
+  auto &ft = typeid_node->type_info;
   // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
   // Otherwise, compare pointers OR compare by name for builtin types
-  auto *parsed_def = cast->ft.def;
+  auto *parsed_def = ft.def;
   auto *expected_def = static_cast<jdi::definition*>(type);
   bool b1 = (expected_def == nullptr) || (parsed_def == expected_def) ||
             (parsed_def && expected_def && parsed_def->name == expected_def->name);
-  bool b2 = cast->ft.flags == 0, b3 = cast->ft.decl.components.size() == 0,
-       b4 = cast->ft.decl.name.content == "", b5 = cast->ft.decl.has_nested_declarator == false,
+  bool b2 = ft.flags == 0, b3 = ft.decl.components.size() == 0,
+       b4 = ft.decl.name.content == "", b5 = ft.decl.has_nested_declarator == false,
        b6 = cast->kind == cast_kind, b7 = expr->type == expr_type;
 
   bool res = b1 && b2 && b3 && b4 && b5 && b6 && b7;
@@ -128,19 +139,19 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
 
     if (!b2) {
       ExpectedMsg += "ft.flags = 0\n";
-      *result_listener << "got ft.flags = " << to_string(cast->ft.flags) << "\n";
+      *result_listener << "got ft.flags = " << to_string(ft.flags) << "\n";
     }
     if (!b3) {
       ExpectedMsg += "ft.decl.components.size() = 0\n";
-      *result_listener << "got ft.decl.components.size() = " << to_string(cast->ft.decl.components.size()) << "\n";
+      *result_listener << "got ft.decl.components.size() = " << to_string(ft.decl.components.size()) << "\n";
     }
     if (!b4) {
       ExpectedMsg += "ft.decl.name.content = \"\"\n";
-      *result_listener << "got ft.decl.name.content = " << cast->ft.decl.name.content << "\n";
+      *result_listener << "got ft.decl.name.content = " << ft.decl.name.content << "\n";
     }
     if (!b5) {
       ExpectedMsg += "ft.decl.has_nested_declarator = false\n";
-      *result_listener << "got ft.decl.has_nested_declarator = " << to_string(cast->ft.decl.has_nested_declarator)
+      *result_listener << "got ft.decl.has_nested_declarator = " << to_string(ft.decl.has_nested_declarator)
                        << "\n";
     }
     if (!b6) {
