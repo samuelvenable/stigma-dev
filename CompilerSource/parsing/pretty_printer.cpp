@@ -570,8 +570,13 @@ bool AST::CppPrettyPrinter::VisitNewExpression(AST::NewExpression &node) {
     print(") ");
   }
 
+  // TRANSITIONAL: reach through TypeId's vestigial type_info to keep behavior
+  // identical for now. Step 4e replaces this with declspecs + base + declarator
+  // expression-tree printed natively off TypeId.
   print("(");
-  if (!VisitFullType(node.ft)) return false;
+  if (node.type) {
+    if (!VisitFullType(node.type->type_info)) return false;
+  }
   print(")");
 
   if (node.initializer) {

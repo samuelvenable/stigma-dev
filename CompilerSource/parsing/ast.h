@@ -503,14 +503,14 @@ class AST {
     bool is_global;
     bool is_array;
     std::vector<PNode> placement_args;
-    FullType ft;
+    std::unique_ptr<TypeId> type;
     std::unique_ptr<Initializer> initializer;
 
     BASIC_NODE_ROUTINES(NewExpression);
 
-    NewExpression(bool is_global, bool is_array, std::vector<PNode> placement_args, FullType type,
+    NewExpression(bool is_global, bool is_array, std::vector<PNode> placement_args, std::unique_ptr<TypeId> type,
                   std::unique_ptr<Initializer> initializer):
-      is_global{is_global}, is_array{is_array}, placement_args{std::move(placement_args)}, ft{std::move(type)},
+      is_global{is_global}, is_array{is_array}, placement_args{std::move(placement_args)}, type{std::move(type)},
       initializer{std::move(initializer)} {}
   };
 

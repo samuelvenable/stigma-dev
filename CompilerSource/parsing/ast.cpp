@@ -157,7 +157,7 @@ void AST::Initializer::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, values);
 }
 void AST::NewExpression::RecursiveSubVisit(Visitor &visitor) {
-  RV(visitor, placement_args, initializer);
+  RV(visitor, placement_args, type, initializer);
 }
 void AST::DeleteExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expression);

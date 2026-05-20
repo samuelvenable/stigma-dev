@@ -1454,31 +1454,38 @@ std::unique_ptr<AST::Node> TryParseDeclarations(bool parse_unbounded) {
   return nullptr;
 }
 
+// TRANSITIONAL helper (step 4a→4e): an honest path for "did the parsed type
+// have an outermost array bound?" still has to walk the declarator. Once 4e
+// gives us a declarator expression tree on TypeId, this becomes a structural
+// check on that tree instead of a FullType pilfer.
+static bool TypeIdIsArray(const std::unique_ptr<AST::TypeId> &t) {
+  if (!t) return false;
+  const auto &components = t->type_info.decl.components;
+  return !components.empty() &&
+         components.begin()->kind == DeclaratorNode::Kind::ARRAY_BOUND;
+}
+
 std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
   require_token(TT_S_NEW, "Expected 'new' in new-expression");
 
   bool is_array = false;
   std::vector<AST::PNode> placement_args;
-  FullType type;
+  std::unique_ptr<AST::TypeId> type_node;
   AST::InitializerNode initializer = nullptr;
 
   if (token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
     if (next_is_type_specifier()) {
-      // TRANSITIONAL: pilfering type_info out of TypeId. Step 4 moves
-      // NewExpression::ft off FullType, and this hop disappears.
-      auto type_node = TryParseTypeID();
-      type = std::move(type_node->type_info);
+      type_node = TryParseTypeID();
       require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
       if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
         initializer = TryParseInitializer(true);
       }
-      is_array = !type.decl.components.empty() &&
-                 type.decl.components.begin()->kind == DeclaratorNode::Kind::ARRAY_BOUND;
+      is_array = TypeIdIsArray(type_node);
 
       MaybeConsumeSemicolon();
 
-      return std::make_unique<AST::NewExpression>(is_global, is_array, std::move(placement_args), std::move(type), std::move(initializer));
+      return std::make_unique<AST::NewExpression>(is_global, is_array, std::move(placement_args), std::move(type_node), std::move(initializer));
     } else {
       while (token.type != TT_ENDPARENTH) {
         placement_args.push_back(TryParseExpression(Precedence::kAssign));
@@ -1503,37 +1510,41 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
   // This code path is taken only when <new-placement> is present, otherwise the paren would've been picked up earlier
   if (token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
-    // TRANSITIONAL: pilfering type_info out of TypeId (see step-4 task).
-    auto type_node = TryParseTypeID();
-    type = std::move(type_node->type_info);
+    type_node = TryParseTypeID();
     require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
   } else {
-    // declspecs unused: NewExpression still stores a flat FullType (step-4 retirement target).
-    auto declspecs_ = std::make_unique<AST::DeclSpecList>();
-    TryParseTypeSpecifierSeq(&type, declspecs_.get());
+    // <new-type-id> form: spec-seq + optional ptr-ops + optional array bounds.
+    // TRANSITIONAL: synthesize a TypeId from a locally-built FullType +
+    // DeclSpecList. Step 4e replaces the declarator side with native parsing
+    // into TypeId's declarator expression tree.
+    FullType ft;
+    auto declspecs = std::make_unique<AST::DeclSpecList>();
+    TryParseTypeSpecifierSeq(&ft, declspecs.get());
     while (next_maybe_ptr_decl_operator()) {
       if (next_maybe_nested_name()) {
-        TryParseMaybeNestedPtrOperator(&type);
+        TryParseMaybeNestedPtrOperator(&ft);
       } else {
-        TryParsePtrOperator(&type);
+        TryParsePtrOperator(&ft);
       }
     }
 
     while (token.type == TT_BEGINBRACKET) {
-      TryParseArrayBoundsExpression(&type.decl, false);
+      TryParseArrayBoundsExpression(&ft.decl, false);
     }
+
+    type_node = std::make_unique<AST::TypeId>(nullptr, std::move(ft));
+    type_node->declspecs = std::move(declspecs);
   }
 
   if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
     initializer = TryParseInitializer(true);
   }
 
-  is_array = !type.decl.components.empty() &&
-             type.decl.components.begin()->kind == DeclaratorNode::Kind::ARRAY_BOUND;
+  is_array = TypeIdIsArray(type_node);
 
   MaybeConsumeSemicolon();
 
-  return std::make_unique<AST::NewExpression>(is_global, is_array, std::move(placement_args), std::move(type), std::move(initializer));
+  return std::make_unique<AST::NewExpression>(is_global, is_array, std::move(placement_args), std::move(type_node), std::move(initializer));
 }
 
 std::unique_ptr<AST::Node> TryParseDeleteExpression(bool is_global) {
