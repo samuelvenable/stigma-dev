@@ -373,9 +373,10 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     std::vector<std::unique_ptr<AST::InitDeclarator>> decls, bool already_parsed_first = false) {
   while (true) {
     if (!already_parsed_first) {
-      TryParseDeclarator(&ft, decl_type);
+      auto declarator_expr = TryParseDeclarator(&ft, decl_type);
       decls.emplace_back(std::make_unique<AST::InitDeclarator>(
-          std::move(ft), next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
+          std::move(ft), std::move(declarator_expr),
+          next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
       declarations[decls.back()->declarator->decl.name.content] = decls.back()->declarator.get();
     }
     if (token.type == TT_COMMA && parse_unbounded) {
@@ -1297,7 +1298,11 @@ std::unique_ptr<AST::Node> TryParseNoPtrDeclarator(FullType *type, AST::Declarat
   return nullptr;
 }
 
-void TryParseDeclarator(FullType *type, AST::DeclaratorType is_abstract = AST::DeclaratorType::NON_ABSTRACT) {
+// Returns the AST-layer declarator-expression-tree (PNode) once the parser
+// learns to emit it; nullptr from emission paths that haven't been migrated
+// yet. The FullType `type->decl` is still populated as the JDI-bridge form
+// (for now, this is the primary path; PNode emission grows incrementally).
+AST::PNode TryParseDeclarator(FullType *type, AST::DeclaratorType is_abstract = AST::DeclaratorType::NON_ABSTRACT) {
   if (next_maybe_ptr_decl_operator()) {
     TryParsePtrDeclarator(type, is_abstract);
   } else {
@@ -1307,6 +1312,7 @@ void TryParseDeclarator(FullType *type, AST::DeclaratorType is_abstract = AST::D
       TryParseTypeID();
     }
   }
+  return nullptr;
 }
 
 AST::PNode TryParseExprOrBracedInitList(bool is_init_clause, bool in_init_list) {

@@ -543,12 +543,15 @@ class AST {
   };
 
   // One init-declarator (the `<declarator> [= <init>]` half of a declaration).
-  // Promoted to a Node in step 4d so DeclarationStatement::RecursiveSubVisit
-  // can `RV(visitor, declarations)` uniformly instead of hand-iterating the
-  // init side. `declarator` is still a FullType cache until 4e replaces it
-  // with a declarator-expression-tree PNode.
+  // Promoted to a Node in step 4d. `declarator` is the FullType (JDI-bridge)
+  // form of this declaration's type; `declarator_expr` is the AST-layer
+  // declarator-as-expression-tree (nullable today — populated incrementally
+  // as the declarator parser learns to emit PNodes; the long-term direction
+  // is for declarator_expr to be the primary representation and the FullType
+  // to be synthesized for JDI bridging on demand).
   struct InitDeclarator : TypedNode<NodeType::INIT_DECLARATOR> {
     std::unique_ptr<FullType> declarator;
+    PNode declarator_expr;
     InitializerNode init;
 
     BASIC_NODE_ROUTINES(InitDeclarator);
@@ -556,6 +559,9 @@ class AST {
     InitDeclarator() noexcept = default;
     InitDeclarator(FullType declarator, InitializerNode init):
       declarator{std::make_unique<FullType>(std::move(declarator))}, init{std::move(init)} {}
+    InitDeclarator(FullType declarator, PNode declarator_expr_, InitializerNode init):
+      declarator{std::make_unique<FullType>(std::move(declarator))},
+      declarator_expr{std::move(declarator_expr_)}, init{std::move(init)} {}
   };
 
   struct DeclarationStatement: TypedNode<NodeType::DECLARATION> {

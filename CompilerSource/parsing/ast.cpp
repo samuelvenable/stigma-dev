@@ -174,9 +174,10 @@ void AST::DeclarationStatement::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, type, declarations);
 }
 void AST::InitDeclarator::RecursiveSubVisit(Visitor &visitor) {
-  // `declarator` is still a FullType (not a Node) until 4e gives us the
-  // declarator-expression-tree; only `init` is visited here for now.
-  RV(visitor, init);
+  // `declarator` is the FullType (JDI-bridge) form, not a Node;
+  // `declarator_expr` is the AST-layer expression-tree (nullable until the
+  // declarator parser emits it).
+  RV(visitor, declarator_expr, init);
 }
 
 const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
