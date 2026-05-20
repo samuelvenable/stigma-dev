@@ -1,3 +1,5 @@
+#if defined(__APPLE__)
+
 // ASan stub functions for macOS shared library compatibility
 // When shared libraries use -Wl,-undefined,dynamic_lookup, ASan annotation
 // functions are not resolved at build time. This file provides stubs that
@@ -46,3 +48,5 @@ void __sanitizer_annotate_double_ended_contiguous_container(
 }
 
 } // extern "C"
+
+#endif  // __APPLE__

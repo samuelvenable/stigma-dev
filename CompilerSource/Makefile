@@ -11,7 +11,7 @@ else ifeq ($(UNIX_BASED), true)
 	TARGET := ../lib$(BASE).so
 else
 	TARGET := ../$(BASE).dll
-	LDFLAGS += -static-libgcc
+	LDFLAGS += -static-libgcc -Wl,--export-all-symbols
 endif
 
 PROTO_DIR := $(SHARED_SRC_DIR)/protos

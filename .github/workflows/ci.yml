@@ -20,7 +20,7 @@ env:
 
 jobs:
   arch:
-    name: Arch Linux
+    name: Arch Linux (GCC)
     runs-on: ubuntu-latest
     container:
       image: archlinux/archlinux:latest

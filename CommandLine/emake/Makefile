@@ -9,7 +9,7 @@ ifeq ($(OS), Darwin)
 else ifeq ($(UNIX_BASED), true)
 	OS_LIBS=-lboost_program_options -Wl,--no-as-needed -Wl,-rpath,./ -lpthread -ldl -lgmock
 else
-	OS_LIBS=-lboost_system-mt -Wl,--no-as-needed -Wl,-rpath,./ -lboost_program_options-mt -lpthread -lgmock
+	OS_LIBS=-lboost_program_options-mt -Wl,--no-as-needed -Wl,-rpath,./ -lpthread -lgmock
 endif
 
 CXXFLAGS  += -I../../CompilerSource -I../../CompilerSource/JDI/src -I$(PROTO_DIR) -I../libEGM -I../libEGM -I../../ENIGMAsystem/SHELL $(GRPC_CFLAGS) $(PROTOBUF_CFLAGS) $(PUGI_CFLAGS) $(YAML_CFLAGS) $(PNG_CFLAGS) $(ZLIB_CFLAGS) $(FALLBACK_INC)
@@ -21,7 +21,9 @@ endif
 
 ifeq ($(TESTS), TRUE)
 	TARGET=../../emake-tests
-	SOURCES := $(call rwildcard, ../emake-tests,*.cpp) $(call rwildcard, ../emake-tests/Extensions/Json,*.cpp) ../emake-tests/asan_stubs.cpp
+	SOURCES := $(filter-out ../emake-tests/asan_stubs.cpp,$(call rwildcard,../emake-tests,*.cpp)) \
+	           $(call rwildcard,../emake-tests/Extensions/Json,*.cpp) \
+	           ../emake-tests/asan_stubs.cpp
 	LDFLAGS += -lpthread -lgtest_main -lgtest
 else
 	TARGET = ../../emake

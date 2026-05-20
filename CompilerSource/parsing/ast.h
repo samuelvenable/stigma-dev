@@ -18,6 +18,7 @@
 #ifndef ENIGMA_COMPILER_PARSING_AST_h
 #define ENIGMA_COMPILER_PARSING_AST_h
 
+#include "win32_macro_guard.h"
 #include "full_type.h"
 #include "error_reporting.h"
 #include "lexer.h"

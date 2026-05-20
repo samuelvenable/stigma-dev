@@ -150,7 +150,7 @@ else ifeq ($(IS_WINDOWS),1)
   FALLBACK_LIBS_PUGI := -lpugixml
   FALLBACK_LIBS_PNG := -lpng
   FALLBACK_LIBS_ZLIB := -lz
-  FALLBACK_LDFLAGS_EXTRA := -static
+  FALLBACK_LDFLAGS_EXTRA :=
 
 else
   $(warning *** Unknown OS ($(OS)). Flags will be empty. ***)
