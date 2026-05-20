@@ -227,10 +227,10 @@ class DeclGatheringVisitor : public AST::Visitor {
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) {
     bool is_global = node.storage_class == AST::DeclarationStatement::StorageClass::GLOBAL;
     bool is_local = node.storage_class == AST::DeclarationStatement::StorageClass::LOCAL;
-    for (const auto &decl : node.declarations) {
-      std::string name = decl.declarator->decl.name.content;
-      std::string ftype = GetFullType(*decl.declarator);
-      std::string type = decl.declarator->def->name;
+    for (const auto &entry : node.declarations) {
+      std::string name = entry->declarator->decl.name.content;
+      std::string ftype = GetFullType(*entry->declarator);
+      std::string type = entry->declarator->def->name;
       size_t pos = ftype.find(name);
       std::string prefix;
       std::string suffix;
@@ -244,12 +244,12 @@ class DeclGatheringVisitor : public AST::Visitor {
       if (is_global) parsed_scope->globals[name] = dtrip;
       if (is_local) parsed_scope->locals[name] = dtrip;
       cs->add_dot_accessed_local(name);
-      parsed_scope->declarations[name] = decl.declarator->def;
+      parsed_scope->declarations[name] = entry->declarator->def;
     }
 
-    for (const auto &decl : node.declarations) {
-      if (decl.init) {
-        VisitInitializer(*decl.init);
+    for (const auto &entry : node.declarations) {
+      if (entry->init) {
+        VisitInitializer(*entry->init);
       }
     }
     return false;

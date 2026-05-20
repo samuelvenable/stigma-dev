@@ -590,16 +590,18 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
   bool is_global = node.storage_class == DeclarationStatement::StorageClass::GLOBAL;
   bool is_local = node.storage_class == DeclarationStatement::StorageClass::LOCAL;
   if (is_global || is_local) {
+    // GLOBAL/LOCAL print the access-shim assignment, not the declaration form
+    // itself — so this fork doesn't go through VisitInitDeclarator.
     bool printed = false;
-    for (std::size_t i = 0; i < node.declarations.size(); i++) {
-      if (node.declarations[i].init) {
+    for (auto &entry : node.declarations) {
+      if (entry->init) {
         if (printed) print(", ");
-        std::string name = node.declarations[i].declarator->decl.name.content;
+        std::string name = entry->declarator->decl.name.content;
         if (is_global)
           print("enigma::varaccess_" + name + "(int(global)) =");
         else
           print(name + " = ");
-        if (!VisitInitializer(*node.declarations[i].init)) return false;
+        if (!VisitInitializer(*entry->init)) return false;
         printed = true;
       }
     }
@@ -607,20 +609,26 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
   }
 
   // The shared type (declspecs + base type name) prints once via VisitTypeId.
-  // Each declaration then contributes only its own declarator chain + init.
+  // Each init-declarator then contributes its own declarator chain + init via
+  // VisitInitDeclarator.
   if (node.type) {
     VISIT_AND_CHECK(node.type);
     print(" ");
   }
   for (std::size_t i = 0; i < node.declarations.size(); i++) {
-    if (!VisitFullType(*node.declarations[i].declarator, /*print_type=*/false)) return false;
-    if (node.declarations[i].init) {
-      print(" = ");  // TODO: corner case: int x {}, maybe we need extra flag in the AST?
-      if (!VisitInitializer(*node.declarations[i].init)) return false;
-    }
+    if (!VisitInitDeclarator(*node.declarations[i])) return false;
     if (i != node.declarations.size() - 1) {
       print(", ");
     }
+  }
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitInitDeclarator(AST::InitDeclarator &node) {
+  if (!VisitFullType(*node.declarator, /*print_type=*/false)) return false;
+  if (node.init) {
+    print(" = ");  // TODO: corner case: int x {}, maybe we need extra flag in the AST?
+    if (!VisitInitializer(*node.init)) return false;
   }
   return true;
 }

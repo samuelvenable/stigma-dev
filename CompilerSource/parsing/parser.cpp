@@ -370,12 +370,13 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     AST::DeclarationStatement::StorageClass sc, FullType &ft,
     std::unique_ptr<AST::DeclSpecList> declspecs,
     AST::DeclaratorType decl_type, bool parse_unbounded,
-    std::vector<AST::DeclarationStatement::Declaration> decls, bool already_parsed_first = false) {
+    std::vector<std::unique_ptr<AST::InitDeclarator>> decls, bool already_parsed_first = false) {
   while (true) {
     if (!already_parsed_first) {
       TryParseDeclarator(&ft, decl_type);
-      decls.emplace_back(std::move(ft), next_is_start_of_initializer() ? TryParseInitializer() : nullptr);
-      declarations[decls.back().declarator->decl.name.content] = decls.back().declarator.get();
+      decls.emplace_back(std::make_unique<AST::InitDeclarator>(
+          std::move(ft), next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
+      declarations[decls.back()->declarator->decl.name.content] = decls.back()->declarator.get();
     }
     if (token.type == TT_COMMA && parse_unbounded) {
       token = lexer->ReadToken();
@@ -478,9 +479,9 @@ void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool
             herr->Error(token) <<
                 "Internal error: number of declarations in AstBuilder::TryParseParametersAndQualifiers not 1";
           } else {
+            auto &entry = *param_decl->declarations[0];
             auto param = FunctionParameterNode::Parameter{
-                false, param_decl->declarations[0].init.release(),
-                std::unique_ptr<FullType>(param_decl->declarations[0].declarator.release())};
+                false, entry.init.release(), std::move(entry.declarator)};
             params.as<FunctionParameterNode::ParameterList>().emplace_back(std::move(param));
           }
         } else {
@@ -2305,13 +2306,14 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
                                  .as<std::unique_ptr<Declarator>>()
                                  .release());
         }
-        std::vector<AST::DeclarationStatement::Declaration> decls = {};
-        decls.emplace_back(std::move(type), next_is_start_of_initializer() ? TryParseInitializer() : nullptr);
+        std::vector<std::unique_ptr<AST::InitDeclarator>> decls = {};
+        decls.emplace_back(std::make_unique<AST::InitDeclarator>(
+            std::move(type), next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
         if (token.type == TT_COMMA && parse_unbounded) {
           maybe_assign_def(&type);
           return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, std::move(decls), true);
         } else {
-          auto type_node = std::make_unique<AST::TypeId>(decls[0].declarator->def, nullptr, std::move(declspecs));
+          auto type_node = std::make_unique<AST::TypeId>(decls[0]->declarator->def, nullptr, std::move(declspecs));
           return std::make_unique<AST::DeclarationStatement>(sc, std::move(type_node), std::move(decls));
         }
       }

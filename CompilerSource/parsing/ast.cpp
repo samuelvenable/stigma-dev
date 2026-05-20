@@ -171,11 +171,12 @@ void AST::DeleteExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expression);
 }
 void AST::DeclarationStatement::RecursiveSubVisit(Visitor &visitor) {
-  RV(visitor, type);
-  // TRANSITIONAL: this loop disappears in phase 2 step 4 when Declaration
-  // becomes an AST::Node and declarations becomes vector<unique_ptr<Declaration>>.
-  // Then the line is just: RV(visitor, declarations);
-  for (auto &decl : declarations) RV(visitor, decl.init);
+  RV(visitor, type, declarations);
+}
+void AST::InitDeclarator::RecursiveSubVisit(Visitor &visitor) {
+  // `declarator` is still a FullType (not a Node) until 4e gives us the
+  // declarator-expression-tree; only `init` is visited here for now.
+  RV(visitor, init);
 }
 
 const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
@@ -212,6 +213,7 @@ const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
     CONTINUE,
     RETURN,
     DECLARATION,
+    INIT_DECLARATOR,
     INITIALIZER);
 
 const std::vector<std::string> AST::DeclarationStatement::StorageNames =

@@ -55,7 +55,7 @@ class AST {
     PARENTHETICAL, ARRAY,
     IDENTIFIER, SCOPE_ACCESS, LITERAL, FUNCTION_CALL,
     IF, FOR, WHILE, DO, WITH, REPEAT, SWITCH, CASE, DEFAULT,
-    BREAK, CONTINUE, RETURN, DECLARATION, INITIALIZER
+    BREAK, CONTINUE, RETURN, DECLARATION, INIT_DECLARATOR, INITIALIZER
   };
 
   struct Node;
@@ -542,15 +542,23 @@ class AST {
                                                                        expression{std::move(expression)} {}
   };
 
-  struct DeclarationStatement: TypedNode<NodeType::DECLARATION> {
-    struct Declaration {
-      std::unique_ptr<FullType> declarator;
-      InitializerNode init;
+  // One init-declarator (the `<declarator> [= <init>]` half of a declaration).
+  // Promoted to a Node in step 4d so DeclarationStatement::RecursiveSubVisit
+  // can `RV(visitor, declarations)` uniformly instead of hand-iterating the
+  // init side. `declarator` is still a FullType cache until 4e replaces it
+  // with a declarator-expression-tree PNode.
+  struct InitDeclarator : TypedNode<NodeType::INIT_DECLARATOR> {
+    std::unique_ptr<FullType> declarator;
+    InitializerNode init;
 
-      Declaration() noexcept = default;
-      Declaration(FullType declarator, InitializerNode init):
-        declarator{std::make_unique<FullType>(std::move(declarator))}, init{std::move(init)} {}
-    };
+    BASIC_NODE_ROUTINES(InitDeclarator);
+
+    InitDeclarator() noexcept = default;
+    InitDeclarator(FullType declarator, InitializerNode init):
+      declarator{std::make_unique<FullType>(std::move(declarator))}, init{std::move(init)} {}
+  };
+
+  struct DeclarationStatement: TypedNode<NodeType::DECLARATION> {
     enum class StorageClass {
       TEMPORARY,
       LOCAL,
@@ -559,14 +567,14 @@ class AST {
 
     PNode type;
     StorageClass storage_class;
-    std::vector<Declaration> declarations;
+    std::vector<std::unique_ptr<InitDeclarator>> declarations;
     static const std::vector<std::string> StorageNames; // what is the use of this?
 
     BASIC_NODE_ROUTINES(DeclarationStatement);
     static std::string StorageToString(StorageClass st);
 
     DeclarationStatement(StorageClass sc, PNode type_,
-                         std::vector<Declaration> declarations_):
+                         std::vector<std::unique_ptr<InitDeclarator>> declarations_):
         type{std::move(type_)}, storage_class{sc},
         declarations{std::move(declarations_)} {}
   };
@@ -608,6 +616,7 @@ class AST {
     virtual bool VisitNewExpression(NewExpression &node){ return DefaultVisit(node); }
     virtual bool VisitDeleteExpression(DeleteExpression &node){ return DefaultVisit(node); }
     virtual bool VisitDeclarationStatement(DeclarationStatement &node){ return DefaultVisit(node); }
+    virtual bool VisitInitDeclarator(InitDeclarator &node){ return DefaultVisit(node); }
     virtual bool Visit(PNode &node) {
       return node->accept(*this);
     }
@@ -660,6 +669,7 @@ class AST {
     bool VisitNewExpression(NewExpression &node);
     bool VisitDeleteExpression(DeleteExpression &node);
     bool VisitDeclarationStatement(DeclarationStatement &node);
+    bool VisitInitDeclarator(InitDeclarator &node);
   };
 
   // Used to adapt to current single-error syntax checking interface.
