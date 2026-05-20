@@ -150,7 +150,8 @@ bool is_user_defined_type(const Token &tok) {
   switch (tok.type) {
     case TT_IDENTIFIER:
       if (auto def = frontend->look_up(tok.content); def != nullptr) {
-        return def->flags & (jdi::DEF_TYPENAME | jdi::DEF_CLASS | jdi::DEF_ENUM | jdi::DEF_TYPED | jdi::DEF_TEMPLATE);
+        // DEF_TYPED is set on every variable, so it can't be in this mask.
+        return def->flags & (jdi::DEF_TYPENAME | jdi::DEF_CLASS | jdi::DEF_ENUM | jdi::DEF_TEMPLATE);
       }
 
       [[fallthrough]];
@@ -1800,11 +1801,16 @@ std::unique_ptr<AST::Node> TryParseOperand() {
           herr->Error(token) << "Expected opening parenthesis ('(') or brace ('{') after functional-cast type";
           return nullptr;
         }
-      } else {
-        return TryParseIdExpression();
       }
-      herr->Error(token) << "INTERNAL ERROR: " __FILE__ ":" << __LINE__ << ": Unreachable";
-      return nullptr;
+      // If the operand names a type (built-in via TT_TYPE_NAME, or a
+      // user-defined typedef/class/enum resolved through the frontend),
+      // produce a TypeId and let the surrounding TryParseExpression bail to
+      // the caller -- the caller decides whether this is a declaration, a
+      // cast target, a sizeof argument, etc.
+      if (token.type == TT_TYPE_NAME || next_is_user_defined_type()) {
+        return TryParseTypeID();
+      }
+      return TryParseIdExpression();
     }
 
     case TT_RETURN:   case TT_EXIT:   case TT_BREAK:   case TT_CONTINUE:
@@ -1861,11 +1867,15 @@ std::unique_ptr<AST::Node> TryParseExpression(int precedence, std::unique_ptr<AS
     if (operand->type == AST::NodeType::DELETE || operand->type == AST::NodeType::NEW) {
       return operand;
     }
-    // TODO: Handle binary operators, unary postfix operators
-    // (including function calls, array indexing, etc).
-    // XXX: Maybe handle TT_IDENTIFIER here when `operand` names a type
-    // to parse a declaration as an expression. This is a bold move, but
-    // more robust than handling it in TryParseExpression.
+    // A bare type-id at LHS isn't an expression -- it's a declaration,
+    // c-style cast target, sizeof arg, etc. Return immediately so the
+    // caller can decide. (Per the longstanding XXX in this slot: this is
+    // the "bold move" that lets us drop the maybe_expression / to_expression
+    // panic-rollback machinery; the semantic phase is now load-bearing for
+    // disambiguating these uses.)
+    if (operand->type == AST::NodeType::TYPE_ID) {
+      return operand;
+    }
     while (token.type != TT_ENDOFCODE) {
       if(token.type == TT_JS_ARROW){
         operand = TryParseLambdaExpression(std::move(operand));
