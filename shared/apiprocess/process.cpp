@@ -2,8 +2,8 @@
 
  MIT License
 
- Copyright © 2021-2024 Samuel Venable
- Copyright © 2021-2024 devKathy
+ Copyright © 2021-2026 Samuel Venable
+ Copyright © 2021-2026 devKathy
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -1137,7 +1137,7 @@ namespace ngs::ps {
         }
         if (path.empty()) {
           std::string cwd = cwd_from_proc_id(proc_id);
-          if (!cwd.empty())
+          if (!cwd.empty()) {
             argv0 = cwd + "/" + buffer;
             path = verify_exe(proc_id, argv0);
           }
@@ -1157,7 +1157,6 @@ namespace ngs::ps {
     }
     if (path.empty() && !argv0_does_not_exist) {
       argv0_does_not_exist = true;
-      retried = false;
       buffer.clear();
       goto path_lookup;
     }
