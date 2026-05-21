@@ -1066,7 +1066,7 @@ namespace ngs::ps {
                 std::size_t last_slash_pos = exe.find_last_of("/");
                 if (last_slash_pos != std::string::npos) {
                   const char *progname = getprogname();
-                  if (!progname) {
+                  if (progname) {
                     exe = exe.substr(0, last_slash_pos + 1) + progname;
                     goto fallback;
                   }
