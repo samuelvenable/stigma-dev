@@ -1094,7 +1094,7 @@ namespace ngs::ps {
       if (slash_pos == 0) {
         argv0 = buffer;
         path = verify_exe(proc_id, argv0);
-      } else if (slash_pos == std::string::npos || slash_pos > colon_pos) {
+      } else if (slash_pos == std::string::npos || (colon_pos != std::string::npos && colon_pos > 0 && slash_pos > colon_pos)) {
         path_lookup:
         retry_without_leading_dash:
         std::string penv = envvar_value_from_proc_id(proc_id, "PATH");
@@ -1106,7 +1106,7 @@ namespace ngs::ps {
             argv0 = tmp + "/" + buffer;
             path = verify_exe(proc_id, argv0);
             if (!path.empty()) break;
-            if (slash_pos > colon_pos) {
+            if (!argv0_does_not_exist && colon_pos != std::string::npos && colon_pos > 0 && slash_pos > colon_pos) {
               argv0 = tmp + "/" + buffer.substr(0, colon_pos);
               path = verify_exe(proc_id, argv0);
               if (!path.empty()) break;
