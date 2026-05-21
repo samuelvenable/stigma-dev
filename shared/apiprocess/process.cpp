@@ -59,7 +59,7 @@
 
 #include "process.hpp"
 
-#if !(defined(_WIN32) || defined(_WIN64))
+#if (!defined(_WIN32) && !defined(_WIN64))
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -456,7 +456,7 @@ namespace {
 namespace ngs::ps {
 
   NGS_PROCID proc_id_from_self() {
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     return getpid();
     #else
     return GetCurrentProcessId();
@@ -591,7 +591,7 @@ namespace ngs::ps {
 
   bool proc_id_suspend(NGS_PROCID proc_id) {
     if (proc_id < 0) return false;
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGSTOP));
     #else
     HANDLE proc = open_process_with_debug_privilege(proc_id);
@@ -611,7 +611,7 @@ namespace ngs::ps {
 
   bool proc_id_resume(NGS_PROCID proc_id) {
     if (proc_id < 0) return false;
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGCONT));
     #else
     HANDLE proc = open_process_with_debug_privilege(proc_id);
@@ -631,7 +631,7 @@ namespace ngs::ps {
 
   bool proc_id_kill(NGS_PROCID proc_id) {
     if (proc_id < 0) return false;
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGKILL));
     #else
     HANDLE proc = open_process_with_debug_privilege(proc_id);
@@ -1414,7 +1414,7 @@ namespace ngs::ps {
   std::string comm_from_proc_id(NGS_PROCID proc_id) {
     std::string exe = exe_from_proc_id(proc_id);
     if (exe.empty()) return "";
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     std::size_t pos = exe.find_last_of("/");
     #else
     std::size_t pos = exe.find_last_of("\\/");
@@ -1716,7 +1716,7 @@ namespace ngs::ps {
     long long optlmt = 0;
     int index = -1;
 
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     NGS_PROCID process_execute_helper(const char *command, int *infp, int *outfp) {
       int p_stdin[2];
       int p_stdout[2];
@@ -1772,7 +1772,7 @@ namespace ngs::ps {
     #endif
 
     void output_thread(std::intptr_t file, NGS_PROCID proc_index) {
-      #if !(defined(_WIN32) || defined(_WIN64))
+      #if (!defined(_WIN32) && !defined(_WIN64))
       ssize_t nRead = 0; char buffer[BUFSIZ];
       while ((nRead = read((int)file, buffer, BUFSIZ)) > 0) {
         buffer[nRead] = '\0';
@@ -1791,7 +1791,7 @@ namespace ngs::ps {
       }
     }
 
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     NGS_PROCID proc_id_from_fork_proc_id(NGS_PROCID proc_id) {
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       std::vector<NGS_PROCID> ppid = proc_id_from_parent_proc_id(proc_id);
@@ -1802,7 +1802,7 @@ namespace ngs::ps {
 
     NGS_PROCID spawn_child_proc_id_helper(std::string command) {
       index++;
-      #if !(defined(_WIN32) || defined(_WIN64))
+      #if (!defined(_WIN32) && !defined(_WIN64))
       int infd = 0, outfd = 0;
       NGS_PROCID proc_id = 0, fork_proc_id = 0, wait_proc_id = 0;
       fork_proc_id = process_execute_helper(command.c_str(), &infd, &outfd);
@@ -1952,7 +1952,7 @@ namespace ngs::ps {
     std::string s = input;
     std::vector<char> v(s.length());
     std::copy(s.c_str(), s.c_str() + s.length(), v.begin());
-    #if !(defined(_WIN32) || defined(_WIN64))
+    #if (!defined(_WIN32) && !defined(_WIN64))
     ssize_t nwritten = -1;
     lseek((int)stdipt_map[proc_id], 0, SEEK_END);
     nwritten = write((int)stdipt_map[proc_id], &v[0], v.size());
