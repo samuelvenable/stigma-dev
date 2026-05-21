@@ -50,7 +50,7 @@
 
 namespace ngs::ps {
 
-  #if !(defined(_WIN32) || defined(_WIN64))
+  #if (!defined(_WIN32) && !defined(_WIN64))
   typedef int NGS_PROCID;
   #else
   typedef unsigned long NGS_PROCID;
