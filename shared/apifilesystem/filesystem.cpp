@@ -69,13 +69,12 @@
 #include <unistd.h>
 #endif
 
+using std::string;
 #if defined(_WIN32)
 using std::wstring;
 #elif (defined(__APPLE__) && defined(__MACH__))
 using std::uint32_t;
 #endif
-
-using std::string;
 using std::stringstream;
 using std::random_device;
 using std::error_code;
