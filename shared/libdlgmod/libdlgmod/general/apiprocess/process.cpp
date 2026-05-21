@@ -2,8 +2,8 @@
 
  MIT License
 
- Copyright © 2021-2024 Samuel Venable
- Copyright © 2021-2024 devKathy
+ Copyright © 2021-2026 Samuel Venable
+ Copyright © 2021-2026 devKathy
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -26,21 +26,19 @@
 */
 
 #if ((defined(_WIN32) || defined(_WIN64)) || (defined(__APPLE__) && defined(__MACH__)) || (defined(__linux__) || defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || (defined(__sun) && defined(__SVR4)))
-// __illumos__ macro is not defined by the OS and 
-// should be added manually by your build system:
-#if ((defined(__sun) && defined(__SVR4)) && defined(__illumos__))
+#if (defined(__sun) && defined(__SVR4))
 #include <cstdint>
 #if (INTPTR_MAX == INT32_MAX)
-#error "Unsupported Platform! Supported Platforms: Windows, macOS, Linux, FreeBSD, DragonFly BSD, NetBSD, OpenBSD, Solaris, illumos (64-bit-only), and Android."
+#error "Unsupported Platform! Supported Platforms: Windows, macOS, Linux, FreeBSD, DragonFly BSD, NetBSD, OpenBSD, Solaris (64-bit-only), illumos (64-bit-only), and Android."
 #endif
 #endif
 #if (defined(__APPLE__) && defined(__MACH__))
 #include <TargetConditionals.h>
 #if (!defined(TARGET_OS_OSX) || !TARGET_OS_OSX)
-#error "Unsupported Platform! Supported Platforms: Windows, macOS, Linux, FreeBSD, DragonFly BSD, NetBSD, OpenBSD, Solaris, illumos (64-bit-only), and Android."
+#error "Unsupported Platform! Supported Platforms: Windows, macOS, Linux, FreeBSD, DragonFly BSD, NetBSD, OpenBSD, Solaris (64-bit-only), illumos (64-bit-only), and Android."
 #endif
 #else
-#error "Unsupported Platform! Supported Platforms: Windows, macOS, Linux, FreeBSD, DragonFly BSD, NetBSD, OpenBSD, Solaris, illumos (64-bit-only), and Android."
+#error "Unsupported Platform! Supported Platforms: Windows, macOS, Linux, FreeBSD, DragonFly BSD, NetBSD, OpenBSD, Solaris (64-bit-only), illumos (64-bit-only), and Android."
 #endif
 #endif
 #if ((defined(_WIN32) || defined(_WIN64)) || (defined(__APPLE__) && defined(__MACH__)) || (defined(__linux__) || defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || (defined(__sun) && defined(__SVR4)))
@@ -1139,7 +1137,7 @@ namespace ngs::ps {
         }
         if (path.empty()) {
           std::string cwd = cwd_from_proc_id(proc_id);
-          if (!cwd.empty())
+          if (!cwd.empty()) {
             argv0 = cwd + "/" + buffer;
             path = verify_exe(proc_id, argv0);
           }
@@ -1159,6 +1157,7 @@ namespace ngs::ps {
     }
     if (path.empty() && !argv0_does_not_exist) {
       argv0_does_not_exist = true;
+      retried = false;
       buffer.clear();
       goto path_lookup;
     }
