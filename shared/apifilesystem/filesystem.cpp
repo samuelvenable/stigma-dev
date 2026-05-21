@@ -35,7 +35,7 @@
 #include <climits>
 #include <cstdlib>
 #include <cstring>
-#if defined(_WIN32)
+#if (defined(_WIN32) || defined(_WIN64))
 #include <cwchar>
 #elif (defined(__APPLE__) && defined(__MACH__))
 #include <cstdint>
@@ -47,7 +47,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#if defined(_WIN32) 
+#if (defined(_WIN32) || defined(_WIN64)) 
 #include <windows.h>
 #include <fileapi.h>
 #include <shlobj.h>
@@ -57,9 +57,9 @@
 #if (defined(__APPLE__) && defined(__MACH__))
 #include <sysdir.h>
 #include <mach-o/dyld.h>
-#elif (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
+#elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
 #include <sys/sysctl.h>
-#if (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__))
+#if ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__OpenBSD__))
 #if defined(__OpenBSD__)
 #include <kvm.h>
 #endif
@@ -70,7 +70,7 @@
 #endif
 
 using std::string;
-#if defined(_WIN32)
+#if (defined(_WIN32) || defined(_WIN64))
 using std::wstring;
 #elif (defined(__APPLE__) && defined(__MACH__))
 using std::uint32_t;
@@ -96,7 +96,7 @@ namespace ngs::fs {
   namespace {
 
     void message_pump() {
-      #if defined(_WIN32) 
+      #if (defined(_WIN32) || defined(_WIN64)) 
       MSG msg; while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
@@ -104,7 +104,7 @@ namespace ngs::fs {
       #endif
     }
 
-    #if defined(_WIN32) 
+    #if (defined(_WIN32) || defined(_WIN64)) 
     wstring widen(string str) {
       if (str.empty()) return L"";
       size_t wchar_count = str.size() + 1;
@@ -159,7 +159,7 @@ namespace ngs::fs {
 
     time_t file_datetime_helper(string fname, int timestamp) {
       int result = -1;
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       wstring wfname = widen(fname);
       struct _stat info; 
       result = _wstat(wfname.c_str(), &info);
@@ -178,7 +178,7 @@ namespace ngs::fs {
     int file_datetime(string fname, int timestamp, int measurement) {
       int result = -1;
       time_t time = file_datetime_helper(fname, timestamp);
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       struct tm timeinfo;
       if (localtime_s(&timeinfo, &time)) return -1;
       switch (measurement) {
@@ -207,7 +207,7 @@ namespace ngs::fs {
 
     int file_bin_datetime(int fd, int timestamp, int measurement) {
       int result = -1;
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       struct _stat info; 
       result = _fstat(fd, &info);
       #else
@@ -219,7 +219,7 @@ namespace ngs::fs {
       if (timestamp == 1) time = info.st_mtime;
       if (timestamp == 2) time = info.st_ctime;
       if (result == -1) return result;
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       struct tm timeinfo;
       if (localtime_s(&timeinfo, &time)) return -1;
       switch (measurement) {
@@ -268,7 +268,7 @@ namespace ngs::fs {
     }
 
     string filename_path(string fname) {
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       size_t fp = fname.find_last_of("\\/");
       #else
       size_t fp = fname.find_last_of("/");
@@ -278,7 +278,7 @@ namespace ngs::fs {
     }
 
     string filename_name(string fname) {
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       size_t fp = fname.find_last_of("\\/");
       #else
       size_t fp = fname.find_last_of("/");
@@ -301,7 +301,7 @@ namespace ngs::fs {
       p = ghc::filesystem::absolute(p, ec);
       if (ec.value() != 0) return "";
       dname = p.string();
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       while ((dname.back() == '\\' || dname.back() == '/') && 
         (p.root_name().string() + "\\" != dname && p.root_name().string() + "/" != dname)) {
         message_pump(); p = ghc::filesystem::path(dname); dname.pop_back();
@@ -316,7 +316,7 @@ namespace ngs::fs {
 
     string expand_with_trailing_slash(string dname) {
       dname = expand_without_trailing_slash(dname);
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       if (dname.back() != '\\') dname += "\\";
       #else
       if (dname.back() != '/') dname += "/";
@@ -330,7 +330,7 @@ namespace ngs::fs {
       bool recursive;
       unsigned i;
       unsigned j;
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       BY_HANDLE_FILE_INFORMATION info;
       #else
       struct stat info;
@@ -339,7 +339,7 @@ namespace ngs::fs {
 
     vector<string> file_bin_hardlinks_result;
     void file_bin_hardlinks_helper(file_bin_hardlinks_struct *s) {
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       if (file_bin_hardlinks_result.size() >= s->info.nNumberOfLinks) return;
       #else
       if (file_bin_hardlinks_result.size() >= s->info.st_nlink) return;
@@ -353,7 +353,7 @@ namespace ngs::fs {
           for (ghc::filesystem::directory_iterator dir_ite(path, ec); dir_ite != end_itr; dir_ite.increment(ec)) {
             message_pump(); if (ec.value() != 0) { break; }
             ghc::filesystem::path file_path = ghc::filesystem::path(filename_absolute(dir_ite->path().string()));
-            #if defined(_WIN32)
+            #if (defined(_WIN32) || defined(_WIN64))
             int fd = -1;
             BY_HANDLE_FILE_INFORMATION info;
             if (file_exists(file_path.string())) {
@@ -408,7 +408,7 @@ namespace ngs::fs {
 
     string directory_get_special_path(int dtype) {
       string result;
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       wchar_t *ptr = nullptr;
       KNOWNFOLDERID fid;
       switch (dtype) {
@@ -547,7 +547,7 @@ namespace ngs::fs {
 
   string executable_get_pathname() {
     string path;
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     wchar_t buffer[MAX_PATH];
     if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
       wchar_t exe[MAX_PATH];
@@ -569,7 +569,7 @@ namespace ngs::fs {
     if (realpath("/proc/self/exe", exe)) {
       path = exe;
     }
-    #elif (defined(__FreeBSD__) || defined(__DragonFly__))
+    #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
     int mib[4]; 
     size_t len = 0;
     mib[0] = CTL_KERN;
@@ -720,7 +720,7 @@ namespace ngs::fs {
         }
       }
     }
-    #elif defined(__sun)
+    #elif(defined(__sun) && defined(__SVR4))
     const char *execname = getexecname();
     if (execname) {
       char exe[PATH_MAX];
@@ -787,7 +787,7 @@ namespace ngs::fs {
     if (file_exists(fname)) {
       if (!directory_exists(filename_path(newname)))
         directory_create(filename_path(newname));
-      #if defined(_WIN32)
+      #if (defined(_WIN32) || defined(_WIN64))
       error_code ec;
       const ghc::filesystem::path path1 = ghc::filesystem::path(fname);
       const ghc::filesystem::path path2 = ghc::filesystem::path(newname);
@@ -815,7 +815,7 @@ namespace ngs::fs {
   }
 
   uintmax_t file_bin_numblinks(int fd) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     BY_HANDLE_FILE_INFORMATION info;
     if (GetFileInformationByHandle((HANDLE)_get_osfhandle(fd), &info)) {
       return info.nNumberOfLinks;
@@ -831,7 +831,7 @@ namespace ngs::fs {
 
   string file_bin_hardlinks(int fd, string dnames, bool recursive) {
     string paths;
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     BY_HANDLE_FILE_INFORMATION info;
     if (GetFileInformationByHandle((HANDLE)_get_osfhandle(fd), &info) && info.nNumberOfLinks) {
     #else
@@ -871,7 +871,7 @@ namespace ngs::fs {
   }
 
   string environment_get_variable(string name) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     string value; 
     DWORD length = 0;
     wstring u8name = widen(name);
@@ -890,7 +890,7 @@ namespace ngs::fs {
   }
 
   bool environment_get_variable_exists(string name) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     wstring u8name = widen(name);
     return (!(GetEnvironmentVariableW(u8name.c_str(), nullptr, 0) == 0 && 
       GetLastError() == ERROR_ENVVAR_NOT_FOUND));
@@ -900,7 +900,7 @@ namespace ngs::fs {
   }
 
   bool environment_set_variable(string name, string value) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     wstring u8name = widen(name); 
     wstring u8value = widen(value);
     return (SetEnvironmentVariableW(u8name.c_str(), u8value.c_str()) != 0);
@@ -910,7 +910,7 @@ namespace ngs::fs {
   }
 
   bool environment_unset_variable(string name) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     wstring u8name = widen(name);
     return (SetEnvironmentVariableW(u8name.c_str(), nullptr) != 0);
     #else
@@ -1238,7 +1238,7 @@ namespace ngs::fs {
     inner = expand_without_trailing_slash(inner);
     const ghc::filesystem::path path1 = ghc::filesystem::path(outer);
     ghc::filesystem::path path2 = ghc::filesystem::path(inner);
-    #if defined(_WIN32) 
+    #if (defined(_WIN32) || defined(_WIN64)) 
     while (expand_without_trailing_slash(path2.string()) !=
       expand_without_trailing_slash(path2.root_name().string())) {
     #else
@@ -1462,7 +1462,7 @@ namespace ngs::fs {
 
   int file_bin_open(string fname, int mode) {
     fname = expand_without_trailing_slash(fname);
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     wstring wfname = widen(fname);
     FILE *fp = nullptr;
     switch (mode) {
@@ -1492,7 +1492,7 @@ namespace ngs::fs {
   }
 
   int file_bin_rewrite(int fd) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     _lseek(fd, 0, SEEK_SET);
     return _chsize(fd, 0);
     #else
@@ -1502,7 +1502,7 @@ namespace ngs::fs {
   }
   
   int file_bin_close(int fd) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     return _close(fd);
     #else
     return close(fd);
@@ -1510,7 +1510,7 @@ namespace ngs::fs {
   }
   
   long file_bin_size(int fd) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     struct _stat info; 
     int result = _fstat(fd, &info);
     #else
@@ -1524,7 +1524,7 @@ namespace ngs::fs {
   }
 
   long file_bin_position(int fd) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     return _lseek(fd, 0, SEEK_CUR);
     #else
     return lseek(fd, 0, SEEK_CUR);
@@ -1532,7 +1532,7 @@ namespace ngs::fs {
   }
   
   long file_bin_seek(int fd, long pos) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     return _lseek(fd, pos, SEEK_CUR);
     #else
     return lseek(fd, pos, SEEK_CUR);
@@ -1541,7 +1541,7 @@ namespace ngs::fs {
 
   int file_bin_read_byte(int fd) {
     int byte = 0;
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     int num = (int)_read(fd, &byte, 1);
     #else
     int num = (int)read(fd, &byte, 1);
@@ -1551,7 +1551,7 @@ namespace ngs::fs {
   }
 
   int file_bin_write_byte(int fd, int byte) {
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     return (int)_write(fd, &byte, 1);
     #else
     return (int)write(fd, &byte, 1);
@@ -1572,7 +1572,7 @@ namespace ngs::fs {
 
   long file_text_write_string(int fd, string str) {
     char *buffer = str.data();
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     long result = _write(fd, buffer, (unsigned)str.length());
     #else
     long result = write(fd, buffer, (unsigned)str.length());
@@ -1697,7 +1697,7 @@ namespace ngs::fs {
     string str;
     long sz = file_bin_size(fd);
     char *buffer = new char[sz];
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     long result = _read(fd, buffer, sz);
     #else
     long result = read(fd, buffer, sz);
@@ -1713,7 +1713,7 @@ namespace ngs::fs {
 
   int file_text_open_from_string(string str) {
     string fname = directory_get_temporary_path() + "temp.XXXXXX";
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     int fd = -1; wstring wfname = widen(fname); 
     wchar_t *buffer = wfname.data(); if (_wmktemp_s(buffer, wfname.length() + 1)) return -1;
     if (_wsopen_s(&fd, buffer, _O_CREAT | _O_RDWR | _O_WTEXT, _SH_DENYNO, _S_IREAD | _S_IWRITE)) {
@@ -1725,7 +1725,7 @@ namespace ngs::fs {
     #endif
     if (fd == -1) return -1;
     file_text_write_string(fd, str);
-    #if defined(_WIN32)
+    #if (defined(_WIN32) || defined(_WIN64))
     _lseek(fd, 0, SEEK_SET);
     #else
     lseek(fd, 0, SEEK_SET);
