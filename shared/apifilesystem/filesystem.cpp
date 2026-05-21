@@ -49,7 +49,8 @@
 #include <sys/stat.h>
 #if defined(_WIN32) 
 #include <windows.h>
-#include <Shlobj.h>
+#include <fileapi.h>
+#include <shlobj.h>
 #include <share.h>
 #include <io.h>
 #else
@@ -69,15 +70,15 @@
 #endif
 
 #if defined(_WIN32)
-using std::wstring;
+using wstring;
 #elif (defined(__APPLE__) && defined(__MACH__))
-using std::uint32_t;
+using uint32_t;
 #endif
 
-using std::string;
-using std::stringstream;
-using std::vector;
-using std::size_t;
+using string;
+using stringstream;
+using vector;
+using size_t;
 
 namespace ngs::fs {
 
@@ -95,16 +96,41 @@ namespace ngs::fs {
     #if defined(_WIN32) 
     wstring widen(string str) {
       if (str.empty()) return L"";
-      size_t wchar_count = str.size() + 1; 
+      size_t wchar_count = str.size() + 1;
       vector<wchar_t> buf(wchar_count);
-      return wstring{ buf.data(), (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count) };
+      wchar_count = (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count);
+      if (!wchar_count) return L"";
+      return wstring { buf.data(), wchar_count };
     }
 
     string narrow(wstring wstr) {
       if (wstr.empty()) return "";
-      int nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), nullptr, 0, nullptr, nullptr); 
-      vector<char> buf(nbytes);
-      return string{ buf.data(), (size_t)WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), buf.data(), nbytes, nullptr, nullptr) };
+      int nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), nullptr, 0, nullptr, nullptr);
+      if (!nbytes) return "";
+      vector<char> buf((size_t)nbytes);
+      nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), buf.data(), nbytes, nullptr, nullptr);
+      if (!nbytes) return "";
+      return string { buf.data(), (size_t)nbytes };
+    }
+
+    wstring resolve_symbolic_links(wstring wstr) {
+      wstring result;
+      wchar_t path[MAX_PATH];
+      HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, 
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 
+      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (hFile != INVALID_HANDLE_VALUE) {
+        unsigned long len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, 0);
+        if (len) {
+          if (wstring(path).length() > 4 && path[0] == '\\' && path[1] == '\\' && path[2] == '?' && path[3] == '\\') {
+            result = path + 4;
+          } else {
+            result = path;
+          }
+        }
+        CloseHandle(hFile);
+      }
+      return result;
     }
     #endif
 
@@ -154,7 +180,7 @@ namespace ngs::fs {
         default: return result;
       }
       #else
-      struct tm *timeinfo = std::localtime(&time);
+      struct tm *timeinfo = localtime(&time);
       switch (measurement) {
         case  0: return timeinfo->tm_year + 1900;
         case  1: return timeinfo->tm_mon  + 1;
@@ -195,7 +221,7 @@ namespace ngs::fs {
         default: return result;
       }
       #else
-      struct tm *timeinfo = std::localtime(&time);
+      struct tm *timeinfo = localtime(&time);
       switch (measurement) {
         case  0: return timeinfo->tm_year + 1900;
         case  1: return timeinfo->tm_mon  + 1;
@@ -223,7 +249,7 @@ namespace ngs::fs {
       vector<string> vec;
       stringstream sstr(str);
       string tmp;
-      while (std::getline(sstr, tmp, delimiter)) {
+      while (getline(sstr, tmp, delimiter)) {
         message_pump();
         vec.push_back(tmp);
       }
@@ -258,7 +284,7 @@ namespace ngs::fs {
     }
 
     string expand_without_trailing_slash(string dname) {
-      std::error_code ec;
+      error_code ec;
       dname = environment_expand_variables(dname);
       ghc::filesystem::path p = ghc::filesystem::path(dname);
       p = ghc::filesystem::absolute(p, ec);
@@ -308,7 +334,7 @@ namespace ngs::fs {
       if (file_bin_hardlinks_result.size() >= s->info.st_nlink) return;
       #endif
       if (s->i < s->x.size()) {
-        std::error_code ec; if (!directory_exists(s->x[s->i])) return;
+        error_code ec; if (!directory_exists(s->x[s->i])) return;
         s->x[s->i] = expand_without_trailing_slash(s->x[s->i]);
         const ghc::filesystem::path path = ghc::filesystem::path(s->x[s->i]);
         if (directory_exists(s->x[s->i]) || path.root_name().string() + "\\" == path.string()) {
@@ -465,13 +491,13 @@ namespace ngs::fs {
   } // anonymous namespace
 
   string directory_get_current_working() {
-    std::error_code ec;
+    error_code ec;
     string result = expand_with_trailing_slash(ghc::filesystem::current_path(ec).string());
     return (ec.value() == 0) ? result : "";
   }
 
   bool directory_set_current_working(string dname) {
-    std::error_code ec;
+    error_code ec;
     dname = expand_without_trailing_slash(dname);
     const ghc::filesystem::path path = ghc::filesystem::path(dname);
     ghc::filesystem::current_path(path, ec);
@@ -479,7 +505,7 @@ namespace ngs::fs {
   }
 
   string directory_get_temporary_path() {
-    std::error_code ec;
+    error_code ec;
     string result = expand_with_trailing_slash(ghc::filesystem::temp_directory_path(ec).string());
     return (ec.value() == 0) ? result : "";
   }
@@ -606,7 +632,7 @@ namespace ngs::fs {
     int cntp = 0;
     kvm_t *kd = nullptr;
     kinfo_proc *proc_info = nullptr;
-    std::vector<string> buffer;
+    vector<string> buffer;
     bool error = false, retried = false;
     kd = kvm_openfiles(nullptr, nullptr, nullptr, KVM_NO_FILES, nullptr);
     if (!kd) {
@@ -637,7 +663,7 @@ namespace ngs::fs {
             retry:
             string tmp;
             stringstream sstr(penv);
-            while (std::getline(sstr, tmp, ':')) {
+            while (getline(sstr, tmp, ':')) {
               argv0 = tmp + "/" + buffer[0];
               path = is_exe(argv0);
               if (!path.empty()) break;
@@ -702,7 +728,7 @@ namespace ngs::fs {
   }
 
   bool symlink_create(string fname, string newname) {
-    std::error_code ec;
+    error_code ec;
     fname = expand_without_trailing_slash(fname);
     newname = expand_without_trailing_slash(newname);
     ghc::filesystem::path path1 = ghc::filesystem::path(fname);
@@ -722,7 +748,7 @@ namespace ngs::fs {
   }
 
   bool symlink_copy(string fname, string newname) {
-    std::error_code ec;
+    error_code ec;
     fname = expand_without_trailing_slash(fname);
     newname = expand_without_trailing_slash(newname);
     ghc::filesystem::path path1 = ghc::filesystem::path(fname);
@@ -737,7 +763,7 @@ namespace ngs::fs {
   }
 
   bool symlink_exists(string fname) {
-    std::error_code ec;
+    error_code ec;
     fname = expand_without_trailing_slash(fname);
     ghc::filesystem::path path = ghc::filesystem::path(fname);
     return (ghc::filesystem::exists(path, ec) && ec.value() == 0 &&
@@ -751,7 +777,7 @@ namespace ngs::fs {
       if (!directory_exists(filename_path(newname)))
         directory_create(filename_path(newname));
       #if defined(_WIN32)
-      std::error_code ec;
+      error_code ec;
       const ghc::filesystem::path path1 = ghc::filesystem::path(fname);
       const ghc::filesystem::path path2 = ghc::filesystem::path(newname);
       ghc::filesystem::create_hard_link(path1, path2, ec);
@@ -763,13 +789,13 @@ namespace ngs::fs {
     return false;
   }
 
-  std::uintmax_t file_numblinks(string fname) {
-    std::error_code ec;
+  uintmax_t file_numblinks(string fname) {
+    error_code ec;
     fname = expand_without_trailing_slash(fname);
     if (file_exists(fname)) {
       int fd = file_bin_open(fname, FD_RDONLY);
       if (fd != -1) {
-        std::uintmax_t result = file_bin_numblinks(fd);
+        uintmax_t result = file_bin_numblinks(fd);
         file_bin_close(fd);
         return result;
       }
@@ -777,7 +803,7 @@ namespace ngs::fs {
     return 0;
   }
 
-  std::uintmax_t file_bin_numblinks(int fd) {
+  uintmax_t file_bin_numblinks(int fd) {
     #if defined(_WIN32)
     BY_HANDLE_FILE_INFORMATION info;
     if (GetFileInformationByHandle((HANDLE)_get_osfhandle(fd), &info)) {
@@ -895,7 +921,7 @@ namespace ngs::fs {
   }
 
   bool file_exists(string fname) {
-    std::error_code ec;
+    error_code ec;
     fname = expand_without_trailing_slash(fname);
     const ghc::filesystem::path path = ghc::filesystem::path(fname);
     return (ghc::filesystem::exists(path, ec) && ec.value() == 0 && 
@@ -903,7 +929,7 @@ namespace ngs::fs {
   }
 
   bool directory_exists(string dname) {
-    std::error_code ec;
+    error_code ec;
     dname = expand_without_trailing_slash(dname);
     dname = expand_without_trailing_slash(dname);
     const ghc::filesystem::path path = ghc::filesystem::path(dname);
@@ -912,7 +938,7 @@ namespace ngs::fs {
   }
 
   string filename_canonical(string fname) {
-    std::error_code ec;
+    error_code ec;
     fname = expand_without_trailing_slash(fname);
     const ghc::filesystem::path path = ghc::filesystem::path(fname);
     string result = ghc::filesystem::weakly_canonical(path, ec).string();
@@ -933,7 +959,7 @@ namespace ngs::fs {
   }
 
   bool filename_equivalent(string fname1, string fname2) {
-    std::error_code ec;
+    error_code ec;
     fname1 = expand_without_trailing_slash(fname1);
     fname2 = expand_without_trailing_slash(fname2);
     ghc::filesystem::path path1 = ghc::filesystem::path(fname1);
@@ -945,17 +971,17 @@ namespace ngs::fs {
     return false;
   }
 
-  std::uintmax_t file_size(string fname) {
-    std::error_code ec;
+  uintmax_t file_size(string fname) {
+    error_code ec;
     if (!file_exists(fname)) return 0;
     fname = expand_without_trailing_slash(fname);
     const ghc::filesystem::path path = ghc::filesystem::path(fname);
-    std::uintmax_t result = ghc::filesystem::file_size(path, ec);
+    uintmax_t result = ghc::filesystem::file_size(path, ec);
     return (ec.value() == 0) ? result : 0;
   }
 
   bool file_delete(string fname) {
-    std::error_code ec;
+    error_code ec;
     if (!file_exists(fname)) return false;
     fname = expand_without_trailing_slash(fname);
     const ghc::filesystem::path path = ghc::filesystem::path(fname);
@@ -963,14 +989,14 @@ namespace ngs::fs {
   }
 
   bool directory_create(string dname) {
-    std::error_code ec;
+    error_code ec;
     dname = expand_without_trailing_slash(dname);
     const ghc::filesystem::path path = ghc::filesystem::path(dname);
     return (ghc::filesystem::create_directories(path, ec) && ec.value() == 0);
   }
 
   bool file_rename(string oldname, string newname) {
-    std::error_code ec;
+    error_code ec;
     if (!file_exists(oldname)) return false;
     oldname = expand_without_trailing_slash(oldname);
     newname = expand_without_trailing_slash(newname);
@@ -983,7 +1009,7 @@ namespace ngs::fs {
   }
 
   bool file_copy(string fname, string newname) {
-    std::error_code ec;
+    error_code ec;
     if (!file_exists(fname)) return false;
     fname = expand_without_trailing_slash(fname);
     newname = expand_without_trailing_slash(newname);
@@ -995,9 +1021,9 @@ namespace ngs::fs {
     return (ec.value() == 0);
   }
 
-  std::uintmax_t directory_size(string dname) {
-    std::error_code ec;
-    std::uintmax_t result = 0;
+  uintmax_t directory_size(string dname) {
+    error_code ec;
+    uintmax_t result = 0;
     if (!directory_exists(dname)) return 0;
     const ghc::filesystem::path path = ghc::filesystem::path(expand_without_trailing_slash(dname));
     if (ghc::filesystem::exists(path, ec)) {
@@ -1016,7 +1042,7 @@ namespace ngs::fs {
   }
 
   bool directory_destroy(string dname) {
-    std::error_code ec;
+    error_code ec;
     if (!directory_exists(dname)) return false;
     dname = expand_without_trailing_slash(dname);
     const ghc::filesystem::path path = ghc::filesystem::path(dname);
@@ -1040,7 +1066,7 @@ namespace ngs::fs {
   }
 
   static inline vector<string> directory_contents_helper(string dname, string pattern, bool includedirs) {
-    std::error_code ec; vector<string> result;
+    error_code ec; vector<string> result;
     if (!directory_exists(dname)) return result;
     dname = expand_without_trailing_slash(dname);
     const ghc::filesystem::path path = ghc::filesystem::path(dname);
@@ -1062,7 +1088,7 @@ namespace ngs::fs {
     pattern = string_replace_all(pattern, " ", "");
     pattern = string_replace_all(pattern, "*", "");
     vector<string> extVec = string_split(pattern, ';');
-    std::set<string> filteredItems;
+    set<string> filteredItems;
     for (const string &item : result) {
       message_pump();
       for (const string &ext : extVec) {
@@ -1103,7 +1129,7 @@ namespace ngs::fs {
         result_filtered.push_back(result[i]);
       }
     }
-    std::set<string> removed_duplicates(result_filtered.begin(), result_filtered.end());
+    set<string> removed_duplicates(result_filtered.begin(), result_filtered.end());
     result_filtered.clear(); result_filtered.assign(removed_duplicates.begin(), removed_duplicates.end());
     return result_filtered;
   }
@@ -1129,40 +1155,40 @@ namespace ngs::fs {
     else directory_contents = directory_contents_recursive_helper(dname, pattern, includedirs);
     if (directory_contents_index < directory_contents.size()) {
       if (directory_contents_order == DC_ZTOA) {
-        std::reverse(directory_contents.begin(), directory_contents.end());
+        reverse(directory_contents.begin(), directory_contents.end());
       } else if (directory_contents_order == DC_AOTON) {
-        std::sort(directory_contents.begin(), directory_contents.end(),
+        sort(directory_contents.begin(), directory_contents.end(),
         [](const string &l, const string &r) {
         return (file_datetime_helper(l, 0) < file_datetime_helper(r, 0));
         });
       } else if (directory_contents_order == DC_ANTOO) {
-        std::sort(directory_contents.begin(), directory_contents.end(),
+        sort(directory_contents.begin(), directory_contents.end(),
         [](const string &l, const string &r) {
         return (file_datetime_helper(l, 0) > file_datetime_helper(r, 0));
         });
       } else if (directory_contents_order == DC_MOTON) {
-        std::sort(directory_contents.begin(), directory_contents.end(),
+        sort(directory_contents.begin(), directory_contents.end(),
         [](const string &l, const string &r) {
         return (file_datetime_helper(l, 1) < file_datetime_helper(r, 1));
         });
       } else if (directory_contents_order == DC_MNTOO) {
-        std::sort(directory_contents.begin(), directory_contents.end(),
+        sort(directory_contents.begin(), directory_contents.end(),
         [](const string &l, const string &r) {
         return (file_datetime_helper(l, 1) > file_datetime_helper(r, 1));
         });
       } else if (directory_contents_order == DC_COTON) {
-        std::sort(directory_contents.begin(), directory_contents.end(),
+        sort(directory_contents.begin(), directory_contents.end(),
         [](const string &l, const string &r) {
         return (file_datetime_helper(l, 2) < file_datetime_helper(r, 2));
         });
       } else if (directory_contents_order == DC_CNTOO) {
-        std::sort(directory_contents.begin(), directory_contents.end(),
+        sort(directory_contents.begin(), directory_contents.end(),
         [](const string &l, const string &r) {
         return (file_datetime_helper(l, 2) > file_datetime_helper(r, 2));
         });
       } else if (directory_contents_order == DC_RAND) {
-        std::random_device rd; std::mt19937 g(rd());
-        std::shuffle(directory_contents.begin(), directory_contents.end(), g);
+        random_device rd; mt19937 g(rd());
+        shuffle(directory_contents.begin(), directory_contents.end(), g);
       }
       directory_contents_completion_status = true;
       return directory_contents[directory_contents_index];
@@ -1184,7 +1210,7 @@ namespace ngs::fs {
   void directory_contents_first_async(string dname, string pattern, bool includedirs, bool recursive) {
     directory_contents_completion_async = true;
     directory_contents_completion_status = false;
-    std::thread(directory_contents_first, dname, pattern, includedirs, recursive).detach();
+    thread(directory_contents_first, dname, pattern, includedirs, recursive).detach();
   }
 
   bool directory_contents_get_completion_status() {
@@ -1218,7 +1244,7 @@ namespace ngs::fs {
   }
 
   bool directory_copy(string dname, string newname) {
-    std::error_code ec;
+    error_code ec;
     if (!directory_exists(dname)) return false;
     dname = expand_without_trailing_slash(dname);
     newname = expand_without_trailing_slash(newname);
@@ -1241,7 +1267,7 @@ namespace ngs::fs {
   }
 
   bool directory_rename(string oldname, string newname) {
-    std::error_code ec;
+    error_code ec;
     if (!directory_exists(oldname)) return false;
     oldname = expand_without_trailing_slash(oldname);
     newname = expand_without_trailing_slash(newname);
@@ -1544,7 +1570,7 @@ namespace ngs::fs {
   }
 
   long file_text_write_real(int fd, double val) {
-    string str = std::to_string(val);
+    string str = to_string(val);
     return file_text_write_string(fd, str);
   }
 
