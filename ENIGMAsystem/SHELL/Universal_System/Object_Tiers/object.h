@@ -68,13 +68,13 @@ namespace enigma
       virtual void unlink();
       virtual void deactivate();
       virtual void activate();
-      virtual variant myevent_create();
-      virtual variant myevent_gamestart();
-      virtual variant myevent_gameend();
-      virtual variant myevent_closebutton();
-      virtual variant myevent_roomstart();
-      virtual variant myevent_roomend();
-      virtual variant myevent_destroy();
+      virtual ::variant myevent_create();
+      virtual ::variant myevent_gamestart();
+      virtual ::variant myevent_gameend();
+      virtual ::variant myevent_closebutton();
+      virtual ::variant myevent_roomstart();
+      virtual ::variant myevent_roomend();
+      virtual ::variant myevent_destroy();
 
       virtual std::vector<std::byte> serialize();
       virtual std::size_t deserialize_self(std::byte *iter);
