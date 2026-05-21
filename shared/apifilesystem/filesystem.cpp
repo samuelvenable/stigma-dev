@@ -70,15 +70,20 @@
 #endif
 
 #if defined(_WIN32)
-using wstring;
+using std::wstring;
 #elif (defined(__APPLE__) && defined(__MACH__))
-using uint32_t;
+using std::uint32_t;
 #endif
 
-using string;
-using stringstream;
-using vector;
-using size_t;
+using std::string;
+using std::stringstream;
+using std::error_code;
+using std::uintmax_t;
+using std::localtime;
+using std::getline;
+using std::vector;
+using std::size_t;
+using std::sort;
 
 namespace ngs::fs {
 
