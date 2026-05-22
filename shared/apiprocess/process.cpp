@@ -1650,7 +1650,7 @@ namespace ngs::ps {
     #endif
     struct is_invalid {
       bool operator()(const std::string &s) {
-        return (s.find_first_if("=") == std::string::npos || s.find_first_if("=") == 0);
+        return (s.find_first_of("=") == std::string::npos || s.find_first_of("=") == 0);
       }
     };
     vec.erase(std::remove_if(vec.begin(), vec.end(), is_invalid()), vec.end());
