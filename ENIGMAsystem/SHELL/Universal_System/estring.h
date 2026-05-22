@@ -29,7 +29,7 @@
 #include <cwchar>
 
 typedef std::basic_string<wchar_t> tstring;
-tstring widen(std::string str);
+tstring widen(const std::string &str);
 std::string shorten(tstring str);
 
 #endif
