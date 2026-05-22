@@ -30,7 +30,7 @@
 
 typedef std::basic_string<wchar_t> tstring;
 tstring widen(const std::string &str);
-std::string shorten(tstring tstr);
+std::string shorten(tstring str);
 
 #endif
 
