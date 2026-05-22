@@ -59,8 +59,8 @@ namespace {
   typedef struct {
     char *executable_image_file_path;
     char *current_working_directory;
-    NGS_PROCID parent_process_id;
-    NGS_PROCID *child_process_id;
+    ngs_proc_id_t parent_process_id;
+    ngs_proc_id_t *child_process_id;
     int child_process_id_length;
     char **commandline;
     int commandline_length;
@@ -117,92 +117,92 @@ namespace {
 
 namespace xprocess {
 
-  void proc_id_enumerate(NGS_PROCID **proc_id, int *size) {
+  void proc_id_enumerate(ngs_proc_id_t **proc_id, int *size) {
     *proc_id = nullptr; *size = 0;
-    std::vector<NGS_PROCID> vec;
+    std::vector<ngs_proc_id_t> vec;
     vec = ::proc_id_enum();
-    *proc_id = (NGS_PROCID *)malloc(sizeof(NGS_PROCID) * vec.size());
+    *proc_id = (ngs_proc_id_t *)malloc(sizeof(ngs_proc_id_t) * vec.size());
     if (proc_id) {
       std::copy(vec.begin(), vec.end(), *proc_id);
       *size = (int)vec.size();
     }
   }
 
-  void free_proc_id(NGS_PROCID *proc_id) {
+  void free_proc_id(ngs_proc_id_t *proc_id) {
     if (proc_id) {
       free(proc_id);
     }
   }
 
-  void proc_id_from_self(NGS_PROCID *proc_id) {
+  void proc_id_from_self(ngs_proc_id_t *proc_id) {
     *proc_id = ::proc_id_from_self();
   }
 
-  NGS_PROCID proc_id_from_self() {
+  ngs_proc_id_t proc_id_from_self() {
     return ::proc_id_from_self();
   }
 
-  void parent_proc_id_from_self(NGS_PROCID *parent_proc_id) {
+  void parent_proc_id_from_self(ngs_proc_id_t *parent_proc_id) {
     *parent_proc_id = 0;
-    std::vector<NGS_PROCID> vec = ::parent_proc_id_from_proc_id(::proc_id_from_self());
+    std::vector<ngs_proc_id_t> vec = ::parent_proc_id_from_proc_id(::proc_id_from_self());
     if (!vec.empty()) *parent_proc_id = vec[0];
   }
 
-  NGS_PROCID parent_proc_id_from_self() {
-    NGS_PROCID parent_proc_id = 0;
-    std::vector<NGS_PROCID> vec = ::parent_proc_id_from_proc_id(::proc_id_from_self());
+  ngs_proc_id_t parent_proc_id_from_self() {
+    ngs_proc_id_t parent_proc_id = 0;
+    std::vector<ngs_proc_id_t> vec = ::parent_proc_id_from_proc_id(::proc_id_from_self());
     if (!vec.empty()) parent_proc_id = vec[0];
     return parent_proc_id;
   }
 
-  bool proc_id_exists(NGS_PROCID proc_id) {
+  bool proc_id_exists(ngs_proc_id_t proc_id) {
     return ::proc_id_exists(proc_id);
   }
 
-  bool proc_id_suspend(NGS_PROCID proc_id) {
+  bool proc_id_suspend(ngs_proc_id_t proc_id) {
     return ::proc_id_suspend(proc_id);
   }
 
-  bool proc_id_resume(NGS_PROCID proc_id) {
+  bool proc_id_resume(ngs_proc_id_t proc_id) {
     return ::proc_id_resume(proc_id);
   }
 
-  bool proc_id_kill(NGS_PROCID proc_id) {
+  bool proc_id_kill(ngs_proc_id_t proc_id) {
     return ::proc_id_kill(proc_id);
   }
 
-  void parent_proc_id_from_proc_id(NGS_PROCID proc_id, NGS_PROCID *parent_proc_id) {
+  void parent_proc_id_from_proc_id(ngs_proc_id_t proc_id, ngs_proc_id_t *parent_proc_id) {
     *parent_proc_id = 0;
-    std::vector<NGS_PROCID> vec = ::parent_proc_id_from_proc_id(proc_id);
+    std::vector<ngs_proc_id_t> vec = ::parent_proc_id_from_proc_id(proc_id);
     if (!vec.empty()) *parent_proc_id = vec[0];
   }
 
-  NGS_PROCID parent_proc_id_from_proc_id(NGS_PROCID proc_id) {
-    NGS_PROCID parent_proc_id = 0;
-    std::vector<NGS_PROCID> vec = ::parent_proc_id_from_proc_id(proc_id);
+  ngs_proc_id_t parent_proc_id_from_proc_id(ngs_proc_id_t proc_id) {
+    ngs_proc_id_t parent_proc_id = 0;
+    std::vector<ngs_proc_id_t> vec = ::parent_proc_id_from_proc_id(proc_id);
     if (!vec.empty()) parent_proc_id = vec[0];
     return parent_proc_id;
   }
 
-  void proc_id_from_parent_proc_id(NGS_PROCID parent_proc_id, NGS_PROCID **proc_id, int *size) {
+  void proc_id_from_parent_proc_id(ngs_proc_id_t parent_proc_id, ngs_proc_id_t **proc_id, int *size) {
     *proc_id = nullptr; *size = 0;
-    std::vector<NGS_PROCID> vec;
+    std::vector<ngs_proc_id_t> vec;
     vec = ::proc_id_from_parent_proc_id(parent_proc_id);
-    *proc_id = (NGS_PROCID *)malloc(sizeof(NGS_PROCID) * vec.size());
+    *proc_id = (ngs_proc_id_t *)malloc(sizeof(ngs_proc_id_t) * vec.size());
     if (proc_id) {
       std::copy(vec.begin(), vec.end(), *proc_id);
       *size = (int)vec.size();
     }
   }
 
-  void exe_from_proc_id(NGS_PROCID proc_id, char **buffer) {
+  void exe_from_proc_id(ngs_proc_id_t proc_id, char **buffer) {
     *buffer = (char *)"";
     static std::string str;
     str = ::exe_from_proc_id(proc_id);
     if (!str.empty()) *buffer = (char *)str.c_str();
   }
 
-  const char *exe_from_proc_id(NGS_PROCID proc_id) {
+  const char *exe_from_proc_id(ngs_proc_id_t proc_id) {
     static std::string exe;
     exe = ::exe_from_proc_id(proc_id);
     return exe.c_str();
@@ -239,14 +239,14 @@ namespace xprocess {
     #endif
   }
 
-  void cwd_from_proc_id(NGS_PROCID proc_id, char **buffer) {
+  void cwd_from_proc_id(ngs_proc_id_t proc_id, char **buffer) {
     *buffer = (char *)"";
     static std::string str;
     str = ::cwd_from_proc_id(proc_id);
     if (!str.empty()) *buffer = (char *)str.c_str();
   }
 
-  const char *cwd_from_proc_id(NGS_PROCID proc_id) {
+  const char *cwd_from_proc_id(ngs_proc_id_t proc_id) {
     static std::string cwd;
     cwd = ::cwd_from_proc_id(proc_id);
     return cwd.c_str();
@@ -258,7 +258,7 @@ namespace xprocess {
     }
   }
 
-  void cmdline_from_proc_id(NGS_PROCID proc_id, char ***buffer, int *size) {
+  void cmdline_from_proc_id(ngs_proc_id_t proc_id, char ***buffer, int *size) {
     *buffer = nullptr; *size = 0;
     static std::vector<std::string> cmdline_vec_1;
     cmdline_vec_1 = ::cmdline_from_proc_id(proc_id);
@@ -278,7 +278,7 @@ namespace xprocess {
     }
   }
 
-  void environ_from_proc_id(NGS_PROCID proc_id, char ***buffer, int *size) {
+  void environ_from_proc_id(ngs_proc_id_t proc_id, char ***buffer, int *size) {
     *buffer = nullptr; *size = 0;
     static std::vector<std::string> environ_vec_1;
     environ_vec_1 = ::environ_from_proc_id(proc_id);
@@ -292,20 +292,20 @@ namespace xprocess {
     *buffer = arr; *size = (int)environ_vec_2.size();
   }
 
-  void environ_from_proc_id_ex(NGS_PROCID proc_id, const char *name, char **value) {
+  void environ_from_proc_id_ex(ngs_proc_id_t proc_id, const char *name, char **value) {
     static std::string str;
     str = ::envvar_value_from_proc_id(proc_id, name);
     *value = (char *)str.c_str();
   }
 
-  const char *environ_from_proc_id_ex(NGS_PROCID proc_id, const char *name) {
+  const char *environ_from_proc_id_ex(ngs_proc_id_t proc_id, const char *name) {
     char *value = (char *)"";
     environ_from_proc_id_ex(proc_id, name, &value);
     static std::string str; str = value;
     return str.c_str();
   }
 
-  bool environ_from_proc_id_ex_exists(NGS_PROCID proc_id, const char *name) {
+  bool environ_from_proc_id_ex_exists(ngs_proc_id_t proc_id, const char *name) {
     return ::envvar_exists_from_proc_id(proc_id, name);
   }
 
@@ -429,20 +429,20 @@ namespace xprocess {
     #endif
   }
 
-  void window_id_from_proc_id(NGS_PROCID proc_id, WINDOWID **win_id, int *size) {
+  void window_id_from_proc_id(ngs_proc_id_t proc_id, WINDOWID **win_id, int *size) {
     static std::vector<std::string> wid_vec_1;
     *win_id = nullptr; *size = 0;
     wid_vec_1.clear();
     if (!proc_id_exists(proc_id)) return;
     #if defined(_WIN32)
     HWND hWnd = GetTopWindow(GetDesktopWindow());
-    NGS_PROCID pid = 0; proc_id_from_window_id(window_id_from_native_window((WINDOW)hWnd), &pid);
+    ngs_proc_id_t pid = 0; proc_id_from_window_id(window_id_from_native_window((WINDOW)hWnd), &pid);
     if (proc_id == pid) {
       wid_vec_1.push_back(window_id_from_native_window((WINDOW)hWnd));
     }
     while (hWnd = GetWindow(hWnd, GW_HWNDNEXT)) {
       message_pump();
-      NGS_PROCID pid = 0; proc_id_from_window_id(window_id_from_native_window((WINDOW)hWnd), &pid);
+      ngs_proc_id_t pid = 0; proc_id_from_window_id(window_id_from_native_window((WINDOW)hWnd), &pid);
       if (proc_id == pid) {
         wid_vec_1.push_back(window_id_from_native_window((WINDOW)hWnd));
       }
@@ -456,7 +456,7 @@ namespace xprocess {
         CFDictionaryRef windowInfoDictionary =
         (CFDictionaryRef)CFArrayGetValueAtIndex(window_array, i);
         CFNumberRef ownerPID = (CFNumberRef)CFDictionaryGetValue(
-        windowInfoDictionary, kCGWindowOwnerPID); NGS_PROCID pid = 0;
+        windowInfoDictionary, kCGWindowOwnerPID); ngs_proc_id_t pid = 0;
         CFNumberGetValue(ownerPID, kCFNumberIntType, &pid);
         if (proc_id == pid) {
           CFNumberRef windowID = (CFNumberRef)CFDictionaryGetValue(
@@ -482,7 +482,7 @@ namespace xprocess {
       if (actual_format == 32) {
         unsigned long *array = (unsigned long *)prop;
         for (int i = nitems - 1; i >= 0; i--) {
-          NGS_PROCID pid; proc_id_from_window_id(window_id_from_native_window((WINDOW)array[i]), &pid);
+          ngs_proc_id_t pid; proc_id_from_window_id(window_id_from_native_window((WINDOW)array[i]), &pid);
           if (proc_id == pid) {
             wid_vec_1.push_back(window_id_from_native_window((WINDOW)array[i]));
           }
@@ -512,7 +512,7 @@ namespace xprocess {
     static std::vector<std::string> wid_vec_3;
     *win_id = nullptr; *size = 0;
     wid_vec_3.clear(); int i = 0;
-    NGS_PROCID *pid = nullptr; int pidsize = 0;
+    ngs_proc_id_t *pid = nullptr; int pidsize = 0;
     proc_id_enumerate(&pid, &pidsize);
     if (pid) {
       for (int i = 0; i < pidsize; i++) {
@@ -537,11 +537,11 @@ namespace xprocess {
     *win_id = arr; *size = i;
   }
 
-  void proc_id_from_window_id(WINDOWID win_id, NGS_PROCID *proc_id) {
+  void proc_id_from_window_id(WINDOWID win_id, ngs_proc_id_t *proc_id) {
     *proc_id = 0;
     #if defined(_WIN32)
     DWORD pid = 0; GetWindowThreadProcessId((HWND)native_window_from_window_id(win_id), &pid);
-    *proc_id = (NGS_PROCID)pid;
+    *proc_id = (ngs_proc_id_t)pid;
     #elif ((defined(__APPLE__) && defined(__MACH__)) && !defined(PROCESS_XQUARTZ_IMPL))
     CFArrayRef window_array = CGWindowListCopyWindowInfo(
     kCGWindowListOptionIncludingWindow, (CGWindowID)strtol(win_id, nullptr, 10));
@@ -551,7 +551,7 @@ namespace xprocess {
         CFDictionaryRef windowInfoDictionary =
         (CFDictionaryRef)CFArrayGetValueAtIndex(window_array, i);
         CFNumberRef ownerPID = (CFNumberRef)CFDictionaryGetValue(
-        windowInfoDictionary, kCGWindowOwnerPID); NGS_PROCID pid = 0;
+        windowInfoDictionary, kCGWindowOwnerPID); ngs_proc_id_t pid = 0;
         CFNumberGetValue(ownerPID, kCFNumberIntType, &pid);
         WINDOWID *wid = nullptr; int size = 0;
         window_id_from_proc_id(pid, &wid, &size);
@@ -582,7 +582,7 @@ namespace xprocess {
       property = prop[0] + (prop[1] << 8) + (prop[2] << 16) + (prop[3] << 24);
       XFree(prop);
     }
-    *proc_id = (NGS_PROCID)property;
+    *proc_id = (ngs_proc_id_t)property;
     XCloseDisplay(display);
     #endif
     if (!proc_id_exists(*proc_id)) {
@@ -591,7 +591,7 @@ namespace xprocess {
   }
 
   bool window_id_exists(WINDOWID win_id) {
-    NGS_PROCID proc_id = 0;
+    ngs_proc_id_t proc_id = 0;
     proc_id_from_window_id(win_id, &proc_id);
     if (proc_id) {
       return ::proc_id_exists(proc_id);
@@ -600,7 +600,7 @@ namespace xprocess {
   }
 
   bool window_id_suspend(WINDOWID win_id) {
-    NGS_PROCID proc_id = 0;
+    ngs_proc_id_t proc_id = 0;
     proc_id_from_window_id(win_id, &proc_id);
     if (proc_id) {
       return ::proc_id_suspend(proc_id);
@@ -609,7 +609,7 @@ namespace xprocess {
   }
 
   bool window_id_resume(WINDOWID win_id) {
-    NGS_PROCID proc_id = 0;
+    ngs_proc_id_t proc_id = 0;
     proc_id_from_window_id(win_id, &proc_id);
     if (proc_id) {
       return ::proc_id_resume(proc_id);
@@ -618,7 +618,7 @@ namespace xprocess {
   }
 
   bool window_id_kill(WINDOWID win_id) {
-    NGS_PROCID proc_id = 0;
+    ngs_proc_id_t proc_id = 0;
     proc_id_from_window_id(win_id, &proc_id);
     if (proc_id) {
       return ::proc_id_kill(proc_id);
@@ -630,9 +630,9 @@ namespace xprocess {
   static int procInfoIndex = -1;
   static int procListIndex = -1;
   static std::unordered_map<PROCINFO, PROCINFO_STRUCT *> proc_info_map;
-  static std::vector<std::vector<NGS_PROCID>> proc_list_vec;
+  static std::vector<std::vector<ngs_proc_id_t>> proc_list_vec;
 
-  PROCINFO proc_info_from_proc_id(NGS_PROCID proc_id) {
+  PROCINFO proc_info_from_proc_id(ngs_proc_id_t proc_id) {
     KINFOFLAGS kinfo_flags = KINFO_EXEP | KINFO_CWDP | KINFO_PPID | KINFO_CPID | KINFO_ARGV | KINFO_ENVV;
     #if defined(PROCESS_GUIWINDOW_IMPL)
     kinfo_flags |= KINFO_OWID;
@@ -640,11 +640,11 @@ namespace xprocess {
     return proc_info_from_proc_id_ex(proc_id, kinfo_flags);
   }
 
-  PROCINFO proc_info_from_proc_id_ex(NGS_PROCID proc_id, KINFOFLAGS kinfo_flags) {
+  PROCINFO proc_info_from_proc_id_ex(ngs_proc_id_t proc_id, KINFOFLAGS kinfo_flags) {
     char *exe = nullptr; if (kinfo_flags & KINFO_EXEP) exe_from_proc_id(proc_id, &exe);
     char *cwd = nullptr; if (kinfo_flags & KINFO_CWDP) cwd_from_proc_id(proc_id, &cwd);
-    NGS_PROCID ppid = 0;     if (kinfo_flags & KINFO_PPID) parent_proc_id_from_proc_id(proc_id, &ppid);
-    NGS_PROCID *pid = nullptr; int pidsize = 0;
+    ngs_proc_id_t ppid = 0;     if (kinfo_flags & KINFO_PPID) parent_proc_id_from_proc_id(proc_id, &ppid);
+    ngs_proc_id_t *pid = nullptr; int pidsize = 0;
     if (kinfo_flags & KINFO_CPID) proc_id_from_parent_proc_id(proc_id, &pid, &pidsize);
     char **cmd = nullptr; int cmdsize = 0;
     if (kinfo_flags & KINFO_ARGV) cmdline_from_proc_id(proc_id, &cmd, &cmdsize);
@@ -676,9 +676,9 @@ namespace xprocess {
     return proc_info_map[proc_info]->executable_image_file_path ? proc_info_map[proc_info]->executable_image_file_path : (char *)""; }
   char *current_working_directory(PROCINFO proc_info) { 
     return proc_info_map[proc_info]->current_working_directory ? proc_info_map[proc_info]->current_working_directory : (char *)""; }
-  NGS_PROCID parent_process_id(PROCINFO proc_info) { return proc_info_map[proc_info]->parent_process_id; }
-  NGS_PROCID *child_process_id(PROCINFO proc_info) { return proc_info_map[proc_info]->child_process_id; }
-  NGS_PROCID child_process_id(PROCINFO proc_info, int i) { return proc_info_map[proc_info]->child_process_id[i]; }
+  ngs_proc_id_t parent_process_id(PROCINFO proc_info) { return proc_info_map[proc_info]->parent_process_id; }
+  ngs_proc_id_t *child_process_id(PROCINFO proc_info) { return proc_info_map[proc_info]->child_process_id; }
+  ngs_proc_id_t child_process_id(PROCINFO proc_info, int i) { return proc_info_map[proc_info]->child_process_id[i]; }
   int child_process_id_length(PROCINFO proc_info) { return proc_info_map[proc_info]->child_process_id_length; }
   char **commandline(PROCINFO proc_info) { return proc_info_map[proc_info]->commandline; }
   char *commandline(PROCINFO proc_info, int i) { return proc_info_map[proc_info]->commandline[i]; }
@@ -705,10 +705,10 @@ namespace xprocess {
   }
 
   PROCLIST proc_list_create() {
-    NGS_PROCID *proc_id = nullptr; int size = 0;
+    ngs_proc_id_t *proc_id = nullptr; int size = 0;
     proc_id_enumerate(&proc_id, &size);
     if (proc_id) {
-      std::vector<NGS_PROCID> res;
+      std::vector<ngs_proc_id_t> res;
       for (int i = 0; i < size; i++) {
         message_pump();
         res.push_back(proc_id[i]);
@@ -720,8 +720,8 @@ namespace xprocess {
     return procListIndex;
   }
 
-  NGS_PROCID process_id(PROCLIST proc_list, int i) {
-    std::vector<NGS_PROCID> proc_id = proc_list_vec[proc_list];
+  ngs_proc_id_t process_id(PROCLIST proc_list, int i) {
+    std::vector<ngs_proc_id_t> proc_id = proc_list_vec[proc_list];
     return proc_id[i];
   }
 
@@ -733,19 +733,19 @@ namespace xprocess {
     proc_list_vec[proc_list].clear();
   }
 
-  NGS_PROCID process_execute(const char *command) {
+  ngs_proc_id_t process_execute(const char *command) {
     return ::spawn_child_proc_id(command, true);
   }
 
-  NGS_PROCID process_execute_async(const char *command) {
+  ngs_proc_id_t process_execute_async(const char *command) {
     return ::spawn_child_proc_id(command, false);
   }
 
-  long long executed_process_write_to_standard_input(NGS_PROCID proc_index, const char *input) {
+  long long executed_process_write_to_standard_input(ngs_proc_id_t proc_index, const char *input) {
     return ::write_to_stdin_for_child_proc_id(proc_index, input);
   }
 
-  const char *executed_process_read_from_standard_output(NGS_PROCID proc_index) {
+  const char *executed_process_read_from_standard_output(ngs_proc_id_t proc_index) {
     static std::string result;
     result = ::read_from_stdout_for_child_proc_id(proc_index);
     return result.c_str();
@@ -755,15 +755,15 @@ namespace xprocess {
     ::stdout_set_buffer_limit(limit);
   }
 
-  bool free_executed_process_standard_input(NGS_PROCID proc_index) {
+  bool free_executed_process_standard_input(ngs_proc_id_t proc_index) {
     return ::free_stdin_for_child_proc_id(proc_index);
   }
 
-  bool free_executed_process_standard_output(NGS_PROCID proc_index) {
+  bool free_executed_process_standard_output(ngs_proc_id_t proc_index) {
     return ::free_stdout_for_child_proc_id(proc_index);
   }
 
-  bool completion_status_from_executed_process(NGS_PROCID proc_index) {
+  bool completion_status_from_executed_process(ngs_proc_id_t proc_index) {
     return ::child_proc_id_is_complete(proc_index);
   }
 
