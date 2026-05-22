@@ -50,12 +50,12 @@ tstring widen(string str) {
   return tstring { buf.data(), wchar_count };
 }
 
-string shorten(tstring tstr) {
-  if (tstr.empty()) return "";
-  int nbytes = WideCharToMultiByte(CP_UTF8, 0, tstr.c_str(), (int)tstr.length(), nullptr, 0, nullptr, nullptr);
+string shorten(tstring str) {
+  if (str.empty()) return "";
+  int nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), nullptr, 0, nullptr, nullptr);
   if (!nbytes) return "";
   std::vector<char> buf((size_t)nbytes);
-  nbytes = WideCharToMultiByte(CP_UTF8, 0, tstr.c_str(), (int)tstr.length(), buf.data(), nbytes, nullptr, nullptr);
+  nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), buf.data(), nbytes, nullptr, nullptr);
   if (!nbytes) return "";
   return string { buf.data(), (size_t)nbytes };
 }
