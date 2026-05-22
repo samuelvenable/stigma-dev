@@ -143,9 +143,9 @@ namespace ngs::fs {
         unsigned long len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_OPENED);
         if (len) {
           result = path;
-          if (!result.substr(0, 8).compare("\\\\?\\UNC\\")) {
-            result = "\\" + result.substr(7);
-          } else if (!result.substr(0, 4).compare("\\\\?\\")) {
+          if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
+            result = L"\\" + result.substr(7);
+          } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
             result = result.substr(4);
           }
         }
