@@ -483,7 +483,7 @@ namespace ngs::ps {
       if (proc_info[i] <= 0) continue;
       vec.push_back(proc_info[i]);
     }
-    #elif (defined(__linux__) || defined(__ANDROID__) || (defined(__sun) && defined(__SVR4)))
+    #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     vec.push_back(0);
     DIR *proc = opendir("/proc");
     struct dirent *ent = nullptr;
@@ -790,7 +790,7 @@ namespace ngs::ps {
       }
       vec.push_back(proc_info[i]);
     }
-    #elif (defined(__linux__) || defined(__ANDROID__) || (defined(__sun) && defined(__SVR4)))
+    #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     std::vector<ngs_proc_id_t> proc_id = proc_id_enum();
     for (std::size_t i = 0; i < proc_id.size(); i++) {
       std::vector<ngs_proc_id_t> ppid = parent_proc_id_from_proc_id(proc_id[i]);
@@ -1445,7 +1445,7 @@ namespace ngs::ps {
     CloseHandle(proc);
     #elif (defined(__APPLE__) && defined(__MACH__))
     vec = cmd_env_from_proc_id(proc_id, MEMCMD);
-    #elif (defined(__linux__) || defined(__ANDROID__) || (defined(__sun) && defined(__SVR4)))
+    #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     FILE *file = nullptr;
     if (proc_id == proc_id_from_self()) { 
       file = fopen("/proc/self/cmdline", "rb");
@@ -1558,7 +1558,7 @@ namespace ngs::ps {
     CloseHandle(proc);
     #elif (defined(__APPLE__) && defined(__MACH__))
     vec = cmd_env_from_proc_id(proc_id, MEMENV);
-    #elif (defined(__linux__) || defined(__ANDROID__) || (defined(__sun) && defined(__SVR4)))
+    #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     FILE *file = nullptr;
     if (proc_id == proc_id_from_self()) { 
       file = fopen("/proc/self/environ", "rb");
