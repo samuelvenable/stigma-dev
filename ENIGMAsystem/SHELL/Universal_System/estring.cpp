@@ -30,6 +30,7 @@
 #endif
 
 using std::string;
+using std::vector;
 
 #include "../../../CompilerSource/OS_Switchboard.h"
 
@@ -39,12 +40,10 @@ using std::string;
 #include <windows.h>
 #undef byte
 
-using std::vector;
-
 tstring widen(string str) {
   if (str.empty()) return L"";
   size_t wchar_count = str.size() + 1;
-  std::vector<wchar_t> buf(wchar_count);
+  vector<wchar_t> buf(wchar_count);
   wchar_count = (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count);
   if (!wchar_count) return L"";
   return tstring { buf.data(), wchar_count };
@@ -54,7 +53,7 @@ string shorten(tstring str) {
   if (str.empty()) return "";
   int nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), nullptr, 0, nullptr, nullptr);
   if (!nbytes) return "";
-  std::vector<char> buf((size_t)nbytes);
+  vector<char> buf((size_t)nbytes);
   nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), buf.data(), nbytes, nullptr, nullptr);
   if (!nbytes) return "";
   return string { buf.data(), (size_t)nbytes };
@@ -201,7 +200,7 @@ size_t string_pos(string substr,string str) {
 }
 
 string string_format(double val, unsigned tot, unsigned dec) {
-  std::vector<char> sbuf(19 + tot + dec);
+  vector<char> sbuf(19 + tot + dec);
   sbuf[0] = 0;
   sprintf(sbuf.data(), "%0*.*f", tot, dec, val);
   return sbuf.data();
