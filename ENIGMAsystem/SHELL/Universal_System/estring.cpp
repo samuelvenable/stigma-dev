@@ -41,16 +41,16 @@ using std::string;
 
 using std::vector;
 
-tsting widen(string str) {
+tstring widen(string str) {
   if (str.empty()) return L"";
   size_t wchar_count = str.size() + 1;
   std::vector<wchar_t> buf(wchar_count);
   wchar_count = (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count);
   if (!wchar_count) return L"";
-  return tsting { buf.data(), wchar_count };
+  return tstring { buf.data(), wchar_count };
 }
 
-string shorten(tsting tstr) {
+string shorten(tstring tstr) {
   if (tstr.empty()) return "";
   int nbytes = WideCharToMultiByte(CP_UTF8, 0, tstr.c_str(), (int)tstr.length(), nullptr, 0, nullptr, nullptr);
   if (!nbytes) return "";
