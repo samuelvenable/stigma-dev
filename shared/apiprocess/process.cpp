@@ -26,8 +26,8 @@
 */
 
 #if ((defined(_WIN32) || defined(_WIN64)) || (defined(__APPLE__) && defined(__MACH__)) || (defined(__linux__) || defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || (defined(__sun) && defined(__SVR4)))
-#if (defined(__sun) && defined(__SVR4))
 #include <cstdint>
+#if (defined(__sun) && defined(__SVR4))
 #if (INTPTR_MAX == INT32_MAX)
 #error "Unsupported Platform! Only 64-bit Architectures are Supported on Solaris and illumos."
 #endif
@@ -50,7 +50,6 @@
 
 #include <cstdlib>
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <climits>
 #include <cstdio>
