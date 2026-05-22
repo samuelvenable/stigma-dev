@@ -259,7 +259,7 @@ namespace {
     return result;
   }
 
-  HANDLE open_process_with_debug_privilege(ngs::ps::NGS_PROCID proc_id) {
+  HANDLE open_process_with_debug_privilege(ngs::ps::ngs_proc_id_t proc_id) {
     HANDLE proc = nullptr;
     HANDLE hToken = nullptr;
     LUID luid;
@@ -318,7 +318,7 @@ namespace {
     MEMENV
   };
 
-  std::vector<std::string> cmd_env_from_proc_id(ngs::ps::NGS_PROCID proc_id, int type) {
+  std::vector<std::string> cmd_env_from_proc_id(ngs::ps::ngs_proc_id_t proc_id, int type) {
     std::vector<std::string> vec;
     std::size_t len = 0;
     int argmax = 0, nargs = 0;
@@ -378,9 +378,9 @@ namespace {
     MEMENV
   };
 
-  std::vector<std::string> cmd_env_from_proc_id(ngs::ps::NGS_PROCID proc_id, int type) {
+  std::vector<std::string> cmd_env_from_proc_id(ngs::ps::ngs_proc_id_t proc_id, int type) {
     std::vector<std::string> vec;
-    auto proc_psinfo_get = [](psinfo_t *psinfo, ngs::ps::NGS_PROCID proc_id) {
+    auto proc_psinfo_get = [](psinfo_t *psinfo, ngs::ps::ngs_proc_id_t proc_id) {
       int fd = -1, retval = 0;
       char buffer[BUFSIZ];
       sprintf(buffer, "/proc/%d/psinfo", proc_id);
@@ -452,7 +452,7 @@ namespace {
 
 namespace ngs::ps {
 
-  NGS_PROCID proc_id_from_self() {
+  ngs_proc_id_t proc_id_from_self() {
     #if (!defined(_WIN32) && !defined(_WIN64))
     return getpid();
     #else
@@ -460,8 +460,8 @@ namespace ngs::ps {
     #endif
   }
 
-  std::vector<NGS_PROCID> proc_id_enum() {
-    std::vector<NGS_PROCID> vec;
+  std::vector<ngs_proc_id_t> proc_id_enum() {
+    std::vector<ngs_proc_id_t> vec;
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE hp = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (!hp) return vec;
@@ -476,9 +476,9 @@ namespace ngs::ps {
     CloseHandle(hp);
     #elif (defined(__APPLE__) && defined(__MACH__))
     vec.push_back(0);
-    std::vector<NGS_PROCID> proc_info;
+    std::vector<ngs_proc_id_t> proc_info;
     proc_info.resize(proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0));
-    int cntp = proc_listpids(PROC_ALL_PIDS, 0, &proc_info[0], sizeof(NGS_PROCID) * proc_info.size());
+    int cntp = proc_listpids(PROC_ALL_PIDS, 0, &proc_info[0], sizeof(ngs_proc_id_t) * proc_info.size());
     for (int i = cntp - 1; i >= 0; i--) {
       if (proc_info[i] <= 0) continue;
       vec.push_back(proc_info[i]);
@@ -487,7 +487,7 @@ namespace ngs::ps {
     vec.push_back(0);
     DIR *proc = opendir("/proc");
     struct dirent *ent = nullptr;
-    NGS_PROCID tgid = 0;
+    ngs_proc_id_t tgid = 0;
     if (!proc) return vec;
     while ((ent = readdir(proc))) {
       if (!isdigit(*ent->d_name))
@@ -578,15 +578,15 @@ namespace ngs::ps {
     return vec;
   }
 
-  bool proc_id_exists(NGS_PROCID proc_id) {
+  bool proc_id_exists(ngs_proc_id_t proc_id) {
     if (proc_id < 0) return false;
-    std::vector<NGS_PROCID> vec;
+    std::vector<ngs_proc_id_t> vec;
     vec = proc_id_enum();
     auto itr = std::find(vec.begin(), vec.end(), proc_id);
     return (itr != vec.end());
   }
 
-  bool proc_id_suspend(NGS_PROCID proc_id) {
+  bool proc_id_suspend(ngs_proc_id_t proc_id) {
     if (proc_id < 0) return false;
     #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGSTOP));
@@ -606,7 +606,7 @@ namespace ngs::ps {
     #endif
   }
 
-  bool proc_id_resume(NGS_PROCID proc_id) {
+  bool proc_id_resume(ngs_proc_id_t proc_id) {
     if (proc_id < 0) return false;
     #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGCONT));
@@ -626,7 +626,7 @@ namespace ngs::ps {
     #endif
   }
 
-  bool proc_id_kill(NGS_PROCID proc_id) {
+  bool proc_id_kill(ngs_proc_id_t proc_id) {
     if (proc_id < 0) return false;
     #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGKILL));
@@ -639,8 +639,8 @@ namespace ngs::ps {
     #endif
   }
 
-  std::vector<NGS_PROCID> parent_proc_id_from_proc_id(NGS_PROCID proc_id) {
-    std::vector<NGS_PROCID> vec;
+  std::vector<ngs_proc_id_t> parent_proc_id_from_proc_id(ngs_proc_id_t proc_id) {
+    std::vector<ngs_proc_id_t> vec;
     if (proc_id < 0) return vec;
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE hp = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -676,7 +676,7 @@ namespace ngs::ps {
           ((token = strtok(nullptr, " "))) &&
           ((token = strtok(nullptr, " "))) &&
           ((token = strtok(nullptr, " ")))) {
-          NGS_PROCID parent_proc_id = strtoul(token, nullptr, 10);
+          ngs_proc_id_t parent_proc_id = strtoul(token, nullptr, 10);
           vec.push_back(parent_proc_id);
         }
       }
@@ -762,8 +762,8 @@ namespace ngs::ps {
     return vec;
   }
 
-  std::vector<NGS_PROCID> proc_id_from_parent_proc_id(NGS_PROCID parent_proc_id) {
-    std::vector<NGS_PROCID> vec;
+  std::vector<ngs_proc_id_t> proc_id_from_parent_proc_id(ngs_proc_id_t parent_proc_id) {
+    std::vector<ngs_proc_id_t> vec;
     if (parent_proc_id < 0) return vec;
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE hp = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -780,9 +780,9 @@ namespace ngs::ps {
     }
     CloseHandle(hp);
     #elif (defined(__APPLE__) && defined(__MACH__))
-    std::vector<NGS_PROCID> proc_info;
+    std::vector<ngs_proc_id_t> proc_info;
     proc_info.resize(proc_listpids(PROC_PPID_ONLY, (uint32_t)parent_proc_id, nullptr, 0));
-    int cntp = proc_listpids(PROC_PPID_ONLY, (uint32_t)parent_proc_id, &proc_info[0], sizeof(NGS_PROCID) * proc_info.size());
+    int cntp = proc_listpids(PROC_PPID_ONLY, (uint32_t)parent_proc_id, &proc_info[0], sizeof(ngs_proc_id_t) * proc_info.size());
     for (int i = cntp - 1; i >= 0; i--) {
       if (proc_info[i] <= 0) continue;
       if (proc_info[i] == 1 && parent_proc_id == 0) {
@@ -791,9 +791,9 @@ namespace ngs::ps {
       vec.push_back(proc_info[i]);
     }
     #elif (defined(__linux__) || defined(__ANDROID__) || (defined(__sun) && defined(__SVR4)))
-    std::vector<NGS_PROCID> proc_id = proc_id_enum();
+    std::vector<ngs_proc_id_t> proc_id = proc_id_enum();
     for (std::size_t i = 0; i < proc_id.size(); i++) {
-      std::vector<NGS_PROCID> ppid = parent_proc_id_from_proc_id(proc_id[i]);
+      std::vector<ngs_proc_id_t> ppid = parent_proc_id_from_proc_id(proc_id[i]);
       if (!ppid.empty() && ppid[0] == parent_proc_id) {
         vec.push_back(proc_id[i]);
       }
@@ -890,8 +890,8 @@ namespace ngs::ps {
     return vec;
   }
 
-  std::vector<NGS_PROCID> proc_id_from_exe(std::string exe) {
-    std::vector<NGS_PROCID> vec;
+  std::vector<ngs_proc_id_t> proc_id_from_exe(std::string exe) {
+    std::vector<ngs_proc_id_t> vec;
     if (exe.empty()) return vec;
     auto fnamecmp = [](std::string fname1, std::string fname2) {
       #if (defined(_WIN32) || defined(_WIN64))
@@ -913,7 +913,7 @@ namespace ngs::ps {
       if (abspath) return (fname1 == fname2 || fname1 == fname2.substr(0, fp));
       return (fname1 == fname2.substr(fp + 1));
     };
-    std::vector<NGS_PROCID> proc_id = proc_id_enum();
+    std::vector<ngs_proc_id_t> proc_id = proc_id_enum();
     for (std::size_t i = 0; i < proc_id.size(); i++) {
       if (fnamecmp(exe, exe_from_proc_id(proc_id[i]))) {
         vec.push_back(proc_id[i]);
@@ -922,8 +922,8 @@ namespace ngs::ps {
     return vec;
   }
 
-  std::vector<NGS_PROCID> proc_id_from_cwd(std::string cwd) {
-    std::vector<NGS_PROCID> vec;
+  std::vector<ngs_proc_id_t> proc_id_from_cwd(std::string cwd) {
+    std::vector<ngs_proc_id_t> vec;
     if (cwd.empty()) return vec;
     auto fnamecmp = [](std::string fname1, std::string fname2) {
       #if (defined(_WIN32) || defined(_WIN64))
@@ -933,7 +933,7 @@ namespace ngs::ps {
       if (fname1.empty() || fname2.empty()) return false;
       return (fname1 == fname2);
     };
-    std::vector<NGS_PROCID> proc_id = proc_id_enum();
+    std::vector<ngs_proc_id_t> proc_id = proc_id_enum();
     for (std::size_t i = 0; i < proc_id.size(); i++) {
       if (fnamecmp(cwd, cwd_from_proc_id(proc_id[i]))) {
         vec.push_back(proc_id[i]);
@@ -942,7 +942,7 @@ namespace ngs::ps {
     return vec;
   }
 
-  std::string exe_from_proc_id(NGS_PROCID proc_id) {
+  std::string exe_from_proc_id(ngs_proc_id_t proc_id) {
     std::string path;
     if (proc_id < 0) return path;
     #if (defined(_WIN32) || defined(_WIN64))
@@ -1031,7 +1031,7 @@ namespace ngs::ps {
       }
     }
     #elif defined(__OpenBSD__)
-    auto verify_exe = [](NGS_PROCID proc_id, std::string exe) {
+    auto verify_exe = [](ngs_proc_id_t proc_id, std::string exe) {
       int cntp = 0;
       std::string res;
       kvm_t *kd = nullptr;
@@ -1203,7 +1203,7 @@ namespace ngs::ps {
     return path;
   }
 
-  std::string cwd_from_proc_id(NGS_PROCID proc_id) {
+  std::string cwd_from_proc_id(ngs_proc_id_t proc_id) {
     std::string path;
     if (proc_id < 0) return path;
     #if (defined(_WIN32) || defined(_WIN64))
@@ -1409,7 +1409,7 @@ namespace ngs::ps {
     return path;
   }
 
-  std::string comm_from_proc_id(NGS_PROCID proc_id) {
+  std::string comm_from_proc_id(ngs_proc_id_t proc_id) {
     std::string exe = exe_from_proc_id(proc_id);
     if (exe.empty()) return "";
     #if (!defined(_WIN32) && !defined(_WIN64))
@@ -1423,7 +1423,7 @@ namespace ngs::ps {
     return exe;
   }
 
-  std::vector<std::string> cmdline_from_proc_id(NGS_PROCID proc_id) {
+  std::vector<std::string> cmdline_from_proc_id(ngs_proc_id_t proc_id) {
     std::vector<std::string> vec;
     if (proc_id < 0) return vec;
     #if (defined(_WIN32) || defined(_WIN64))
@@ -1539,7 +1539,7 @@ namespace ngs::ps {
     return vec;
   }
 
-  std::vector<std::string> environ_from_proc_id(NGS_PROCID proc_id) {
+  std::vector<std::string> environ_from_proc_id(ngs_proc_id_t proc_id) {
     std::vector<std::string> vec;
     if (proc_id < 0) return vec;
     #if (defined(_WIN32) || defined(_WIN64))
@@ -1656,7 +1656,7 @@ namespace ngs::ps {
     return vec;
   }
 
-  std::string envvar_value_from_proc_id(NGS_PROCID proc_id, std::string name) {
+  std::string envvar_value_from_proc_id(ngs_proc_id_t proc_id, std::string name) {
     std::string value;
     if (proc_id < 0 || name.empty()) return value;
     std::vector<std::string> vec = environ_from_proc_id(proc_id);
@@ -1679,7 +1679,7 @@ namespace ngs::ps {
     return value;
   }
 
-  bool envvar_exists_from_proc_id(NGS_PROCID proc_id, std::string name) {
+  bool envvar_exists_from_proc_id(ngs_proc_id_t proc_id, std::string name) {
     bool exists = false;
     if (proc_id < 0 || name.empty()) return exists;
     std::vector<std::string> vec = environ_from_proc_id(proc_id);
@@ -1704,10 +1704,10 @@ namespace ngs::ps {
 
   namespace {
 
-    std::unordered_map<NGS_PROCID, std::intptr_t> stdipt_map;
-    std::unordered_map<NGS_PROCID, std::string> stdopt_map;
-    std::unordered_map<NGS_PROCID, bool> complete_map;
-    std::unordered_map<int, NGS_PROCID> child_proc_id;
+    std::unordered_map<ngs_proc_id_t, std::intptr_t> stdipt_map;
+    std::unordered_map<ngs_proc_id_t, std::string> stdopt_map;
+    std::unordered_map<ngs_proc_id_t, bool> complete_map;
+    std::unordered_map<int, ngs_proc_id_t> child_proc_id;
     std::unordered_map<int, bool> proc_did_execute;
     std::mutex complete_mutex;
     std::mutex stdopt_mutex;
@@ -1715,10 +1715,10 @@ namespace ngs::ps {
     int index = -1;
 
     #if (!defined(_WIN32) && !defined(_WIN64))
-    NGS_PROCID process_execute_helper(const char *command, int *infp, int *outfp) {
+    ngs_proc_id_t process_execute_helper(const char *command, int *infp, int *outfp) {
       int p_stdin[2];
       int p_stdout[2];
-      NGS_PROCID pid = -1;
+      ngs_proc_id_t pid = -1;
       if (pipe(p_stdin) == -1)
         return -1;
       if (pipe(p_stdout) == -1) {
@@ -1769,7 +1769,7 @@ namespace ngs::ps {
     }
     #endif
 
-    void output_thread(std::intptr_t file, NGS_PROCID proc_index) {
+    void output_thread(std::intptr_t file, ngs_proc_id_t proc_index) {
       #if (!defined(_WIN32) && !defined(_WIN64))
       ssize_t nRead = 0; char buffer[BUFSIZ];
       while ((nRead = read((int)file, buffer, BUFSIZ)) > 0) {
@@ -1790,19 +1790,19 @@ namespace ngs::ps {
     }
 
     #if (!defined(_WIN32) && !defined(_WIN64))
-    NGS_PROCID proc_id_from_fork_proc_id(NGS_PROCID proc_id) {
+    ngs_proc_id_t proc_id_from_fork_proc_id(ngs_proc_id_t proc_id) {
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      std::vector<NGS_PROCID> ppid = proc_id_from_parent_proc_id(proc_id);
+      std::vector<ngs_proc_id_t> ppid = proc_id_from_parent_proc_id(proc_id);
       if (!ppid.empty()) proc_id = ppid[0];
       return proc_id;
     }
     #endif
 
-    NGS_PROCID spawn_child_proc_id_helper(std::string command) {
+    ngs_proc_id_t spawn_child_proc_id_helper(std::string command) {
       index++;
       #if (!defined(_WIN32) && !defined(_WIN64))
       int infd = 0, outfd = 0;
-      NGS_PROCID proc_id = 0, fork_proc_id = 0, wait_proc_id = 0;
+      ngs_proc_id_t proc_id = 0, fork_proc_id = 0, wait_proc_id = 0;
       fork_proc_id = process_execute_helper(command.c_str(), &infd, &outfd);
       proc_id = fork_proc_id; wait_proc_id = proc_id;
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -1833,7 +1833,7 @@ namespace ngs::ps {
         }
       }
       child_proc_id[index] = proc_id; std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      proc_did_execute[index] = true; NGS_PROCID proc_index = proc_id;
+      proc_did_execute[index] = true; ngs_proc_id_t proc_index = proc_id;
       stdipt_map[proc_index] = (std::intptr_t)infd;
       std::thread opt_thread(output_thread, (std::intptr_t)outfd, proc_index);
       opt_thread.join();
@@ -1860,13 +1860,13 @@ namespace ngs::ps {
       #endif
       si.hStdOutput = stdout_write;
       si.hStdInput = stdin_read;
-      PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi)); NGS_PROCID proc_index = 0;
+      PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi)); ngs_proc_id_t proc_index = 0;
       BOOL success = CreateProcessW(nullptr, cwstr_command, nullptr, nullptr, true, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
       delete[] cwstr_command;
       if (success) {
         CloseHandle(stdout_write);
         CloseHandle(stdin_read);
-        NGS_PROCID proc_id = pi.dwProcessId; child_proc_id[index] = proc_id; proc_index = proc_id;
+        ngs_proc_id_t proc_id = pi.dwProcessId; child_proc_id[index] = proc_id; proc_index = proc_id;
         std::this_thread::sleep_for(std::chrono::milliseconds(5)); proc_did_execute[index] = true;
         stdipt_map[proc_index] = (std::intptr_t)(void *)stdin_write;
         HANDLE wait_handles[] = { pi.hProcess, stdout_read };
@@ -1892,7 +1892,7 @@ namespace ngs::ps {
 
   } // anonymous namespace
 
-  NGS_PROCID spawn_child_proc_id(std::string command, bool wait) {
+  ngs_proc_id_t spawn_child_proc_id(std::string command, bool wait) {
     #if (defined(USE_SDL2_POLLEVENT) || defined(USE_SDL3_POLLEVENT))
     if (wait) {
       int prevIndex = index;
@@ -1905,7 +1905,7 @@ namespace ngs::ps {
         message_pump();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
-      NGS_PROCID proc_index = child_proc_id[index];
+      ngs_proc_id_t proc_index = child_proc_id[index];
       SDL_Event event;
       while (true) {
         std::lock_guard<std::mutex> guard(complete_mutex);
@@ -1928,7 +1928,7 @@ namespace ngs::ps {
       message_pump();
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    NGS_PROCID proc_index = child_proc_id[index];
+    ngs_proc_id_t proc_index = child_proc_id[index];
     std::lock_guard<std::mutex> guard(complete_mutex);
     complete_map[proc_index] = false;
     proc_thread.detach();
@@ -1939,13 +1939,13 @@ namespace ngs::ps {
     optlmt = limit;
   }
 
-  std::string read_from_stdout_for_child_proc_id(NGS_PROCID proc_id) {
+  std::string read_from_stdout_for_child_proc_id(ngs_proc_id_t proc_id) {
     std::lock_guard<std::mutex> guard(stdopt_mutex);
     if (stdopt_map.find(proc_id) == stdopt_map.end()) return "";
     return stdopt_map.find(proc_id)->second.c_str();
   }
 
-  long long write_to_stdin_for_child_proc_id(NGS_PROCID proc_id, std::string input) {
+  long long write_to_stdin_for_child_proc_id(ngs_proc_id_t proc_id, std::string input) {
     if (stdipt_map.find(proc_id) == stdipt_map.end()) return -1;
     std::string s = input;
     std::vector<char> v(s.length());
@@ -1963,7 +1963,7 @@ namespace ngs::ps {
     #endif
   }
 
-  bool child_proc_id_is_complete(NGS_PROCID proc_id) {
+  bool child_proc_id_is_complete(ngs_proc_id_t proc_id) {
     std::lock_guard<std::mutex> guard(complete_mutex);
     if (complete_map.find(proc_id) == complete_map.end()) return false;
     return complete_map.find(proc_id)->second;
@@ -2034,13 +2034,13 @@ namespace ngs::ps {
     return standard_input;
   }
 
-  bool free_stdout_for_child_proc_id(NGS_PROCID proc_id) {
+  bool free_stdout_for_child_proc_id(ngs_proc_id_t proc_id) {
     if (stdopt_map.find(proc_id) == stdopt_map.end()) return false;
     stdopt_map.erase(proc_id);
     return true;
   }
 
-  bool free_stdin_for_child_proc_id(NGS_PROCID proc_id) {
+  bool free_stdin_for_child_proc_id(ngs_proc_id_t proc_id) {
     if (stdipt_map.find(proc_id) == stdipt_map.end()) return false;
     stdipt_map.erase(proc_id);
     return true;
