@@ -894,8 +894,8 @@ namespace ngs::ps {
     if (exe.empty()) return vec;
     auto fnamecmp = [](std::string fname1, std::string fname2) {
       #if (defined(_WIN32) || defined(_WIN64))
-      std::transform(fname1.begin(), fname1.end(), fname1.begin(), std::tolower);
-      std::transform(fname2.begin(), fname2.end(), fname2.begin(), std::tolower);
+      std::transform(fname1.begin(), fname1.end(), fname1.begin(), ::toupper);
+      std::transform(fname2.begin(), fname2.end(), fname2.begin(), ::toupper);
       std::size_t fp = fname2.find_last_of("\\/");
       bool abspath = (!fname1.empty() && fname1.length() >= 3 && fname1[1] == ':' &&
         (fname1[2] == '\\' || fname1[2] == '/'));
@@ -926,8 +926,8 @@ namespace ngs::ps {
     if (cwd.empty()) return vec;
     auto fnamecmp = [](std::string fname1, std::string fname2) {
       #if (defined(_WIN32) || defined(_WIN64))
-      std::transform(fname1.begin(), fname1.end(), fname1.begin(), std::tolower);
-      std::transform(fname2.begin(), fname2.end(), fname2.begin(), std::tolower);
+      std::transform(fname1.begin(), fname1.end(), fname1.begin(), ::toupper);
+      std::transform(fname2.begin(), fname2.end(), fname2.begin(), ::toupper);
       #endif
       if (fname1.empty() || fname2.empty()) return false;
       return (fname1 == fname2);
@@ -1667,8 +1667,8 @@ namespace ngs::ps {
         std::vector<std::string> equalssplit = string_split_by_first_equals_sign(vec[i]);
         if (equalssplit.size() == 2) {
           #if (defined(_WIN32) || defined(_WIN64))
-          std::transform(equalssplit[0].begin(), equalssplit[0].end(), equalssplit[0].begin(), std::tolower);
-          std::transform(name.begin(), name.end(), name.begin(), std::tolower);
+          std::transform(equalssplit[0].begin(), equalssplit[0].end(), equalssplit[0].begin(), ::toupper);
+          std::transform(name.begin(), name.end(), name.begin(), ::toupper);
           #endif
           if (equalssplit[0] == name) {
             value = equalssplit[1];
@@ -1690,8 +1690,8 @@ namespace ngs::ps {
         std::vector<std::string> equalssplit = string_split_by_first_equals_sign(vec[i]);
         if (!equalssplit.empty()) {
           #if (defined(_WIN32) || defined(_WIN64))
-          std::transform(equalssplit[0].begin(), equalssplit[0].end(), equalssplit[0].begin(), std::tolower);
-          std::transform(name.begin(), name.end(), name.begin(), std::tolower);
+          std::transform(equalssplit[0].begin(), equalssplit[0].end(), equalssplit[0].begin(), ::toupper);
+          std::transform(name.begin(), name.end(), name.begin(), ::toupper);
           #endif
           if (equalssplit[0] == name) {
             exists = true;
