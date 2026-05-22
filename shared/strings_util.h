@@ -27,12 +27,12 @@ namespace strings_util {
     return std::wstring { buf.data(), wchar_count };
   }
 
-  inline std::string shorten(std::wstring wstr) {
-    if (wstr.empty()) return "";
-    int nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), nullptr, 0, nullptr, nullptr);
+  inline std::string shorten(std::wstring str) {
+    if (str.empty()) return "";
+    int nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), nullptr, 0, nullptr, nullptr);
     if (!nbytes) return "";
     std::vector<char> buf((size_t)nbytes);
-    nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), buf.data(), nbytes, nullptr, nullptr);
+    nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), buf.data(), nbytes, nullptr, nullptr);
     if (!nbytes) return "";
     return std::string { buf.data(), (size_t)nbytes };
   }
