@@ -1082,7 +1082,8 @@ namespace ngs::ps {
     std::size_t slash_pos = std::string::npos;
     std::size_t colon_pos = std::string::npos;
     std::vector<std::string> cmdline = cmdline_from_proc_id(proc_id); 
-    std::string buffer = ((!cmdline.empty() && !cmdline[0].empty()) ? cmdline[0] : ""); 
+    std::string buffer = ((!cmdline.empty() && !cmdline[0].empty()) ? cmdline[0] : "");
+    bool error = false, retried = false, leading_dash_removed = false;
     if (buffer.empty()) {
       argv0_does_not_exist = true;
       goto path_lookup;
