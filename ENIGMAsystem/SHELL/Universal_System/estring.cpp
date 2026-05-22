@@ -40,7 +40,7 @@ using std::vector;
 #include <windows.h>
 #undef byte
 
-tstring widen(string str) {
+tstring widen(const string &str) {
   if (str.empty()) return L"";
   size_t wchar_count = str.size() + 1;
   vector<wchar_t> buf(wchar_count);
