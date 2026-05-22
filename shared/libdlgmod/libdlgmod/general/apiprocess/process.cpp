@@ -1218,10 +1218,11 @@ namespace ngs::ps {
       if (!proc) return path;
       std::vector<wchar_t> buffer = cmd_env_cwd_from_proc(proc, MEMCWD);
       if (!buffer.empty()) {
-        std::wstring cwd = resolve_symbolic_links(&buffer[0]);
-        path = narrow(cwd);
-        if (!path.empty() && std::count(path.begin(), path.end(), '\\') > 1 && path.back() == '\\') {
-          path = path.substr(0, path.length() - 1);
+        std::wstring cwd = &buffer[0];
+        if (!cwd.empty() && std::count(cwd.begin(), cwd.end(), '\\') > 1 && cwd.back() == '\\') {
+          cwd = cwd.substr(0, cwd.length() - 1);
+          cwd = resolve_symbolic_links(cwd);
+          path = narrow(cwd);
         }
       }
       CloseHandle(proc);
