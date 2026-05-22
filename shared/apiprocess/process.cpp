@@ -966,20 +966,20 @@ namespace ngs::ps {
     }
     #elif (defined(__APPLE__) && defined(__MACH__))
     if (proc_id == proc_id_from_self()) {
-      char exe[PATH_MAX];
-      std::uint32_t size = sizeof(exe);
-      if (!_NSGetExecutablePath(exe, &size)) {
-        char buffer[PATH_MAX];
-        if (realpath(exe, buffer)) {
-          path = buffer;
+      char buffer[PATH_MAX];
+      std::uint32_t size = sizeof(buffer);
+      if (!_NSGetExecutablePath(buffer, &size)) {
+        char exe[PATH_MAX];
+        if (realpath(buffer, exe)) {
+          path = exe;
         }
       }
     } else {
-      char exe[PROC_PIDPATHINFO_MAXSIZE];
-      if (proc_pidpath(proc_id, exe, sizeof(exe)) > 0) {
-        char buffer[PATH_MAX];
-        if (realpath(exe, buffer)) {
-          path = buffer;
+      char buffer[PROC_PIDPATHINFO_MAXSIZE];
+      if (proc_pidpath(proc_id, buffer, sizeof(buffer)) > 0) {
+        char exe[PATH_MAX];
+        if (realpath(buffer, exe)) {
+          path = exe;
         }
       }
     }
@@ -1005,11 +1005,11 @@ namespace ngs::ps {
     if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
       std::vector<char> vecbuff;
       vecbuff.resize(len);
-      char *exe = &vecbuff[0];
-      if (!sysctl(mib, 4, exe, &len, nullptr, 0)) {
-        char buffer[PATH_MAX];
-        if (realpath(exe, buffer)) {
-          path = buffer;
+      char *buffer = &vecbuff[0];
+      if (!sysctl(mib, 4, buffer, &len, nullptr, 0)) {
+        char exe[PATH_MAX];
+        if (realpath(buffer, exe)) {
+          path = exe;
         }
       }
     }
@@ -1023,11 +1023,11 @@ namespace ngs::ps {
     if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
       std::vector<char> vecbuff;
       vecbuff.resize(len);
-      char *exe = &vecbuff[0];
-      if (!sysctl(mib, 4, exe, &len, nullptr, 0)) {
-        char buffer[PATH_MAX];
-        if (realpath(exe, buffer)) {
-          path = buffer;
+      char *buffer = &vecbuff[0];
+      if (!sysctl(mib, 4, buffer, &len, nullptr, 0)) {
+        char exe[PATH_MAX];
+        if (realpath(buffer, exe)) {
+          path = exe;
         }
       }
     }
