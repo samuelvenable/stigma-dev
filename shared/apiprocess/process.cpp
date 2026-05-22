@@ -1081,7 +1081,7 @@ namespace ngs::ps {
     bool argv0_does_not_exist = false;
     std::size_t slash_pos = std::string::npos;
     std::size_t colon_pos = std::string::npos;
-    std::vector<std::string> cmd = cmdline_from_proc_id(proc_id); 
+    std::vector<std::string> cmdline = cmdline_from_proc_id(proc_id); 
     std::string buffer = ((!cmdline.empty() && !cmdline[0].empty()) ? cmdline[0] : ""); 
     if (buffer.empty()) {
       argv0_does_not_exist = true;
