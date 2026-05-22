@@ -1740,7 +1740,7 @@ namespace ngs::ps {
         close(p_stdout[0]);
         dup2(p_stdout[1], 1);
         #if defined(NULLIFY_STDERR)
-        dup2(::open("/dev/null", O_RDONLY), 2);
+        dup2(open("/dev/null", O_RDONLY), 2);
         #else
         dup2(p_stdout[1], 2);
         #endif
