@@ -41,18 +41,23 @@ using std::string;
 
 using std::vector;
 
-tstring widen(const string &str) {
+tsting widen(string str) {
   if (str.empty()) return L"";
-  const size_t wchar_count = str.size() + 1;
-  vector<WCHAR> buf(wchar_count);
-  return tstring{buf.data(), (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count)};
+  size_t wchar_count = str.size() + 1;
+  std::vector<wchar_t> buf(wchar_count);
+  wchar_count = (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count);
+  if (!wchar_count) return L"";
+  return tsting { buf.data(), wchar_count };
 }
 
-string shorten(tstring str) {
-  if (str.empty()) return "";
-  int nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), NULL, 0, NULL, NULL);
-  vector<char> buf((size_t)nbytes);
-  return string{buf.data(), (size_t)WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), buf.data(), nbytes, NULL, NULL)};
+string shorten(tsting tstr) {
+  if (tstr.empty()) return "";
+  int nbytes = WideCharToMultiByte(CP_UTF8, 0, tstr.c_str(), (int)tstr.length(), nullptr, 0, nullptr, nullptr);
+  if (!nbytes) return "";
+  std::vector<char> buf((size_t)nbytes);
+  nbytes = WideCharToMultiByte(CP_UTF8, 0, tstr.c_str(), (int)tstr.length(), buf.data(), nbytes, nullptr, nullptr);
+  if (!nbytes) return "";
+  return string { buf.data(), (size_t)nbytes };
 }
 
 #endif
@@ -68,7 +73,7 @@ static const char ldgrs[256] = {
   1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0
 };
 
-static const std::string base64_chars = 
+static const string base64_chars = 
              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
              "abcdefghijklmnopqrstuvwxyz"
              "0123456789+/";
@@ -369,7 +374,7 @@ string filename_change_ext(string fname, string newext)
   return fname.replace(fp,fname.length(),newext);
 }
 
-var string_split(const std::string &str, const std::string &delim,
+var string_split(const string &str, const string &delim,
                  bool skip_empty) {
   var res;
   if (delim.empty()) {
@@ -377,7 +382,7 @@ var string_split(const std::string &str, const std::string &delim,
     return res;
   }
   size_t last = 0, next, found = 0;
-  while ((next = str.find(delim, last)) != std::string::npos) {
+  while ((next = str.find(delim, last)) != string::npos) {
     if (!skip_empty || next > last)
       res[found++] = str.substr(last, next - last);
     last = next + delim.length();
