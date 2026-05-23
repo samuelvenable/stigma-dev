@@ -27,8 +27,7 @@
 #include <string>
 #include <cstdlib>
 #include <cstdio>
-
-#include "Widget_Systems/SDL/filedialogs.hpp"
+#include <apifiledialogs/filedialogs.hpp>
 #include "Widget_Systems/SDL/dialogs.h"
 #include "Widget_Systems/widgets_mandatory.h"
 #include "Platforms/General/PFwindow.h"
