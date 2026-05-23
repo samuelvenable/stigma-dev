@@ -214,7 +214,8 @@ ifeq ($(UNIX_BASED), false)
 	override CFLAGS += -std=c++17
 endif
 
-override CXXFLAGS += -fexceptions
+override CXXFLAGS += -fexceptions -I../../shared
+override CFLAGS += -fexceptions -I../../shared
 SOURCES += $(wildcard ../../shared/apiprocess/*.cpp)
 SOURCES += $(wildcard ../../shared/apifilesystem/*.cpp)
 SOURCES += $(wildcard ../../shared/tempdir/*.cpp)
