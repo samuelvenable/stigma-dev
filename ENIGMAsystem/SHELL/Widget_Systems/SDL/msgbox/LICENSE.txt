@@ -1,4 +1,4 @@
-The MIT License (MIT)
+MIT License
 
 Copyright © 2016 Andre Leiradella
 Copyright © 2021-2025 Samuel Venable
