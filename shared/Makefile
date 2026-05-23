@@ -5,8 +5,8 @@ SHARED_SRC_DIR := .
 SHARED_SOURCES := __getexecname/internal.cpp __getbasepath/internal.cpp __getprogname/internal.cpp $(call rwildcard,event_reader,*.cpp) $(call rwildcard,eyaml,*.cpp) $(call rwildcard,libpng-util,*.cpp) $(call rwildcard,rectpacker,*.cpp) $(call rwildcard,ProtoYaml,*.cpp)
 PROTO_DIR := ./protos/.eobjs
 
-CXXFLAGS += -fPIC -I../CompilerSource -I$(PROTO_DIR) -fexceptions
-CFLAGS += -fPIC -I../CompilerSource -I$(PROTO_DIR) -fexceptions
+CXXFLAGS += -fPIC -I../CompilerSource -I$(PROTO_DIR) -fexceptions -I.
+CFLAGS += -fPIC -I../CompilerSource -I$(PROTO_DIR) -fexceptions -I.
 LDFLAGS += -shared -lz -lpng -lyaml-cpp -L../ -lProtocols$(SUFFIX) -lprotobuf -fexceptions
 LDLIBS += -shared -lz -lpng -lyaml-cpp -L../ -lProtocols$(SUFFIX) -lprotobuf -fexceptions
 
