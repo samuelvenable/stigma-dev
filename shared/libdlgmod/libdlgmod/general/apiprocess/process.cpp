@@ -1973,6 +1973,15 @@ namespace ngs::ps {
   std::string read_from_stdin_for_self() {
     std::string standard_input;
     #if (defined(_WIN32) || defined(_WIN64))
+    ngs_proc_id_t proc_id = spawn_child_proc_id("uname -o", false);
+    while (proc_id != 0 && !child_proc_id_is_complete(proc_id));
+    std::string output = read_from_stdout_for_child_proc_id(proc_id);
+    free_stdout_for_child_proc_id(proc_id);
+    free_stdin_for_child_proc_id(proc_id);
+    // This function is not compatible with the Msys or Cygwin Terminal:
+    if (output.substr(0, 4).compare("Msys") && output.substr(0, 6).compare("Cygwin")) {
+      return standard_input;
+    }
     if (_isatty(_fileno(stdin))) {
       return standard_input;
     }
