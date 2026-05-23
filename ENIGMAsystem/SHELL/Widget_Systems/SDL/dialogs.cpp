@@ -96,6 +96,11 @@ void show_debug_message(string errortext, MESSAGE_TYPE type) {
 }
 
 int show_message(const string &message) {
+  if (!enigma_user::window_get_caption().empty() && 
+    (!enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Error") ||
+    !enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Fatal Error"))) {
+    enigma_user::environment_set_variable("IMGUI_DIALOG_CAPTION", enigma_user::window_get_caption());
+  }
   enigma_user::environment_set_variable("IMGUI_DIALOG_PARENT", std::to_string((std::uint64_t)(void *)enigma_user::window_handle()));
   ::show_message((char *)message.c_str());
   SDL_GL_MakeCurrent(enigma::windowHandle, enigma::sdl_gl_context);
@@ -107,6 +112,11 @@ int show_message(const string &message) {
 }
 
 bool show_question(string message) {
+  if (!enigma_user::window_get_caption().empty() && 
+    (!enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Error") ||
+    !enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Fatal Error"))) {
+    enigma_user::environment_set_variable("IMGUI_DIALOG_CAPTION", enigma_user::window_get_caption());
+  }
   enigma_user::environment_set_variable("IMGUI_DIALOG_PARENT", std::to_string((std::uint64_t)(void *)enigma_user::window_handle()));
   string result = ::show_question((char *)message.c_str());
   SDL_GL_MakeCurrent(enigma::windowHandle, enigma::sdl_gl_context);
@@ -119,6 +129,11 @@ bool show_question(string message) {
 }
 
 int show_message_ext(string message, string button1, string button2, string button3) {
+  if (!enigma_user::window_get_caption().empty() && 
+    (!enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Error") ||
+    !enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Fatal Error"))) {
+    enigma_user::environment_set_variable("IMGUI_DIALOG_CAPTION", enigma_user::window_get_caption());
+  }
   enigma_user::environment_set_variable("IMGUI_DIALOG_PARENT", std::to_string((std::uint64_t)(void *)enigma_user::window_handle()));
   string orig_ok = environment_get_variable("IMGUI_OK");
   string orig_yes = environment_get_variable("IMGUI_YES");
@@ -151,6 +166,11 @@ int show_message_ext(string message, string button1, string button2, string butt
 }
 
 std::string get_string(std::string message, std::string defstr) {
+  if (!enigma_user::window_get_caption().empty() && 
+    (!enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Error") ||
+    !enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Fatal Error"))) {
+    enigma_user::environment_set_variable("IMGUI_DIALOG_CAPTION", enigma_user::window_get_caption());
+  }
   enigma_user::environment_set_variable("IMGUI_DIALOG_PARENT", std::to_string((std::uint64_t)(void *)enigma_user::window_handle()));
   std::string result = ::get_string((char *)message.c_str(), (char *)defstr.c_str());
   SDL_GL_MakeCurrent(enigma::windowHandle, enigma::sdl_gl_context);
@@ -162,6 +182,11 @@ std::string get_string(std::string message, std::string defstr) {
 }
 
 double get_number(std::string message, double defnum) {
+  if (!enigma_user::window_get_caption().empty() && 
+    (!enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Error") ||
+    !enigma_user::environment_get_variable("IMGUI_DIALOG_CAPTION").compare("Fatal Error"))) {
+    enigma_user::environment_set_variable("IMGUI_DIALOG_CAPTION", enigma_user::window_get_caption());
+  }
   enigma_user::environment_set_variable("IMGUI_DIALOG_PARENT", std::to_string((std::uint64_t)(void *)enigma_user::window_handle()));
   double result = ::get_number((char *)message.c_str(), defnum);
   SDL_GL_MakeCurrent(enigma::windowHandle, enigma::sdl_gl_context);
