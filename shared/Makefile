@@ -57,8 +57,8 @@ ifeq ($(UNIX_BASED), true)
 else
 	STIGMA_LAUNCHER := $(shell chmod +x ../STIGMA.sh;chmod +x ../build-launcher.sh;cd ..;./build-launcher.sh;cd shared)
 endif
-override CXXFLAGS += -std=c++17 -DPROCESS_GUIWINDOW_IMPL -DUSE_SDL_POLLEVENT -DNULLIFY_STDERR $(shell pkg-config --cflags sdl2)
-override CFLAGS += -std=c++17 -DPROCESS_GUIWINDOW_IMPL -DUSE_SDL_POLLEVENT -DNULLIFY_STDERR $(shell pkg-config --cflags sdl2)
+override CXXFLAGS += -std=c++17 -DPROCESS_GUIWINDOW_IMPL -DUSE_SDL_POLLEVENT -DNULLIFY_STDERR $(shell pkg-config --cflags sdl2) -I.
+override CFLAGS += -std=c++17 -DPROCESS_GUIWINDOW_IMPL -DUSE_SDL_POLLEVENT -DNULLIFY_STDERR $(shell pkg-config --cflags sdl2) -I.
 ifeq ($(UNIX_BASED), true)
 	ifeq ($(OS), Darwin)
 	else
