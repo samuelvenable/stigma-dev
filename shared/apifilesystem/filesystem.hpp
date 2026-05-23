@@ -26,6 +26,12 @@
 
 #pragma once
 #if ((defined(_WIN32) || defined(_WIN64)) || (defined(__APPLE__) && defined(__MACH__)) || (defined(__linux__) || defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || (defined(__sun) && defined(__SVR4)))
+#include <cstdint>
+#if (defined(__sun) && defined(__SVR4))
+#if ((defined(INTPTR_MAX) && defined(INT64_MAX)) && INTPTR_MAX != INT64_MAX)
+#error "Unsupported Platform! Only 64-bit Architectures are Supported on Solaris and illumos."
+#endif
+#endif
 #if (defined(__APPLE__) && defined(__MACH__))
 #include <TargetConditionals.h>
 #if (!defined(TARGET_OS_OSX) || !TARGET_OS_OSX)
@@ -35,7 +41,10 @@
 #else
 #error "Unsupported Platform! Supported Platforms: Windows, macOS, Linux, FreeBSD, DragonFly BSD, NetBSD, OpenBSD, Solaris, illumos, and Android."
 #endif
-#if ((defined(_WIN32) || defined(_WIN64)) || (defined(__APPLE__) && defined(__MACH__)) || (defined(__linux__) || defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || (defined(__sun) && defined(__SVR4)))
+#if ((defined(_WIN32) || defined(_WIN64)) || ((defined(__APPLE__) && defined(__MACH__)) && (defined(TARGET_OS_OSX) && TARGET_OS_OSX)) || (defined(__linux__) || defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || ((defined(__sun) && defined(__SVR4)) && ((defined(INTPTR_MAX) && defined(INT64_MAX)) && (INTPTR_MAX == INT64_MAX))))
+#if !defined(__apifilesystem_supported__)
+#define __apifilesystem_supported__
+#endif
 #include <string>
 #include <cstdint>
 
