@@ -33,10 +33,9 @@ SOFTWARE.
 
 #include "imguial_msgbox.h"
 
-#include <filedialogs.hpp>
-#include <filesystem.hpp>
-
-#include <ghc/filesystem.hpp>
+#include <apifilesystem/filesystem.hpp>
+#include <apifilesystem/ghc/filesystem.hpp>
+#include <apifiledialogs/filedialogs.hpp>
 
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
