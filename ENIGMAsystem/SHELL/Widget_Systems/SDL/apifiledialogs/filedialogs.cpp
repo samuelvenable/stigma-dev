@@ -46,10 +46,9 @@
 
 #include <msgbox/imguial_msgbox.h>
 
-#include <ghc/filesystem.hpp>
-#include <filesystem.hpp>
-
-#include "filedialogs.hpp"
+#include <apifilesystem/filesystem.hpp>
+#include <apifilesystem/ghc/filesystem.hpp>
+#include <apifiledialogs/filedialogs.hpp>
 
 #include <SDL_syswm.h>
 #include <sys/stat.h>
