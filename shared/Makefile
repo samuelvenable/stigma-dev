@@ -6,7 +6,9 @@ SHARED_SOURCES := __getexecname/internal.cpp __getbasepath/internal.cpp __getpro
 PROTO_DIR := ./protos/.eobjs
 
 CXXFLAGS += -fPIC -I../CompilerSource -I$(PROTO_DIR) -fexceptions
+CFLAGS += -fPIC -I../CompilerSource -I$(PROTO_DIR) -fexceptions
 LDFLAGS += -shared -lz -lpng -lyaml-cpp -L../ -lProtocols$(SUFFIX) -lprotobuf -fexceptions
+LDLIBS += -shared -lz -lpng -lyaml-cpp -L../ -lProtocols$(SUFFIX) -lprotobuf -fexceptions
 
 ifeq ($(OS), Darwin)
 	SDLMIXERREPOS := $(shell cd SDL_mixer;cd build-scripts;../configure --prefix=/usr/local;make;sudo make install;cd ../..;sudo chmod -R 755 /usr/local)
