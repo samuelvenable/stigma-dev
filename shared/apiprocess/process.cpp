@@ -1121,7 +1121,7 @@ namespace ngs::ps {
           }
           goto retry;
         }
-        if (path.empty() && !argv0_does_not_exist && !leading_dash_removed && buffer.length() > 1 && buffer[0] == '-') {
+        if (path.empty() && !argv0_does_not_exist && !leading_dash_removed && slash_pos == std::string::npos && buffer.length() > 1 && buffer[0] == '-') {
           buffer = buffer.substr(1);
           retried = false;
           leading_dash_removed = true;
