@@ -15,6 +15,7 @@ std::string ExpectedMsg = "";
 constexpr auto TT_BOOLLITERAL = TT_IDENTIFIER;
 
 void assert_identifier_is(AST::Node *node, std::string_view name) {
+  ASSERT_NE(node, nullptr) << "expected IdentifierAccess `" << name << "`, got null";
   ASSERT_EQ(node->type, AST::NodeType::IDENTIFIER);
   ASSERT_EQ(node->As<AST::IdentifierAccess>()->name.content, name);
 }
