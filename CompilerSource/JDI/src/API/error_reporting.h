@@ -25,6 +25,7 @@
 #ifndef JDI_ERROR_REPORTING_h
 #define JDI_ERROR_REPORTING_h
 
+#include "win32_macro_guard.h"
 #include <string>
 #include <string_view>
 #include <sstream>
@@ -37,7 +38,7 @@ class ErrorHandler;
 class ErrorContext;
 class ErrorStream;
 
-enum ErrorLevel { ERROR, WARNING, INFO };
+enum class ErrorLevel { ERROR, WARNING, INFO };
 
 struct SourceLocation {
   static constexpr size_t npos = (size_t) -1;
@@ -136,9 +137,9 @@ class ErrorStream {
   ~ErrorStream() {
     switch (level_) {
       default:
-      case ERROR:   herr_->  error(message_.str(), sloc_); return;
-      case WARNING: herr_->warning(message_.str(), sloc_); return;
-      case INFO:    herr_->   info(message_.str(), 0, sloc_); return;
+      case ErrorLevel::ERROR:   herr_->  error(message_.str(), sloc_); return;
+      case ErrorLevel::WARNING: herr_->warning(message_.str(), sloc_); return;
+      case ErrorLevel::INFO:    herr_->   info(message_.str(), 0, sloc_); return;
     }
   }
 };

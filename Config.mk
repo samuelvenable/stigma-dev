@@ -1,6 +1,14 @@
 GCCVER := $(shell gcc -dumpversion | cut -c 1)
 OS := $(shell uname -s)
 
+# MSYS2 MinGW reports MINGW64_NT-10.0-…, not "Windows" (see uname -s).
+IS_WINDOWS :=
+ifneq ($(findstring MINGW,$(OS)),)
+	IS_WINDOWS := 1
+else ifneq ($(findstring _NT-,$(OS)),)
+	IS_WINDOWS := 1
+endif
+
 # Determine whether Unix-based
 ifeq ($(OS), Darwin)
 	UNIX_BASED := true
@@ -46,17 +54,23 @@ ifeq ($(ENABLE_ASAN), 1)
 	LDFLAGS += -fsanitize=address
 endif
 
-# macOS brew include and lib folders
+# Code coverage (CI: COVERAGE=1)
+ifeq ($(COVERAGE), 1)
+	CXXFLAGS += --coverage
+	LDFLAGS += --coverage
+endif
+
+# macOS: Homebrew LLVM Clang + libc++ (matches brew protobuf/grpc/abseil).
+# Requires: brew install llvm  (see CI/deps/brew.packages.txt)
 ifeq ($(OS), Darwin)
-	CXXFLAGS += -I/usr/local/include
-	CFLAGS   += -I/usr/local/include
-	LDFLAGS  += -L/usr/local/lib
+	CXXFLAGS += -isystem /usr/local/include -isystem /opt/homebrew/include/
+	CFLAGS   += -isystem /usr/local/include -isystem /opt/homebrew/include/
+	LDFLAGS  += -L/usr/local/lib -L/opt/homebrew/lib/
 	# ASan with shared libraries on macOS needs dynamic symbol resolution
 	ifeq ($(ENABLE_ASAN), 1)
 		SHARED_LDFLAGS := -Wl,-undefined,dynamic_lookup
 	endif
 endif
-
 # FreeBSD include and lib folders
 ifeq ($(OS), FreeBSD)
 	CXXFLAGS += -I/usr/local/include
@@ -80,11 +94,12 @@ endif
 
 # These will be relative to the file that includes this Makefile
 SRC_DIR := .
-# Use separate object directories for ASAN and non-ASAN builds to avoid conflicts
+# Use separate object directories for ASAN and non-ASAN builds to avoid conflicts.
+# CI sets OBJ_DIR (e.g. .eobjs-ci-arch) so docker/native jobs do not share artifacts.
 ifeq ($(ENABLE_ASAN), 1)
-OBJ_DIR := .eobjs-asan
+OBJ_DIR ?= .eobjs-asan
 else
-OBJ_DIR := .eobjs
+OBJ_DIR ?= .eobjs
 endif
 
 # This implements a recursive wildcard allowing us to iterate in subdirs
@@ -115,9 +130,8 @@ ifeq ($(OS),Linux)
   FALLBACK_LDFLAGS_EXTRA :=
 
 else ifeq ($(OS),Darwin)
-  BREW_PREFIX := $(shell brew --prefix 2>/dev/null || echo /usr/local)
-  FALLBACK_INC := -I$(BREW_PREFIX)/opt/llvm/include -I$(BREW_PREFIX)/include
-  FALLBACK_LIB_PATH := -L$(BREW_PREFIX)/lib
+  FALLBACK_INC := -I$(LLVM_PREFIX)/include/c++/v1 -I$(LLVM_PREFIX)/include -I$(BREW_PREFIX)/include
+  FALLBACK_LIB_PATH := -L$(LLVM_PREFIX)/lib/c++ -L$(BREW_PREFIX)/lib
   FALLBACK_LIBS_GRPC := -lgrpc++ -lgrpc -lssl -lcrypto -lcares -lpthread
   FALLBACK_LIBS_PROTOBUF := -lprotobuf
   FALLBACK_LIBS_YAML := -lyaml-cpp
@@ -126,8 +140,8 @@ else ifeq ($(OS),Darwin)
   FALLBACK_LIBS_ZLIB := -lz
   FALLBACK_LDFLAGS_EXTRA :=
 
-else ifeq ($(OS),Windows)
-  MINGW_PREFIX := C:/msys64/mingw64
+else ifeq ($(IS_WINDOWS),1)
+  MINGW_PREFIX ?= /mingw64
   FALLBACK_INC := -I$(MINGW_PREFIX)/include
   FALLBACK_LIB_PATH := -L$(MINGW_PREFIX)/lib
   FALLBACK_LIBS_GRPC := -lgrpc++ -lgrpc -lssl -lcrypto -lws2_32 -liphlpapi -lcares -lz -static-libgcc -static-libstdc++
@@ -135,9 +149,8 @@ else ifeq ($(OS),Windows)
   FALLBACK_LIBS_YAML := -lyaml-cpp
   FALLBACK_LIBS_PUGI := -lpugixml
   FALLBACK_LIBS_PNG := -lpng
-  # Note: Zlib is often implicitly linked or named just 'lz' on Windows/MinGW
   FALLBACK_LIBS_ZLIB := -lz
-  FALLBACK_LDFLAGS_EXTRA := -static
+  FALLBACK_LDFLAGS_EXTRA :=
 
 else
   $(warning *** Unknown OS ($(OS)). Flags will be empty. ***)
@@ -167,7 +180,7 @@ ifeq ($(strip $(PROTOBUF_PKGC_LIBS_TEST)),)
   PROTOBUF_LIBS := $(FALLBACK_LIBS_PROTOBUF)
 else
   $(info Protobuf: pkg-config successful.)
-  PROTOBUF_PKGC_CFLGS = $(shell pkg-config --cflags-only-I protobuf 2>/dev/null)
+  PROTOBUF_PKGC_CFLGS = $(shell pkg-config --cflags protobuf 2>/dev/null)
   PROTOBUF_CFLAGS := $(PROTOBUF_PKGC_CFLGS)
   PROTOBUF_LDFLAGS := $(filter -L%, $(PROTOBUF_PKGC_LIBS_TEST))
   PROTOBUF_LIBS := $(filter -l%, $(PROTOBUF_PKGC_LIBS_TEST))

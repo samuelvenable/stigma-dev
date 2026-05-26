@@ -54,6 +54,7 @@ void lang_CPP::load_extension_locals() {
 #ifdef _WIN32
  #define byte __windows_byte_workaround
  #include <windows.h>
+ #include "win32_macro_guard.h"
  #undef byte
  #define DLLEXPORT extern "C" __declspec(dllexport)
    #define DECLARE_TIME_TYPE clock_t

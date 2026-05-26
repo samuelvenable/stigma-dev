@@ -50,7 +50,7 @@ struct ParseContext {
   static const ParseContext &ForPreprocessorEvaluation();
 
   /// Disallow null construction.
-  ParseContext(nullptr_t) = delete;
+  ParseContext(std::nullptr_t) = delete;
   /// Used by everyone else.
   ParseContext(const LanguageFrontend *lang, NameSet script_names):
       language_fe(lang),

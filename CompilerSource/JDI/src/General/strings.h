@@ -28,6 +28,7 @@
 #include <string>
 #include <string_view>
 #include <ostream>
+#include <type_traits>
 
 namespace jdi {
 
@@ -86,9 +87,6 @@ static inline std::string quote(std::string_view str) {
 // =============================================================================
 namespace string_detection {
 
-/// Always contains true; SFINAE happens elsewhere.
-template<typename T> struct WhenValid { enum { v = 1 }; typedef T Type; };
-
 // Explicit acceptance of known string types.
 // =============================================================================
 template<typename T> struct IsString { enum { v = 0 }; };
@@ -102,41 +100,45 @@ template<> struct IsString<std::string> { enum { v = 1 }; };
 
 // ToString() detector
 // =============================================================================
-template<typename T, bool B> struct KHas_toString {
+template<typename T, class = std::void_t<>> struct KHas_toString {
   enum { v = 0 };
 };
 
 template<typename T>
-struct KHas_toString<T, IsString<decltype(std::declval<T>().toString())>::v> {
+struct KHas_toString<T, std::enable_if_t<(
+    IsString<decltype(std::declval<T>().toString())>::v == 1)>> {
   enum { v = 1 };
 };
 
-template<typename T> using Has_toString = KHas_toString<T, true>;
+template<typename T> using Has_toString = KHas_toString<T>;
 
 
 // to_string() detector
 // =============================================================================
-template<typename T, bool B> struct KHas_to_string { enum { v = 0 }; };
+template<typename T, class = std::void_t<>> struct KHas_to_string {
+  enum { v = 0 };
+};
 
 template<typename T>
-struct KHas_to_string<T, IsString<decltype(std::declval<T>().to_string())>::v> {
+struct KHas_to_string<T, std::enable_if_t<(
+    IsString<decltype(std::declval<T>().to_string())>::v == 1)>> {
   enum { v = 1 };
 };
 
-template<typename T> using Has_to_string = KHas_to_string<T, true>;
+template<typename T> using Has_to_string = KHas_to_string<T>;
 
 
 // Stream-put detector
 // =============================================================================
-template<typename T, bool U> struct KHasStreamPut { enum { v = 0 }; };
+template<typename T, class = std::void_t<>> struct KHasStreamPut { enum { v = 0 }; };
 
 template<typename T> struct KHasStreamPut<
     T,
-    WhenValid<decltype(std::declval<std::ostream>() << std::declval<T>())>::v> {
+    std::void_t<decltype(std::declval<std::ostream>() << std::declval<T>())>> {
   enum { v = 1 };
 };
 
-template<typename T> using HasStreamPut = KHasStreamPut<T, true>;
+template<typename T> using HasStreamPut = KHasStreamPut<T>;
 
 
 // Converting to string

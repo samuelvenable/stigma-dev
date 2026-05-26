@@ -3,7 +3,7 @@ include ../../Config.mk
 TARGET := ../../libEGM$(LIB_EXT)
 SOURCES := $(filter-out $(call rwildcard,$(SRC_DIR)/tests,*.cpp),$(call rwildcard,$(SRC_DIR),*.cpp))
 SHARED_SRC_DIR := ../../shared
-PROTO_DIR := $(SHARED_SRC_DIR)/protos/.eobjs
+PROTO_DIR := $(SHARED_SRC_DIR)/protos/$(OBJ_DIR)
 
 ifeq ($(OS), Linux)
 	FS_LIBS=-lstdc++fs

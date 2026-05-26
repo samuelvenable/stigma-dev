@@ -28,6 +28,7 @@
 #if CURRENT_PLATFORM_ID == OS_WINDOWS
  #define DLLEXPORT extern "C" __declspec(dllexport)
  #include <windows.h>
+ #include "win32_macro_guard.h"
  #define sleep Sleep
 #else
  #define DLLEXPORT extern "C"
