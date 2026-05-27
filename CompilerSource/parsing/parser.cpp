@@ -1313,7 +1313,12 @@ AST::PNode TryParseDeclarator(FullType *type, AST::DeclaratorType is_abstract = 
       TryParseTypeID();
     }
   }
-  return nullptr;
+  // Step 4-C: synthesize the declarator-expression-tree from the freshly
+  // populated FullType. Bridges to the AST-layer representation so consumers
+  // can migrate off `ft.decl` without waiting for native-PNode emission.
+  // Abstract declarators (function params, cast targets) get a null PNode
+  // here; those callers don't consume declarator_expr.
+  return std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression()));
 }
 
 AST::PNode TryParseExprOrBracedInitList(bool is_init_clause, bool in_init_list) {
