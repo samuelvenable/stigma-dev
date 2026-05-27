@@ -65,6 +65,9 @@ void AST::Node::RV(AST::Visitor &visitor, const SubNodes &...nodes) {
   (RVF(visitor, nodes), ...);
 }
 
+void AST::SyntaxError::RecursiveSubVisit(AST::Visitor &) {
+  // Leaf — no children.
+}
 void AST::CodeBlock::RecursiveSubVisit(AST::Visitor &visitor) {
   RV(visitor, statements);
 }

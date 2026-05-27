@@ -129,6 +129,18 @@ class AST {
   }                                                                          \
   void RecursiveSubVisit(Visitor &visitor) final
 
+  // Sentinel for a sub-tree that failed to parse. Carries the token where
+  // parsing went off the rails; the diagnostic itself is already on `herr`.
+  // Visitors no-op by default (return true so traversal continues).
+  struct SyntaxError : TypedNode<NodeType::ERROR> {
+    Token origin;
+
+    BASIC_NODE_ROUTINES(SyntaxError);
+
+    SyntaxError() noexcept = default;
+    explicit SyntaxError(Token origin): origin{std::move(origin)} {}
+  };
+
   // Simple block of code, containing zero or more statements.
   // The root node of any piece of code will be a block node.
   struct CodeBlock : TypedNode<NodeType::BLOCK> {
@@ -591,6 +603,7 @@ class AST {
       (void)node;
       return true;
     }
+    virtual bool VisitSyntaxError(SyntaxError &node){ return DefaultVisit(node); }
     virtual bool VisitCodeBlock(CodeBlock &node){ return DefaultVisit(node); }
     virtual bool VisitBinaryExpression(BinaryExpression &node){ return DefaultVisit(node); }
     virtual bool VisitFunctionCallExpression(FunctionCallExpression &node){ return DefaultVisit(node); }
