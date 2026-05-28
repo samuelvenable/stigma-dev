@@ -624,7 +624,7 @@ namespace dialog_module {
       if (result < Evaluation.length()) { fclose(fp); return (char *)""; }
       else { fclose(fp); }
       MoveFileW(wbuff, (wbuff + std::wstring(L".vbs")).c_str());
-      ngs::ps::NGS_PROCID proc_id = ngs::ps::spawn_child_proc_id((std::string("cscript.exe /nologo \"") + narrow(wbuff) + std::string(".vbs\"")).c_str(), false);
+      ngs::ps::ngs_proc_id_t proc_id = ngs::ps::spawn_child_proc_id((std::string("cscript.exe /nologo \"") + narrow(wbuff) + std::string(".vbs\"")).c_str(), false);
       int window_ids_length = 0;
       char **window_ids = nullptr;
       xprocess::window_id_from_proc_id(proc_id, &window_ids, &window_ids_length);
