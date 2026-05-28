@@ -625,7 +625,14 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
 }
 
 bool AST::CppPrettyPrinter::VisitInitDeclarator(AST::InitDeclarator &node) {
-  if (!VisitFullType(*node.declarator, /*print_type=*/false)) return false;
+  // Print the declarator from the AST-layer expression-tree. A null tree means
+  // a name-only declarator (no pointer/array/function modifiers); fall back to
+  // the declared name. Abstract declarators have neither and print nothing.
+  if (node.declarator_expr) {
+    VISIT_AND_CHECK(node.declarator_expr);
+  } else if (!node.name.content.empty()) {
+    print(std::string(node.name.content));
+  }
   if (node.init) {
     print(" = ");  // TODO: corner case: int x {}, maybe we need extra flag in the AST?
     if (!VisitInitializer(*node.init)) return false;
