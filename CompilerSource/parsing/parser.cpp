@@ -458,82 +458,35 @@ jdi::definition *TryParseNoexceptSpecifier() {
   return nullptr;
 }
 
-void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool did_consume_paren,
-                                     bool maybe_expression) {
+void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool did_consume_paren) {
   if (!did_consume_paren) {
     require_token(TT_BEGINPARENTH, "Expected '(' before function parameters");
   }
 
-  bool is_expression = false;
   FunctionParameterNode params;
   params.outside_nested = outside_nested;
   params.parameters = FunctionParameterNode::ParameterList{};
   params.kind = FunctionParameterNode::Kind::DECLARATOR;
   if (token.type != TT_ENDPARENTH) {
     while (token.type != TT_ENDPARENTH) {
-      if (next_is_decl_specifier() && maybe_expression) {
-        auto declaration = TryParseEitherFunctionalCastOrDeclaration(
-            AST::DeclaratorType::MAYBE_ABSTRACT, false, false,
-            AST::DeclarationStatement::StorageClass::TEMPORARY);
-
-        if (declaration->type == AST::NodeType::DECLARATION) {
-          auto *param_decl = dynamic_cast<AST::DeclarationStatement *>(declaration.get());
-          if (param_decl->declarations.size() != 1) {
-            herr->Error(token) <<
-                "Internal error: number of declarations in AstBuilder::TryParseParametersAndQualifiers not 1";
-          } else {
-            auto &entry = *param_decl->declarations[0];
-            auto param = FunctionParameterNode::Parameter{
-                false, entry.init.release(), std::move(entry.declarator)};
-            params.as<FunctionParameterNode::ParameterList>().emplace_back(std::move(param));
-          }
-        } else {
-          params.kind = FunctionParameterNode::Kind::EXPRESSION;
-          is_expression = true;
-          auto parameters =
-            std::make_unique<AST::FunctionCallExpression>(nullptr, std::vector<std::unique_ptr<AST::Node>>{});
-
-          for (auto &param : params.as<FunctionParameterNode::ParameterList>()) {
-            auto decl_expr = std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(param.type->decl.to_expression()));
-            if (param.default_value != nullptr) {
-              AST::Operation op(TT_EQUALS,"=");
-              decl_expr = std::make_unique<AST::BinaryExpression>(
-                std::move(decl_expr), std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(param.default_value)),
-                op);
-              param.default_value = nullptr;
-            }
-            parameters->arguments.emplace_back(std::move(decl_expr));
-          }
-          params.parameters = reinterpret_cast<void *>(parameters.release());
-        }
-      } else if (is_expression) {
-        if (!params.is<void *>()) {
-          herr->Error(token) <<
-            "Internal error: params.parameters is not FunctionCallExpression in AstBuilder::TryParseParametersAndQualifiers";
-        } else {
-          reinterpret_cast<AST::FunctionCallExpression *>(
-            params.as<void *>())->arguments.emplace_back(ParseExpression(Precedence::kTernary));
-        }
-      } else {
-        // Parameter type lives at the FullType (JDI-bridge) layer, below the
-        // AST. Decl-specs are folded into FullType::flags by the spec-seq
-        // parser; the parallel DeclSpecList we feed it is a throwaway here
-        // (Token-fidelity isn't needed at this layer). Task #15 redesigns
-        // these spec-parsing functions to return the list rather than take
-        // an out-param, at which point this throwaway disappears.
-        FunctionParameterNode::Parameter param;
-        FullType type;
-        AST::DeclSpecList unused_specs;
-        TryParseDeclSpecifierSeq(&type, &unused_specs);
-        TryParseDeclarator(&type, AST::DeclaratorType::MAYBE_ABSTRACT);
-        param.type = std::make_unique<FullType>(std::move(type));
-        if (token.type == TT_EQUALS) {
-          token = lexer->ReadToken();
-          auto init = TryParseExprOrBracedInitList(true, false);
-          param.default_value = reinterpret_cast<void *>(init.release());
-        }
-        params.as<FunctionParameterNode::ParameterList>().emplace_back(std::move(param));
+      // Parameter type lives at the FullType (JDI-bridge) layer, below the
+      // AST. Decl-specs are folded into FullType::flags by the spec-seq
+      // parser; the parallel DeclSpecList we feed it is a throwaway here
+      // (Token-fidelity isn't needed at this layer). Task #15 redesigns
+      // these spec-parsing functions to return the list rather than take
+      // an out-param, at which point this throwaway disappears.
+      FunctionParameterNode::Parameter param;
+      FullType type;
+      AST::DeclSpecList unused_specs;
+      TryParseDeclSpecifierSeq(&type, &unused_specs);
+      TryParseDeclarator(&type, AST::DeclaratorType::MAYBE_ABSTRACT);
+      param.type = std::make_unique<FullType>(std::move(type));
+      if (token.type == TT_EQUALS) {
+        token = lexer->ReadToken();
+        auto init = TryParseExprOrBracedInitList(true, false);
+        param.default_value = reinterpret_cast<void *>(init.release());
       }
+      params.as<FunctionParameterNode::ParameterList>().emplace_back(std::move(param));
 
       if (token.type == TT_COMMA) {
         token = lexer->ReadToken();
@@ -555,12 +508,8 @@ void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool
     }
   }
 
-  if (is_expression) {
-    require_token(TT_ENDPARENTH, "Expected ')' after function arguments");
-  } else {
-    decl->add_function_params(std::move(params));
-    require_token(TT_ENDPARENTH, "Expected ')' after function parameters");
-  }
+  decl->add_function_params(std::move(params));
+  require_token(TT_ENDPARENTH, "Expected ')' after function parameters");
 
   if (next_is_cv_qualifier()) {
     token = lexer->ReadToken();
@@ -1190,7 +1139,7 @@ std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList
 }
 
 // TRANSITIONAL — see comment near maybe_nested_name above.
-std::unique_ptr<AST::Node> TryParsePtrDeclarator(FullType *type, AST::DeclaratorType is_abstract, bool maybe_expression = false) {
+void TryParsePtrDeclarator(FullType *type, AST::DeclaratorType is_abstract) {
   while (next_maybe_ptr_decl_operator()) {
     if (next_maybe_nested_name()) {
       TryParseMaybeNestedPtrOperator(type);
@@ -1198,81 +1147,28 @@ std::unique_ptr<AST::Node> TryParsePtrDeclarator(FullType *type, AST::Declarator
       TryParsePtrOperator(type);
     }
   }
-  return TryParseNoPtrDeclarator(type, is_abstract, maybe_expression);
+  TryParseNoPtrDeclarator(type, is_abstract);
 }
 
-std::unique_ptr<AST::Node> TryParseNoPtrDeclarator(FullType *type, AST::DeclaratorType is_abstract, bool maybe_expression = false) {
-  auto maybe_prefix_operator = [this]() {
-    return Precedence::kUnaryPrefixOps.find(token.type) != Precedence::kUnaryPrefixOps.end();
-  };
-
-  auto maybe_infix_operator = [this]() {
-    return map_contains(Precedence::kBinaryPrec, token.type) ||
-           map_contains(Precedence::kTernaryPrec, token.type);
-  };
-
-  auto maybe_postfix_operator = [this]() {
-    return map_contains(Precedence::kUnaryPostfixPrec, token.type);
-  };
-
-  // Do not accidentally consume the pointer declarators
-  if (maybe_expression && maybe_prefix_operator() &&
-      token.type != TT_STAR && token.type != TT_AMPERSAND) {
-    return ParseExpression(Precedence::kAll);
-  }
-
+void TryParseNoPtrDeclarator(FullType *type, AST::DeclaratorType is_abstract) {
   if (token.type == TT_BEGINPARENTH) {
-    std::unique_ptr<AST::Node> expr = nullptr;
     token = lexer->ReadToken();
     FullType inner;
-    auto inner_decl_expr = TryParsePtrDeclarator(&inner, is_abstract, maybe_expression);
-    // Check if the next token is an operator but don't accidentally eat array bounds specifiers or function parameter
-    // declarators
-    if (maybe_expression && (maybe_infix_operator() || maybe_postfix_operator()) &&
-        token.type != TT_BEGINPARENTH && token.type != TT_BEGINBRACKET) {
-      if (inner_decl_expr == nullptr) {
-        inner_decl_expr = ParseExpression(Precedence::kAll,
-                                        std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(inner.decl.to_expression())));
-      } else {
-        inner_decl_expr = ParseExpression(Precedence::kAll, std::move(inner_decl_expr));
-      }
-      require_token(TT_ENDPARENTH, "Expected ')' after expression");
-    } else if (inner_decl_expr == nullptr) {
-      require_token(TT_ENDPARENTH, "Expected ')' after declarator");
-      if (!inner.decl.name.content.empty()) {
-        type->decl.name = inner.decl.name;
-      }
-    } else {
-      require_token(TT_ENDPARENTH, "Expected ')' after expression");
+    TryParsePtrDeclarator(&inner, is_abstract);
+    require_token(TT_ENDPARENTH, "Expected ')' after declarator");
+    if (!inner.decl.name.content.empty()) {
+      type->decl.name = inner.decl.name;
     }
 
     while (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACKET) {
       if (token.type == TT_BEGINPARENTH) {
-        TryParseParametersAndQualifiers(&inner.decl, true, false, maybe_expression);
+        TryParseParametersAndQualifiers(&inner.decl, true, false);
       } else {
         TryParseArrayBoundsExpression(&inner.decl, true);
       }
     }
 
-    if (inner_decl_expr != nullptr) {
-      type->decl.add_nested(reinterpret_cast<void *>(inner_decl_expr.release()));
-      inner_decl_expr = std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression()));
-    } else {
-      type->decl.add_nested(std::make_unique<Declarator>(std::move(inner.decl)));
-    }
-
-    if (maybe_expression && (maybe_infix_operator() || maybe_postfix_operator()) &&
-        token.type != TT_BEGINPARENTH && token.type != TT_BEGINBRACKET &&
-        token.type != TT_EQUALS && token.type != TT_BEGINBRACE && token.type != TT_COMMA) {
-      if (inner_decl_expr != nullptr) {
-        return ParseExpression(Precedence::kAll, std::move(inner_decl_expr));
-      } else {
-        return ParseExpression(
-            Precedence::kAll, std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression())));
-      }
-    } else if (inner_decl_expr != nullptr) {
-      return inner_decl_expr;
-    }
+    type->decl.add_nested(std::make_unique<Declarator>(std::move(inner.decl)));
   } else if (is_abstract == AST::DeclaratorType::NON_ABSTRACT) {
     if (token.type == TT_ELLIPSES) {
       token = lexer->ReadToken();
@@ -1284,20 +1180,11 @@ std::unique_ptr<AST::Node> TryParseNoPtrDeclarator(FullType *type, AST::Declarat
 
   while (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACKET) {
     if (token.type == TT_BEGINPARENTH) {
-      TryParseParametersAndQualifiers(&type->decl, false, false, maybe_expression);
+      TryParseParametersAndQualifiers(&type->decl, false, false);
     } else {
       TryParseArrayBoundsExpression(&type->decl, false);
     }
   }
-
-  // All the array bounds specifiers and function parameter declarators would have been eaten before this
-  if (maybe_expression && (maybe_infix_operator() || maybe_postfix_operator()) &&
-      token.type != TT_EQUALS && token.type != TT_BEGINBRACE && token.type != TT_COMMA) {
-    return ParseExpression(Precedence::kAll,
-                              std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression())));
-  }
-
-  return nullptr;
 }
 
 // Returns the AST-layer declarator-expression-tree (PNode) once the parser
@@ -2326,33 +2213,22 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       init->target = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
       return init;
     } else if (token.type == TT_BEGINPARENTH) {
-      auto declarator = TryParseNoPtrDeclarator(&type, decl_type, true);
-      if (declarator != nullptr) {
-        std::vector<AST::PNode> args;
-        args.push_back(std::move(declarator));
-        return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
-                                                  std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs)),
-                                                  std::move(args));
-      } else {
-        if (type.decl.has_nested_declarator && type.decl.nested_declarator == 0) {
-          type.decl = std::move(*type.decl.components[0]
-                                 .as<NestedNode>()
-                                 .as<std::unique_ptr<Declarator>>()
-                                 .release());
-        }
-        std::vector<std::unique_ptr<AST::InitDeclarator>> decls = {};
-        Token name = type.decl.name;
-        jdi::definition *type_def = type.def;
-        decls.emplace_back(std::make_unique<AST::InitDeclarator>(
-            std::move(name), std::move(type), next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
-        if (token.type == TT_COMMA && parse_unbounded) {
-          maybe_assign_def(&type);
-          return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, std::move(decls), true);
-        } else {
-          auto type_node = std::make_unique<AST::TypeId>(type_def, nullptr, std::move(declspecs));
-          return std::make_unique<AST::DeclarationStatement>(sc, std::move(type_node), std::move(decls));
-        }
-      }
+      // `Foo( ... )`: parse as a call-shaped expression with a TypeId callee.
+      // This is the most-vexing-parse: it could be a functional cast, a
+      // temporary-object expression, or a declaration whose declarator is
+      // parenthesized (`Foo (*p)`). The parser stays context-free and emits
+      // the call shape uniformly; the semantic phase disambiguates. (Replaces
+      // the old speculative declarator-parse-then-rollback via to_expression.)
+      //
+      // NB comma precedence: kAll includes the comma operator, so
+      // `Foo(*p), q` parses as a comma-expression here, NOT as two declarators
+      // sharing the `Foo` spec (the way the declaration parser treats a comma).
+      // When the semantic phase resolves this construct to a declaration it
+      // must split the top-level comma into per-declarator nodes; when it
+      // resolves to an expression the comma-expression stands.
+      auto callee = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
+      auto call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
+      return ParseExpression(Precedence::kAll, std::move(call));
     } else if (token.type == TT_ENDPARENTH && maybe_c_style_cast) {
       token = lexer->ReadToken();
       auto type_node = std::make_unique<AST::TypeId>(nullptr, std::move(type));
