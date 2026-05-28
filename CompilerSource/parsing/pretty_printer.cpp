@@ -596,7 +596,7 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
     for (auto &entry : node.declarations) {
       if (entry->init) {
         if (printed) print(", ");
-        std::string name = entry->declarator->decl.name.content;
+        std::string name(entry->name.content);
         if (is_global)
           print("enigma::varaccess_" + name + "(int(global)) =");
         else

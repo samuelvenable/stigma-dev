@@ -375,10 +375,11 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
   while (true) {
     if (!already_parsed_first) {
       auto declarator_expr = TryParseDeclarator(&ft, decl_type);
+      Token name = ft.decl.name;
       decls.emplace_back(std::make_unique<AST::InitDeclarator>(
-          std::move(ft), std::move(declarator_expr),
+          std::move(name), std::move(ft), std::move(declarator_expr),
           next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
-      declarations[decls.back()->declarator->decl.name.content] = decls.back()->declarator.get();
+      declarations[decls.back()->name.content] = decls.back()->declarator.get();
     }
     if (token.type == TT_COMMA && parse_unbounded) {
       token = lexer->ReadToken();
@@ -2340,13 +2341,15 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
                                  .release());
         }
         std::vector<std::unique_ptr<AST::InitDeclarator>> decls = {};
+        Token name = type.decl.name;
+        jdi::definition *type_def = type.def;
         decls.emplace_back(std::make_unique<AST::InitDeclarator>(
-            std::move(type), next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
+            std::move(name), std::move(type), next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
         if (token.type == TT_COMMA && parse_unbounded) {
           maybe_assign_def(&type);
           return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, std::move(decls), true);
         } else {
-          auto type_node = std::make_unique<AST::TypeId>(decls[0]->declarator->def, nullptr, std::move(declspecs));
+          auto type_node = std::make_unique<AST::TypeId>(type_def, nullptr, std::move(declspecs));
           return std::make_unique<AST::DeclarationStatement>(sc, std::move(type_node), std::move(decls));
         }
       }

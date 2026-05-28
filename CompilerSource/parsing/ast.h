@@ -555,13 +555,14 @@ class AST {
   };
 
   // One init-declarator (the `<declarator> [= <init>]` half of a declaration).
-  // Promoted to a Node in step 4d. `declarator` is the FullType (JDI-bridge)
-  // form of this declaration's type; `declarator_expr` is the AST-layer
-  // declarator-as-expression-tree (nullable today — populated incrementally
-  // as the declarator parser learns to emit PNodes; the long-term direction
-  // is for declarator_expr to be the primary representation and the FullType
-  // to be synthesized for JDI bridging on demand).
+  // `name` is the declared identifier (source of truth — written directly by
+  // the parser). `declarator_expr` is the AST-layer declarator-as-expression-
+  // tree describing the type-modifier chain (pointers, refs, array bounds,
+  // function-params). `declarator` is the legacy FullType (JDI-bridge) form;
+  // post-4D it's still populated for backwards-compatibility while consumers
+  // migrate, and is removed in 4-E along with the rest of the Declarator path.
   struct InitDeclarator : TypedNode<NodeType::INIT_DECLARATOR> {
+    Token name;
     std::unique_ptr<FullType> declarator;
     PNode declarator_expr;
     InitializerNode init;
@@ -569,9 +570,11 @@ class AST {
     BASIC_NODE_ROUTINES(InitDeclarator);
 
     InitDeclarator() noexcept = default;
-    InitDeclarator(FullType declarator, InitializerNode init):
+    InitDeclarator(Token name, FullType declarator, InitializerNode init):
+      name{std::move(name)},
       declarator{std::make_unique<FullType>(std::move(declarator))}, init{std::move(init)} {}
-    InitDeclarator(FullType declarator, PNode declarator_expr_, InitializerNode init):
+    InitDeclarator(Token name, FullType declarator, PNode declarator_expr_, InitializerNode init):
+      name{std::move(name)},
       declarator{std::make_unique<FullType>(std::move(declarator))},
       declarator_expr{std::move(declarator_expr_)}, init{std::move(init)} {}
   };
@@ -753,6 +756,11 @@ class AST {
       lexer(std::make_unique<Lexer>(code_, ctex, &herr)),
       code(lexer->GetCode()) {}
 };
+
+// AST→JDI bridge: walk a declarator-expression-tree into a jdi::ref_stack.
+// Returns false on a malformed sub-tree (unsupported node type, missing array
+// size, etc.). Combine with a TypeId's def/flags to produce a full jdi::full_type.
+bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result);
 
 }  // namespace enigma::parsing
 

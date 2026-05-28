@@ -61,7 +61,7 @@ struct scope_ignore {
 
 using enigma::parsing::AST;
 
-std::string GetFullType(enigma::parsing::FullType &ft) {
+std::string GetFullType(const jdi::full_type &ft, std::string_view declared_name) {
   std::string type;
   std::vector<std::size_t> flags_values = {
       jdi::builtin_flag__const->value,    jdi::builtin_flag__static->value,       jdi::builtin_flag__volatile->value,
@@ -91,13 +91,12 @@ std::string GetFullType(enigma::parsing::FullType &ft) {
 
   // type += ft.def->name + " ";
 
-  std::string name = std::string(ft.decl.name.content);
-  if (name != "" && !ft.decl.components.size()) {
+  std::string name(declared_name);
+  if (name != "" && ft.refs.size() == 0) {
     type += name + " ";
   }
 
-  jdi::ref_stack stack;
-  ft.decl.to_jdi_refstack(stack);
+  const jdi::ref_stack &stack = ft.refs;
   auto first = stack.begin();
 
   std::string ref;
@@ -129,7 +128,6 @@ std::string GetFullType(enigma::parsing::FullType &ft) {
     }
 
     if (print_name) {
-      std::string name = std::string(ft.decl.name.content);
       if (name != "") {
         if (it->type == jdi::ref_stack::RT_ARRAYBOUND) {
           ref = name + ref;
@@ -227,10 +225,15 @@ class DeclGatheringVisitor : public AST::Visitor {
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) {
     bool is_global = node.storage_class == AST::DeclarationStatement::StorageClass::GLOBAL;
     bool is_local = node.storage_class == AST::DeclarationStatement::StorageClass::LOCAL;
+    auto *type_id = node.type ? node.type->As<AST::TypeId>() : nullptr;
+    jdi::definition *spec_def = type_id ? type_id->to_jdi_fulltype().def : nullptr;
     for (const auto &entry : node.declarations) {
-      std::string name = entry->declarator->decl.name.content;
-      std::string ftype = GetFullType(*entry->declarator);
-      std::string type = entry->declarator->def->name;
+      std::string name(entry->name.content);
+      jdi::full_type jft;
+      if (type_id) jft = type_id->to_jdi_fulltype();
+      enigma::parsing::walk_declarator_expr(entry->declarator_expr.get(), jft.refs);
+      std::string ftype = GetFullType(jft, entry->name.content);
+      std::string type = spec_def ? spec_def->name : "";
       size_t pos = ftype.find(name);
       std::string prefix;
       std::string suffix;
@@ -244,7 +247,7 @@ class DeclGatheringVisitor : public AST::Visitor {
       if (is_global) parsed_scope->globals[name] = dtrip;
       if (is_local) parsed_scope->locals[name] = dtrip;
       cs->add_dot_accessed_local(name);
-      parsed_scope->declarations[name] = entry->declarator->def;
+      parsed_scope->declarations[name] = spec_def;
     }
 
     for (const auto &entry : node.declarations) {

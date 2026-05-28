@@ -103,6 +103,66 @@ jdi::full_type AST::TypeId::to_jdi_fulltype() {
   // downstream callers `swap_in` the result into JDI structures.
   return type_info.to_jdi_fulltype();
 }
+
+// AST→JDI bridge: walk a declarator-expression-tree into a jdi::ref_stack.
+// Inverse of Declarator::to_expression. Replaces Declarator::to_jdi_refstack
+// for the AST-side path; called by callers that have a TypeId + InitDeclarator
+// and need the combined jdi::full_type for downstream JDI bridging.
+bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result) {
+  if (!expr) return true;
+  switch (expr->type) {
+    case AST::NodeType::IDENTIFIER:
+    case AST::NodeType::LITERAL:
+      return true;
+    case AST::NodeType::UNARY_PREFIX_EXPRESSION: {
+      auto &u = *expr->As<AST::UnaryPrefixExpression>();
+      if (!walk_declarator_expr(u.operand.get(), result)) return false;
+      if (u.operation.type == TT_STAR) {
+        result.push(jdi::ref_stack::RT_POINTERTO);
+      } else if (u.operation.type == TT_AMPERSAND) {
+        result.push(jdi::ref_stack::RT_REFERENCE);
+      } else {
+        return false;
+      }
+      return true;
+    }
+    case AST::NodeType::BINARY_EXPRESSION: {
+      auto &b = *expr->As<AST::BinaryExpression>();
+      if (b.operation.type != TT_BEGINBRACKET) return false;
+      if (!walk_declarator_expr(b.left.get(), result)) return false;
+      std::size_t size = 0;
+      if (b.right && b.right->type == AST::NodeType::LITERAL) {
+        auto &lit = *b.right->As<AST::Literal>();
+        if (auto *s = std::get_if<std::string>(&lit.value.value)) {
+          try { size = std::stoul(*s); } catch (...) {}
+        }
+      }
+      result.push_array(size);
+      return true;
+    }
+    case AST::NodeType::FUNCTION_CALL: {
+      auto &c = *expr->As<AST::FunctionCallExpression>();
+      if (!walk_declarator_expr(c.function.get(), result)) return false;
+      // Parameter type-spec info is lost in the current expression-tree form:
+      // each argument is a declarator-expression-tree without its own
+      // type-spec attached (a known limitation of the to_expression() path).
+      // Emit an empty parameter list; once function-declarator args carry
+      // typed declarations, walk each here.
+      jdi::ref_stack::parameter_ct params;
+      result.push_func(params);
+      return true;
+    }
+    case AST::NodeType::PARENTHETICAL: {
+      auto &p = *expr->As<AST::Parenthetical>();
+      jdi::ref_stack nested;
+      if (!walk_declarator_expr(p.expression.get(), nested)) return false;
+      result.append_c(nested);
+      return true;
+    }
+    default:
+      return false;
+  }
+}
 void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Leaf: specs are Tokens, not AST nodes.
 }
