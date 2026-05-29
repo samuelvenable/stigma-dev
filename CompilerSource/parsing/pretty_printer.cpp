@@ -465,7 +465,7 @@ bool AST::CppPrettyPrinter::VisitDeclSpecList(AST::DeclSpecList &node) {
   return true;
 }
 
-bool AST::CppPrettyPrinter::VisitTypeId(AST::TypeId &node) {
+bool AST::CppPrettyPrinter::VisitTypeSpecifierSeq(AST::TypeSpecifierSeq &node) {
   // Prints the shared part of a type — decl-specs + base type name. Per-
   // declaration declarator chains (`*x`, `[10]`) are printed by their
   // owning Declaration via VisitFullType with print_type=false.
@@ -482,7 +482,7 @@ bool AST::CppPrettyPrinter::VisitTypeId(AST::TypeId &node) {
 }
 
 bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
-  // Functional casts now live in Initializer (with a TypeId target); not handled here.
+  // Functional casts now live in Initializer (with a TypeSpecifierSeq target); not handled here.
   if (node.kind == AST::CastExpression::Kind::C_STYLE) {
     print("(");
     if (node.type) VISIT_AND_CHECK(node.type);
@@ -541,7 +541,7 @@ bool AST::CppPrettyPrinter::VisitInitializer(AST::Initializer &node) {
   }
 
   // BRACE or PAREN. A non-null target represents a functional-cast / temporary
-  // construction: TypeId( values... ) or TypeId{ values... }.
+  // construction: TypeSpecifierSeq( values... ) or TypeSpecifierSeq{ values... }.
   if (node.target) {
     VISIT_AND_CHECK(node.target);
   }
@@ -571,7 +571,7 @@ bool AST::CppPrettyPrinter::VisitNewExpression(AST::NewExpression &node) {
   }
 
   // Routed through the FullType cache for now; once 4e gives us a native
-  // declarator-expression-tree on TypeId, this calls VisitTypeId with a flag
+  // declarator-expression-tree on TypeSpecifierSeq, this calls VisitTypeSpecifierSeq with a flag
   // requesting full declarator-chain printing (not just declspecs + base).
   print("(");
   if (node.type) {
@@ -608,7 +608,7 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
     return true;
   }
 
-  // The shared type (declspecs + base type name) prints once via VisitTypeId.
+  // The shared type (declspecs + base type name) prints once via VisitTypeSpecifierSeq.
   // Each init-declarator then contributes its own declarator chain + init via
   // VisitInitDeclarator.
   if (node.type) {

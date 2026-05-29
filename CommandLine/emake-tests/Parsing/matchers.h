@@ -112,11 +112,11 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
     return false;
   }
 
-  // cast->type is a PNode wrapping the AST::TypeId; type_info is the cached
+  // cast->type is a PNode wrapping the AST::TypeSpecifierSeq; type_info is the cached
   // FullType (JDI-bridge form) populated by the parser.
-  auto *typeid_node = cast->type ? cast->type->template As<AST::TypeId>() : nullptr;
+  auto *typeid_node = cast->type ? cast->type->template As<AST::TypeSpecifierSeq>() : nullptr;
   if (!typeid_node) {
-    ExpectedMsg += "From IsCast Matcher: cast->type is a TypeId\n";
+    ExpectedMsg += "From IsCast Matcher: cast->type is a TypeSpecifierSeq\n";
     *result_listener << "got cast->type = "
                      << (cast->type ? AST::NodeToString(cast->type->type) : std::string{"nullptr"}) << "\n";
     return false;

@@ -154,11 +154,11 @@ TEST(ParserTest, SizeofType) {
 
   ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
   auto *sizeof_exp = expr->As<AST::SizeofExpression>();
-  // Type form: argument is a TypeId PNode; reach its cached FullType for
+  // Type form: argument is a TypeSpecifierSeq PNode; reach its cached FullType for
   // the flag/def checks the old variant-typed shape exposed directly.
   ASSERT_NE(sizeof_exp->argument, nullptr);
-  ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::TYPE_ID);
-  auto &value = sizeof_exp->argument->As<AST::TypeId>()->type_info;
+  ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::TYPE_SPECIFIER_SEQ);
+  auto &value = sizeof_exp->argument->As<AST::TypeSpecifierSeq>()->type_info;
   ASSERT_TRUE((value.flags & jdi::builtin_flag__const->mask) == jdi::builtin_flag__const->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__volatile->mask) == jdi::builtin_flag__volatile->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__unsigned->mask) == jdi::builtin_flag__unsigned->value);
@@ -185,7 +185,7 @@ TEST(ParserTest, AlignofType) {
 
   ASSERT_EQ(expr->type, AST::NodeType::ALIGNOF);
   auto *alignof_exp = expr->As<AST::AlignofExpression>();
-  auto &value = alignof_exp->type->As<AST::TypeId>()->type_info;
+  auto &value = alignof_exp->type->As<AST::TypeSpecifierSeq>()->type_info;
   ASSERT_TRUE((value.flags & jdi::builtin_flag__const->mask) == jdi::builtin_flag__const->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__volatile->mask) == jdi::builtin_flag__volatile->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__unsigned->mask) == jdi::builtin_flag__unsigned->value);
@@ -420,7 +420,7 @@ TEST(ParserTest, Declarations) {
 
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  if (decls->type->As<AST::TypeId>()->def) EXPECT_EQ(decls->type->As<AST::TypeId>()->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  if (decls->type->As<AST::TypeSpecifierSeq>()->def) EXPECT_EQ(decls->type->As<AST::TypeSpecifierSeq>()->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
 
   EXPECT_EQ(decls->declarations.size(), 3);
   EXPECT_NE(decls->declarations[0]->init, nullptr);
@@ -445,7 +445,7 @@ TEST(ParserTest, Declarations_NoSemicolon) {
 
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  if (decls->type->As<AST::TypeId>()->def) EXPECT_EQ(decls->type->As<AST::TypeId>()->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  if (decls->type->As<AST::TypeSpecifierSeq>()->def) EXPECT_EQ(decls->type->As<AST::TypeSpecifierSeq>()->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
 
   EXPECT_EQ(decls->declarations.size(), 3);
   EXPECT_NE(decls->declarations[0]->init, nullptr);
@@ -1424,7 +1424,7 @@ TEST(ParserTest, IfStatement_4_NoSemicolon) {
 }
 
 TEST(ParserTest, TemporaryInitialization_1) {
-  // Functional casts `T(args)` now model as Initializer(target=TypeId), not a
+  // Functional casts `T(args)` now model as Initializer(target=TypeSpecifierSeq), not a
   // CastExpression of kind FUNCTIONAL (enumerator removed). Whole test needs
   // rewriting for the new shape -- skip and leave the original body as a
   // tracer (the FUNCTIONAL line is the only compile blocker, so it's commented).
@@ -1437,11 +1437,11 @@ TEST(ParserTest, TemporaryInitialization_1) {
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
   // ASSERT_EQ(cast->kind, AST::CastExpression::Kind::FUNCTIONAL);  // FUNCTIONAL removed
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.flags, 0);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.components.size(), 0);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.name.content, "");
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.has_nested_declarator, false);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.flags, 0);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.components.size(), 0);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.name.content, "");
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.has_nested_declarator, false);
 
   ASSERT_EQ(cast->expr->type, AST::NodeType::BINARY_EXPRESSION);
   auto *binary = cast->expr->As<AST::BinaryExpression>();
@@ -1477,7 +1477,7 @@ TEST(ParserTest, TemporaryInitialization_2) {
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decl = node->As<AST::DeclarationStatement>();
   ASSERT_EQ(decl->declarations.size(), 1);
-  ASSERT_EQ(decl->type->As<AST::TypeId>()->def, jdi::builtin_type__int);
+  ASSERT_EQ(decl->type->As<AST::TypeSpecifierSeq>()->def, jdi::builtin_type__int);
   auto *decl1 = decl->declarations[0].get();
   ASSERT_EQ(decl1->declarator->def, jdi::builtin_type__int);
   ASSERT_EQ(decl1->declarator->flags, 0);
@@ -1517,11 +1517,11 @@ TEST(ParserTest, TemporaryInitialization_3) {
 
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.flags, 0);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.components.size(), 0);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.name.content, "");
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.has_nested_declarator, false);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.flags, 0);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.components.size(), 0);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.name.content, "");
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.has_nested_declarator, false);
 
   ASSERT_EQ(cast->expr->type, AST::NodeType::BINARY_EXPRESSION);
   auto *binary = cast->expr->As<AST::BinaryExpression>();
@@ -1555,7 +1555,7 @@ TEST(ParserTest, TemporaryInitialization_3) {
 
 TEST(ParserTest, TemporaryInitialization_4) {
   // See TemporaryInitialization_1: FUNCTIONAL cast removed in favour of
-  // Initializer(target=TypeId). Test body kept as tracer.
+  // Initializer(target=TypeSpecifierSeq). Test body kept as tracer.
   GTEST_SKIP() << "TODO: rewrite for Initializer-as-functional-cast shape.";
   ParserTester test = ParserTester::CreateWithCpp("int(*(*(*(*x + 4))))");
   auto node = test->TryParseStatement();
@@ -1563,11 +1563,11 @@ TEST(ParserTest, TemporaryInitialization_4) {
 
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.flags, 0);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.components.size(), 0);
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.name.content, "");
-  ASSERT_EQ(cast->type->As<AST::TypeId>()->type_info.decl.has_nested_declarator, false);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.flags, 0);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.components.size(), 0);
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.name.content, "");
+  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.has_nested_declarator, false);
 
   // ASSERT_EQ(cast->kind, AST::CastExpression::Kind::FUNCTIONAL);  // FUNCTIONAL removed
   ASSERT_EQ(cast->expr->type, AST::NodeType::UNARY_PREFIX_EXPRESSION);

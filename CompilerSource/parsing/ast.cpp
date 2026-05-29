@@ -92,10 +92,10 @@ void AST::UnaryPostfixExpression::RecursiveSubVisit(Visitor &visitor) {
 void AST::TernaryExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, condition, true_expression, false_expression);
 }
-void AST::TypeId::RecursiveSubVisit(Visitor &visitor) {
+void AST::TypeSpecifierSeq::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, id_expression, declspecs);
 }
-jdi::full_type AST::TypeId::to_jdi_fulltype() {
+jdi::full_type AST::TypeSpecifierSeq::to_jdi_fulltype() {
   // Routes through the cached FullType (the JDI-bridge layer's form of this
   // type). Today type_info is populated at construction by the spec-seq +
   // declarator parse; post-4e it gets lazily synthesized from declspecs +
@@ -106,7 +106,7 @@ jdi::full_type AST::TypeId::to_jdi_fulltype() {
 
 // AST→JDI bridge: walk a declarator-expression-tree into a jdi::ref_stack.
 // Inverse of Declarator::to_expression. Replaces Declarator::to_jdi_refstack
-// for the AST-side path; called by callers that have a TypeId + InitDeclarator
+// for the AST-side path; called by callers that have a TypeSpecifierSeq + InitDeclarator
 // and need the combined jdi::full_type for downstream JDI bridging.
 bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result) {
   if (!expr) return true;
@@ -251,7 +251,7 @@ const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
     UNARY_POSTFIX_EXPRESSION,
     TERNARY_EXPRESSION,
     LAMBDA_EXPRESSION,
-    TYPE_ID,
+    TYPE_SPECIFIER_SEQ,
     DECL_SPEC_LIST,
     SIZEOF,
     ALIGNOF,

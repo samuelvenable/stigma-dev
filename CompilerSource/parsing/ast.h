@@ -48,7 +48,7 @@ class AST {
     UNARY_POSTFIX_EXPRESSION,
     TERNARY_EXPRESSION,
     LAMBDA_EXPRESSION,
-    TYPE_ID,
+    TYPE_SPECIFIER_SEQ,
     DECL_SPEC_LIST,
     SIZEOF, ALIGNOF, CAST,
     NEW, DELETE,
@@ -234,34 +234,42 @@ class AST {
         specs(std::move(specs_)), flags(flags_) {}
   };
 
-  // An expression that names a type. Composes a base definition pointer (or an
-  // unresolved id-expression awaiting semantic resolution) with optional
-  // decl-specs. The semantic phase decides which of `def` / `id_expression`
-  // applies in any given context; both may be populated during a transitional
-  // resolution pass.
+  // Models the C++ `type-specifier-seq` production: a base type name plus its
+  // run of cv/sign/length specifiers (`unsigned long const …`). It is NOT a
+  // full `type-id` — a type-id is `type-specifier-seq` + an (abstract-)declarator
+  // (the `*` `&` `[]` `()` part). That declarator is modeled separately: today
+  // on `InitDeclarator` (declarator_expr) or smuggled through `type_info`, and
+  // in the unified design by a `DeclaratorClause` node pairing this seq with a
+  // declarator tree. So a cast/sizeof/new target is a `DeclaratorClause` whose
+  // specifier part is one of these; this node alone is just the spec run.
+  //
+  // The base type is held as a resolved `def` (JDI definition) OR an unresolved
+  // `id_expression` awaiting semantic resolution; the semantic phase decides
+  // which applies, and both may be populated during a transitional pass. The
+  // "seq" is `declspecs` — a `DeclSpecList`, i.e. an ordered `std::vector<Token>`.
   //
   // Note: `def` is named for what it carries (a JDI definition pointer), not
-  // "resolved final type" — a `def` pointing at a typedef still leaves the
-  // declarator chain (post-4e, on this TypeId itself) to be walked.
+  // "resolved final type" — a `def` pointing at a typedef still leaves that
+  // typedef's own declarator chain to be walked.
   //
   // `type_info` is the cached/synthesized FullType (the JDI-bridge layer's
   // form of this same type). It's populated either at construction (when a
   // caller already has a FullType in hand) or, post-4e, lazily by
   // `to_jdi_fulltype()` walking declspecs + declarator-expr-tree. Not
   // transitional — FullType stays as ENIGMA's intra-system bridge to JDI.
-  struct TypeId : TypedNode<NodeType::TYPE_ID> {
+  struct TypeSpecifierSeq : TypedNode<NodeType::TYPE_SPECIFIER_SEQ> {
     jdi::definition *def = nullptr;
     PNode id_expression;
     std::unique_ptr<DeclSpecList> declspecs;
     FullType type_info;
     enum class Scope { DEFAULT, GLOBAL, LOCAL } scope = Scope::DEFAULT;
 
-    BASIC_NODE_ROUTINES(TypeId);
+    BASIC_NODE_ROUTINES(TypeSpecifierSeq);
 
     // Primary constructor: phase-2 callers use this. id_expression is
     // optional (nullable); declspecs is optional (nullable). `type_info` is
     // left empty; populate via lazy synthesis or a follow-up assignment.
-    TypeId(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs, Scope scope_ = Scope::DEFAULT):
+    TypeSpecifierSeq(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs, Scope scope_ = Scope::DEFAULT):
         def(def_), id_expression(std::move(id_exp)), declspecs(std::move(specs)), scope(scope_) {}
 
     // "Construct from already-built FullType" overloads — used by call sites
@@ -269,17 +277,18 @@ class AST {
     // (still the path for things like new-expression bare type-ids until 4e
     // gives us native declarator-expression-tree parsing). The FullType
     // populates the type_info cache.
-    TypeId(PNode id_exp, FullType type_, Scope scope_):
+    TypeSpecifierSeq(PNode id_exp, FullType type_, Scope scope_):
         def(type_.def), id_expression(std::move(id_exp)), type_info(std::move(type_)), scope(scope_) {}
-    TypeId(PNode id_exp, FullType type_):
-        TypeId(std::move(id_exp), std::move(type_), Scope::DEFAULT) {}
-    TypeId(PNode id_exp): id_expression(std::move(id_exp)) {}
+    TypeSpecifierSeq(PNode id_exp, FullType type_):
+        TypeSpecifierSeq(std::move(id_exp), std::move(type_), Scope::DEFAULT) {}
+    TypeSpecifierSeq(PNode id_exp): id_expression(std::move(id_exp)) {}
 
-    // JDI bridge. Used by sites that need to feed a TypeId into the legacy
-    // JDI machinery (template-arg keys, function-parameter ref-stacks). Today
-    // it delegates to the transitional FullType inside this TypeId; once 4e
-    // gives us a declarator expression tree on TypeId itself, this synthesizes
-    // the jdi::full_type directly. Non-const because the underlying
+    // JDI bridge. Used by sites that need to feed this spec-seq into the legacy
+    // JDI machinery (template-arg keys, function-parameter ref-stacks). Today it
+    // delegates to the transitional FullType in `type_info`; once the unified
+    // declarator build-out gives us a declarator tree on the owning clause
+    // (DeclaratorClause / InitDeclarator), this synthesizes the jdi::full_type
+    // from declspecs + that tree directly. Non-const because the underlying
     // Declarator::to_jdi_refstack walk is non-const.
     jdi::full_type to_jdi_fulltype();
   };
@@ -316,7 +325,7 @@ class AST {
 
   // Cast expressions
   struct CastExpression : TypedNode<NodeType::CAST> {
-    // Note that FUNCTIONAL casts are now modeled as initializing a TypeId.
+    // Note that FUNCTIONAL casts are now modeled as initializing a TypeSpecifierSeq.
     enum class Kind { C_STYLE, STATIC, DYNAMIC, REINTERPRET, CONST } kind;
     PNode type;
     PNode expr;
@@ -531,12 +540,12 @@ class AST {
     bool is_global;
     bool is_array;
     std::vector<PNode> placement_args;
-    std::unique_ptr<TypeId> type;
+    std::unique_ptr<TypeSpecifierSeq> type;
     std::unique_ptr<Initializer> initializer;
 
     BASIC_NODE_ROUTINES(NewExpression);
 
-    NewExpression(bool is_global, bool is_array, std::vector<PNode> placement_args, std::unique_ptr<TypeId> type,
+    NewExpression(bool is_global, bool is_array, std::vector<PNode> placement_args, std::unique_ptr<TypeSpecifierSeq> type,
                   std::unique_ptr<Initializer> initializer):
       is_global{is_global}, is_array{is_array}, placement_args{std::move(placement_args)}, type{std::move(type)},
       initializer{std::move(initializer)} {}
@@ -613,7 +622,7 @@ class AST {
     virtual bool VisitUnaryPrefixExpression(UnaryPrefixExpression &node){ return DefaultVisit(node); }
     virtual bool VisitUnaryPostfixExpression(UnaryPostfixExpression &node){ return DefaultVisit(node); }
     virtual bool VisitTernaryExpression(TernaryExpression &node){ return DefaultVisit(node); }
-    virtual bool VisitTypeId(TypeId &node){ return DefaultVisit(node); }
+    virtual bool VisitTypeSpecifierSeq(TypeSpecifierSeq &node){ return DefaultVisit(node); }
     virtual bool VisitDeclSpecList(DeclSpecList &node){ return DefaultVisit(node); }
     virtual bool VisitLambdaExpression(LambdaExpression &node){ return DefaultVisit(node); }
     virtual bool VisitSizeofExpression(SizeofExpression &node){ return DefaultVisit(node); }
@@ -665,7 +674,7 @@ class AST {
     bool VisitUnaryPrefixExpression(UnaryPrefixExpression &node);
     bool VisitUnaryPostfixExpression(UnaryPostfixExpression &node);
     bool VisitTernaryExpression(TernaryExpression &node);
-    bool VisitTypeId(TypeId &node);
+    bool VisitTypeSpecifierSeq(TypeSpecifierSeq &node);
     bool VisitDeclSpecList(DeclSpecList &node);
     bool VisitLambdaExpression(LambdaExpression &node);
     bool VisitFullType(FullType &node, bool print_type = true);
@@ -759,7 +768,7 @@ class AST {
 
 // AST→JDI bridge: walk a declarator-expression-tree into a jdi::ref_stack.
 // Returns false on a malformed sub-tree (unsupported node type, missing array
-// size, etc.). Combine with a TypeId's def/flags to produce a full jdi::full_type.
+// size, etc.). Combine with a TypeSpecifierSeq's def/flags to produce a full jdi::full_type.
 bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result);
 
 }  // namespace enigma::parsing

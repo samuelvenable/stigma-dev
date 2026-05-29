@@ -33,6 +33,16 @@ class AstBuilderTestAPI {
  */
   std::unordered_map<std::string, FullType *> declarations;
 
+  // When true, TryParseOperand yields an empty-name placeholder leaf instead
+  // of erroring on a missing operand -- i.e. we are inside a type-id /
+  // declarator production where an abstract (nameless) declarator is
+  // grammatical (cast targets, sizeof/alignof/new operands, function-params,
+  // template type-args, declarator bodies). Set via ScopedFlag at those
+  // boundaries, and flipped back to false when descending into embedded
+  // value-expressions (array bounds, default arguments). Defaults false so
+  // pure-expression contexts keep parse-time "missing operand" errors.
+  bool allow_abstract_operand_ = false;
+
   AstBuilderTestAPI() = default;
 
   void initialize(Lexer *lexer, ErrorHandler *herr) {
@@ -47,7 +57,7 @@ class AstBuilderTestAPI {
   virtual std::unique_ptr<AST::CodeBlock> ParseCode() = 0;
   virtual const Token &current_token() = 0;
   virtual std::unique_ptr<AST::CodeBlock> ParseCodeBlock() = 0;
-  virtual std::unique_ptr<AST::TypeId> TryParseTypeID() = 0;
+  virtual std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() = 0;
 
   virtual ~AstBuilderTestAPI() = default;
 };

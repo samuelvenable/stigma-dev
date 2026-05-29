@@ -1,6 +1,20 @@
 #include "parser.h"
 
 namespace enigma::parsing {
+
+// RAII guard: set a bool for the duration of a scope, restore the prior value
+// on exit. Used to push/pop parser-production state (e.g. allow_abstract_operand_)
+// around the productions that establish it, without threading a parameter
+// through the whole expression-parsing call graph.
+struct ScopedFlag {
+  bool &flag;
+  bool saved;
+  ScopedFlag(bool &flag, bool value) : flag(flag), saved(flag) { flag = value; }
+  ~ScopedFlag() { flag = saved; }
+  ScopedFlag(const ScopedFlag &) = delete;
+  ScopedFlag &operator=(const ScopedFlag &) = delete;
+};
+
 class AstBuilder: public AstBuilderTestAPI {
 public:
 
@@ -388,7 +402,7 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     }
   }
 
-  auto type_node = std::make_unique<AST::TypeId>(ft.def, nullptr, std::move(declspecs));
+  auto type_node = std::make_unique<AST::TypeSpecifierSeq>(ft.def, nullptr, std::move(declspecs));
   return std::make_unique<AST::DeclarationStatement>(sc, std::move(type_node), std::move(decls));
 }
 
@@ -1068,12 +1082,12 @@ void TryParseMaybeNestedPtrOperator(FullType *type) {
   }
 }
 
-// Build the TypeId for a `<type-id>` grammar production. The parser
+// Build the TypeSpecifierSeq for a `<type-id>` grammar production. The parser
 // unconditionally records the decl-spec chain (declspecs) and the resolved
 // base type (def). type_info (FullType cache) is populated from the same
 // parse — it's the JDI-bridge view of this same type, used by to_jdi_fulltype
 // and any downstream code that wants the declarator chain in flat form.
-std::unique_ptr<AST::TypeId> TryParseTypeID() {
+std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
   FullType type;
   auto declspecs = std::make_unique<AST::DeclSpecList>();
   while (next_is_type_specifier()) {
@@ -1082,7 +1096,7 @@ std::unique_ptr<AST::TypeId> TryParseTypeID() {
 
   maybe_infer_int(type);
 
-  auto result = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
+  auto result = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
   result->type_info = std::move(type);
   return result;
 }
@@ -1355,9 +1369,9 @@ std::unique_ptr<AST::Node> TryParseDeclarations(bool parse_unbounded) {
 }
 
 // Reads "did the parsed type have an outermost array bound?" off the
-// FullType cache for now. Post-4e it inspects TypeId's native
+// FullType cache for now. Post-4e it inspects TypeSpecifierSeq's native
 // declarator-expression-tree instead.
-static bool TypeIdIsArray(const std::unique_ptr<AST::TypeId> &t) {
+static bool TypeSpecifierSeqIsArray(const std::unique_ptr<AST::TypeSpecifierSeq> &t) {
   if (!t) return false;
   const auto &components = t->type_info.decl.components;
   return !components.empty() &&
@@ -1369,7 +1383,7 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
 
   bool is_array = false;
   std::vector<AST::PNode> placement_args;
-  std::unique_ptr<AST::TypeId> type_node;
+  std::unique_ptr<AST::TypeSpecifierSeq> type_node;
   AST::InitializerNode initializer = nullptr;
 
   if (token.type == TT_BEGINPARENTH) {
@@ -1380,7 +1394,7 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
       if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
         initializer = TryParseInitializer(true);
       }
-      is_array = TypeIdIsArray(type_node);
+      is_array = TypeSpecifierSeqIsArray(type_node);
 
       MaybeConsumeSemicolon();
 
@@ -1413,9 +1427,9 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
     require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
   } else {
     // <new-type-id> form: spec-seq + optional ptr-ops + optional array bounds.
-    // TRANSITIONAL: synthesize a TypeId from a locally-built FullType +
+    // TRANSITIONAL: synthesize a TypeSpecifierSeq from a locally-built FullType +
     // DeclSpecList. Step 4e replaces the declarator side with native parsing
-    // into TypeId's declarator expression tree.
+    // into TypeSpecifierSeq's declarator expression tree.
     FullType ft;
     auto declspecs = std::make_unique<AST::DeclSpecList>();
     TryParseTypeSpecifierSeq(&ft, declspecs.get());
@@ -1431,7 +1445,7 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
       TryParseArrayBoundsExpression(&ft.decl, false);
     }
 
-    type_node = std::make_unique<AST::TypeId>(nullptr, std::move(ft));
+    type_node = std::make_unique<AST::TypeSpecifierSeq>(nullptr, std::move(ft));
     type_node->declspecs = std::move(declspecs);
   }
 
@@ -1439,7 +1453,7 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
     initializer = TryParseInitializer(true);
   }
 
-  is_array = TypeIdIsArray(type_node);
+  is_array = TypeSpecifierSeqIsArray(type_node);
 
   MaybeConsumeSemicolon();
 
@@ -1465,7 +1479,42 @@ std::unique_ptr<AST::Node> TryParseDeleteExpression(bool is_global) {
 
 /// Parse an operand--this includes variables, literals, arrays, and
 /// unary expressions on these.
+// An abstract (nameless) declarator -- the operand position of a type-id with
+// no declarator-id. Encoded, per the established convention, as an
+// IdentifierAccess leaf with empty name content. Distinct from SyntaxError,
+// which marks a genuine parse failure.
+std::unique_ptr<AST::Node> make_abstract_operand() {
+  return std::make_unique<AST::IdentifierAccess>(Token{});
+}
+
+// The deliberate set of tokens at which an operand may be *legitimately* absent
+// -- i.e. where an abstract declarator ends (a closing or separating token).
+// This is NOT the same as "tokens that return null in TryParseOperand": that
+// larger set also includes malformed-operand cases (`+`, `%`, `:`, ...) which
+// must stay errors even in a type-id context. This is the discriminator
+// between "abstract declarator" and "broken expression", so it gets its own
+// explicit list rather than piggybacking on a switch case. Only consulted when
+// allow_abstract_operand_ is set.
+// TODO(setters): revisit `=` (default-argument after an abstract param, e.g.
+// `f(int = 5)`) when the default-value flip-to-false is wired in.
+bool at_abstract_declarator_end() {
+  switch (token.type) {
+    case TT_ENDPARENTH: case TT_ENDBRACKET: case TT_COMMA:
+    case TT_SEMICOLON:  case TT_GREATER:    case TT_ENDOFCODE:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::unique_ptr<AST::Node> TryParseOperand() {
+  // In a type-id / declarator production (allow_abstract_operand_), a missing
+  // operand is an abstract declarator, not an error. Yielding the placeholder
+  // here also covers `*`/`&`-then-terminator (e.g. `int *)`), since the prefix
+  // operator parses its operand by recursing back through this function.
+  if (allow_abstract_operand_ && at_abstract_declarator_end()) {
+    return make_abstract_operand();
+  }
   switch (token.type) {
     case TT_BEGINBRACE: case TT_ENDBRACE:
     case TT_ENDPARENTH: case TT_ENDBRACKET:
@@ -1683,12 +1732,12 @@ std::unique_ptr<AST::Node> TryParseOperand() {
           args.push_back(ParseExpression(Precedence::kAll));
           require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after functional cast");
           return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
-                                                    std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs)),
+                                                    std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs)),
                                                     std::move(args));
         } else if (token.type == TT_BEGINBRACE) {
           auto init = TryParseInitializer(false);
           require_token(TT_ENDBRACE, "Expected closing brace ('}') after temporary object initializer");
-          init->target = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
+          init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
           return init;
         } else {
           herr->Error(token) << "Expected opening parenthesis ('(') or brace ('{') after functional-cast type";
@@ -1697,7 +1746,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       }
       // If the operand names a type (built-in via TT_TYPE_NAME, or a
       // user-defined typedef/class/enum resolved through the frontend),
-      // produce a TypeId and let the surrounding ParseExpression bail to
+      // produce a TypeSpecifierSeq and let the surrounding ParseExpression bail to
       // the caller -- the caller decides whether this is a declaration, a
       // cast target, a sizeof argument, etc.
       if (token.type == TT_TYPE_NAME || next_is_user_defined_type()) {
@@ -1767,7 +1816,7 @@ std::unique_ptr<AST::Node> ParseExpression(int precedence, std::unique_ptr<AST::
     // the "bold move" that lets us drop the maybe_expression / to_expression
     // panic-rollback machinery; the semantic phase is now load-bearing for
     // disambiguating these uses.)
-    if (operand->type == AST::NodeType::TYPE_ID) {
+    if (operand->type == AST::NodeType::TYPE_SPECIFIER_SEQ) {
       return operand;
     }
     while (token.type != TT_ENDOFCODE) {
@@ -2210,10 +2259,10 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, {});
     } else if (token.type == TT_BEGINBRACE) {
       auto init = TryParseBraceInitializer();
-      init->target = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
+      init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
       return init;
     } else if (token.type == TT_BEGINPARENTH) {
-      // `Foo( ... )`: parse as a call-shaped expression with a TypeId callee.
+      // `Foo( ... )`: parse as a call-shaped expression with a TypeSpecifierSeq callee.
       // This is the most-vexing-parse: it could be a functional cast, a
       // temporary-object expression, or a declaration whose declarator is
       // parenthesized (`Foo (*p)`). The parser stays context-free and emits
@@ -2226,12 +2275,12 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       // When the semantic phase resolves this construct to a declaration it
       // must split the top-level comma into per-declarator nodes; when it
       // resolves to an expression the comma-expression stands.
-      auto callee = std::make_unique<AST::TypeId>(type.def, nullptr, std::move(declspecs));
+      auto callee = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
       auto call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
       return ParseExpression(Precedence::kAll, std::move(call));
     } else if (token.type == TT_ENDPARENTH && maybe_c_style_cast) {
       token = lexer->ReadToken();
-      auto type_node = std::make_unique<AST::TypeId>(nullptr, std::move(type));
+      auto type_node = std::make_unique<AST::TypeSpecifierSeq>(nullptr, std::move(type));
       return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::C_STYLE, token, std::move(type_node),
                                                    ParseExpression(Precedence::kAll));
     } else {
@@ -2497,7 +2546,7 @@ class SyntaxChecker : public AST::Visitor {
     // Flag conflicts are properties of the shared decl-spec sequence, read
     // from node.type->declspecs (per-declarator FullType::flags is a
     // transitional mirror, retired in step 4).
-    auto *type_id = node.type ? node.type->As<AST::TypeId>() : nullptr;
+    auto *type_id = node.type ? node.type->As<AST::TypeSpecifierSeq>() : nullptr;
     std::size_t flags = (type_id && type_id->declspecs) ? type_id->declspecs->flags : 0;
     static constexpr struct { const char *a, *b; TokenType reporter; } conflicts[] = {
       {"unsigned", "signed",   TT_DECLSPEC },
