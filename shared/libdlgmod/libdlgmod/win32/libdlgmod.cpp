@@ -142,6 +142,25 @@ namespace dialog_module {
       return string { buf.data(), (size_t)nbytes };
     }
 
+    wstring resolve_symbolic_links(wstring wstr) {
+      wstring result;
+      wchar_t path[MAX_PATH];
+      HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+      if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+        if (len) {
+          result = path;
+          if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
+            result = L"\\" + result.substr(7);
+          } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
+            result = result.substr(4);
+          }
+        }
+        CloseHandle(hFile);
+      }
+      return result;
+    }
+
     string string_replace_all(string str, string substr, string newstr) {
       size_t pos = 0;
       const size_t sublen = substr.length(), newlen = newstr.length();
@@ -910,6 +929,15 @@ namespace dialog_module {
       return (ChooseColorW(&cc) != 0) ? cc.rgbResult : -1;
     }
 
+    void regain_focus_to_owner() {
+      DWORD pid = 0;
+      GetWindowThreadProcessId(owner_window(), &pid);
+      AllowSetForegroundWindow(pid);
+      SetForegroundWindow(owner_window());
+      SetActiveWindow(owner_window());
+      SetFocus(owner_window());
+    }
+
   } // anonymous namespace
 
   int show_message(char *str) {
@@ -918,6 +946,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &MessageBoxProc, ModHwnd, ThreadID);
     int result = show_message_helper(str, false);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
@@ -927,6 +956,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &MessageBoxProc, ModHwnd, ThreadID);
     int result = show_message_helper(str, true);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
@@ -936,6 +966,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &MessageBoxProc, ModHwnd, ThreadID);
     int result = show_question_helper(str, false);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
@@ -945,6 +976,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &MessageBoxProc, ModHwnd, ThreadID);
     int result = show_question_helper(str, true);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
@@ -954,6 +986,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &MessageBoxProc, ModHwnd, ThreadID);
     int result = show_error_helper(str, false, true);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
@@ -964,23 +997,32 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &ShowErrorProc, ModHwnd, ThreadID);
     int result = show_error_helper(str, abort, false);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
   char *get_string(char *str, char *def) {
-    return get_string_helper(str, def, false);
+    char *result = get_string_helper(str, def, false);
+    regain_focus_to_owner();
+    return result;
   }
 
   char *get_password(char *str, char *def) {
-    return get_string_helper(str, def, true);
+    char *result = get_string_helper(str, def, true);
+    regain_focus_to_owner();
+    return result;
   }
 
   double get_integer(char *str, double def) {
-    return get_integer_helper(str, def, false);
+    double result = get_integer_helper(str, def, false);
+    regain_focus_to_owner();
+    return result;
   }
 
   double get_passcode(char *str, double def) {
-    return get_integer_helper(str, def, true);
+    double result = get_integer_helper(str, def, true);
+    regain_focus_to_owner();
+    return result;
   }
 
   char *get_open_filename(char *filter, char *fname) {
@@ -990,6 +1032,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     result = get_open_filename_helper(str_filter, str_fname, "", "");
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1001,6 +1044,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     result = get_open_filename_helper(str_filter, str_fname, str_dir, str_title);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1011,6 +1055,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     result = get_open_filenames_helper(str_filter, str_fname, "", "");
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1022,6 +1067,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     result = get_open_filenames_helper(str_filter, str_fname, str_dir, str_title);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1032,6 +1078,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &SaveAsProc, ModHwnd, ThreadID);
     result = get_save_filename_helper(str_filter, str_fname, "", "");
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1043,6 +1090,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &SaveAsProc, ModHwnd, ThreadID);
     result = get_save_filename_helper(str_filter, str_fname, str_dir, str_title);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1053,6 +1101,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     result = get_directory_helper(str_dname, "");
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1063,6 +1112,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     result = get_directory_helper(str_dname, str_title);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return (char *)result.c_str();
   }
 
@@ -1072,6 +1122,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     int result = get_color_helper(defcol, "");
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
@@ -1082,6 +1133,7 @@ namespace dialog_module {
     hhook = SetWindowsHookEx(WH_CBT, &DialogProc, ModHwnd, ThreadID);
     int result = get_color_helper(defcol, str_title);
     UnhookWindowsHookEx(hhook);
+    regain_focus_to_owner();
     return result;
   }
 
@@ -1104,18 +1156,21 @@ namespace dialog_module {
   }
 
   char *widget_get_icon() {
-    wchar_t wstr_icon[MAX_PATH];
     wstring cpp_wstr_icon = widen(tstr_icon);
-    GetFullPathNameW(cpp_wstr_icon.c_str(), MAX_PATH, wstr_icon, nullptr);
-    static string tstr_result; tstr_result = narrow(wstr_icon);
+    wstring wstr_icon = resolve_symbolic_links(cpp_wstr_icon);
+    static string tstr_result;
+    if (PathFileExistsW(wstr_icon.c_str())) {
+      tstr_result = narrow(wstr_icon);
+    }
     return (char *)tstr_result.c_str();
   }
 
   void widget_set_icon(char *icon) {
-    wchar_t wstr_icon[MAX_PATH];
     wstring cpp_wstr_icon = widen(icon);
-    GetFullPathNameW(cpp_wstr_icon.c_str(), MAX_PATH, wstr_icon, nullptr);
-    if (PathFileExistsW(wstr_icon)) tstr_icon = icon;
+    wstring wstr_icon = resolve_symbolic_links(cpp_wstr_icon);
+    if (PathFileExistsW(wstr_icon.c_str())) {
+      tstr_icon = narrow(wstr_icon);
+    }
   }
 
   char *widget_get_system() {
