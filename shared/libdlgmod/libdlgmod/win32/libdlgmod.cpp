@@ -464,6 +464,12 @@ namespace dialog_module {
         if (win == GetDesktopWindow() ||
           (win != (HWND)wParam && cbtcr->lpcs->hwndParent == win)) {
           dlg = (HWND)wParam;
+          DWORD pid = 0;
+          GetWindowThreadProcessId(dlg, &pid);
+          AllowSetForegroundWindow(pid);
+          SetForegroundWindow(dlg);
+          SetActiveWindow(dlg);
+          SetFocus(dlg);
           init = true;
         }
       }
