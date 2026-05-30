@@ -67,7 +67,7 @@ ifeq ($(UNIX_BASED), true)
 		LSVGREPOS += $(shell chmod +x ../ENIGMAsystem/SHELL/Widget_Systems/SDL/imgui.sh)
 	endif
 else
-	LDFLAGS += -lshell32 -lole32 -luuid -lntdll
+	override LDFLAGS += -lshell32 -lole32 -luuid -lntdll
 endif
 SHARED_SOURCES += $(call rwildcard,apiprocess,*.cpp) $(call rwildcard,apifilesystem,*.cpp) $(call rwildcard,tempdir,*.cpp)
 
