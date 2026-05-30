@@ -1297,6 +1297,7 @@ AST::InitializerNode TryParseInitializerList(TokenType closing) {
       break;
     }
   }
+  require_token(closing, "Expected closing brace ('}') at the end of brace initializer");
   return std::make_unique<AST::Initializer>(AST::Initializer::Kind::BRACE, nullptr, std::move(values));
 }
 
@@ -1310,8 +1311,11 @@ AST::InitializerNode TryParseBraceInitializer() {
       require_token(TT_IDENTIFIER, "Expected identifier after dot in designated initializer");
       require_token(TT_EQUALS, "Expected '=' in designated initializer");
       
+      // The designator's `=` is already consumed above, so the value is a plain
+      // initializer-clause (assignment-expression or braced-init-list), not a
+      // brace-or-equal-initializer: pass is_init_clause=true.
       std::vector<AST::PNode> assign_vals;
-      assign_vals.push_back(TryParseExprOrBracedInitList(false, false));
+      assign_vals.push_back(TryParseExprOrBracedInitList(true, false));
       
       auto designator = std::make_unique<AST::IdentifierAccess>(name);
       values.push_back(std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, std::move(designator), std::move(assign_vals)));
@@ -1406,14 +1410,19 @@ std::unique_ptr<AST::Node> TryParseDeclarations(bool parse_unbounded) {
   return nullptr;
 }
 
-// Reads "did the parsed type have an outermost array bound?" off the
-// FullType cache for now. Post-4e it inspects TypeSpecifierSeq's native
-// declarator-expression-tree instead.
-static bool TypeSpecifierSeqIsArray(const std::unique_ptr<AST::TypeSpecifierSeq> &t) {
-  if (!t) return false;
-  const auto &components = t->type_info.decl.components;
-  return !components.empty() &&
-         components.begin()->kind == DeclaratorNode::Kind::ARRAY_BOUND;
+// "Is this `new` an array-new?" -- i.e. is the outermost derivation of the
+// type-id an array? Reads the unified declarator-expression-tree: an abstract
+// array declarator parses to a subscript `BinaryExpression` (op TT_BEGINBRACKET)
+// at the root, e.g. `int[]` -> Subscript(<abstract leaf>, <bound>) and
+// `int[][15]` -> Subscript(Subscript(...), 15). A pointer/grouped outermost
+// (`int *(**)[10]`) roots in a prefix `*`, so it's not array-new.
+static bool DeclaratorClauseIsArray(const std::unique_ptr<AST::DeclaratorClause> &c) {
+  if (!c || c->declarators.empty()) return false;
+  const auto &decl = c->declarators.front();
+  if (!decl->declarator_expr ||
+      decl->declarator_expr->type != AST::NodeType::BINARY_EXPRESSION)
+    return false;
+  return decl->declarator_expr->As<AST::BinaryExpression>()->operation.type == TT_BEGINBRACKET;
 }
 
 std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
@@ -1421,18 +1430,18 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
 
   bool is_array = false;
   std::vector<AST::PNode> placement_args;
-  std::unique_ptr<AST::TypeSpecifierSeq> type_node;
+  std::unique_ptr<AST::DeclaratorClause> type_node;
   AST::InitializerNode initializer = nullptr;
 
   if (token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
     if (next_is_type_specifier()) {
-      type_node = TryParseTypeID();
+      type_node = ParseTypeIdClause();
       require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
       if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
         initializer = TryParseInitializer(true);
       }
-      is_array = TypeSpecifierSeqIsArray(type_node);
+      is_array = DeclaratorClauseIsArray(type_node);
 
       MaybeConsumeSemicolon();
 
@@ -1461,37 +1470,21 @@ std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
   // This code path is taken only when <new-placement> is present, otherwise the paren would've been picked up earlier
   if (token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
-    type_node = TryParseTypeID();
+    type_node = ParseTypeIdClause();
     require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
   } else {
-    // <new-type-id> form: spec-seq + optional ptr-ops + optional array bounds.
-    // TRANSITIONAL: synthesize a TypeSpecifierSeq from a locally-built FullType +
-    // DeclSpecList. Step 4e replaces the declarator side with native parsing
-    // into TypeSpecifierSeq's declarator expression tree.
-    FullType ft;
-    auto declspecs = std::make_unique<AST::DeclSpecList>();
-    TryParseTypeSpecifierSeq(&ft, declspecs.get());
-    while (next_maybe_ptr_decl_operator()) {
-      if (next_maybe_nested_name()) {
-        TryParseMaybeNestedPtrOperator(&ft);
-      } else {
-        TryParsePtrOperator(&ft);
-      }
-    }
-
-    while (token.type == TT_BEGINBRACKET) {
-      TryParseArrayBoundsExpression(&ft.decl, false);
-    }
-
-    type_node = std::make_unique<AST::TypeSpecifierSeq>(nullptr, std::move(ft));
-    type_node->declspecs = std::move(declspecs);
+    // <new-type-id> form: type-specifier-seq + abstract declarator (ptr-ops and
+    // array bounds), parsed through the unified expression path. The abstract
+    // array case (`new int[10]`) relies on the TT_BEGINBRACKET abstract-leaf
+    // setter in at_abstract_declarator_end().
+    type_node = ParseTypeIdClause();
   }
 
   if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
     initializer = TryParseInitializer(true);
   }
 
-  is_array = TypeSpecifierSeqIsArray(type_node);
+  is_array = DeclaratorClauseIsArray(type_node);
 
   MaybeConsumeSemicolon();
 
@@ -1539,6 +1532,15 @@ bool at_abstract_declarator_end() {
   switch (token.type) {
     case TT_ENDPARENTH: case TT_ENDBRACKET: case TT_COMMA:
     case TT_SEMICOLON:  case TT_GREATER:    case TT_ENDOFCODE:
+      return true;
+    // A leading `[` is an abstract *array* declarator (`int[10]`, `new int[]`).
+    // Unlike `(`, it's unambiguous -- no grouped-declarator form begins with
+    // `[` -- so the operand is legitimately absent and we insert the abstract
+    // leaf here; the postfix-subscript loop in ParseExpression then attaches
+    // the `[bound]` to it. (`(` is deliberately excluded: in a `new` type-id a
+    // trailing `(` is the initializer, and elsewhere a grouped `(*)` `(` must
+    // stay a primary so the grouped declarator parses.)
+    case TT_BEGINBRACKET:
       return true;
     default:
       return false;

@@ -517,6 +517,7 @@ class AST {
   };
 
   struct Initializer;
+  struct DeclaratorClause;
 
   using InitializerNode = std::unique_ptr<Initializer>;
 
@@ -541,12 +542,12 @@ class AST {
     bool is_global;
     bool is_array;
     std::vector<PNode> placement_args;
-    std::unique_ptr<TypeSpecifierSeq> type;
+    std::unique_ptr<DeclaratorClause> type;
     std::unique_ptr<Initializer> initializer;
 
     BASIC_NODE_ROUTINES(NewExpression);
 
-    NewExpression(bool is_global, bool is_array, std::vector<PNode> placement_args, std::unique_ptr<TypeSpecifierSeq> type,
+    NewExpression(bool is_global, bool is_array, std::vector<PNode> placement_args, std::unique_ptr<DeclaratorClause> type,
                   std::unique_ptr<Initializer> initializer):
       is_global{is_global}, is_array{is_array}, placement_args{std::move(placement_args)}, type{std::move(type)},
       initializer{std::move(initializer)} {}

@@ -301,6 +301,23 @@ MATCHER_P2(IsUnaryPrefixOperator, op, M1, "") {
   return res;
 }
 
+MATCHER_P(IsParenthetical, M1, "") {
+  if (arg->type != AST::NodeType::PARENTHETICAL) {
+    ExpectedMsg = "From IsParenthetical Matcher: NodeType = PARENTHETICAL\n";
+    *result_listener << "got NodeType = " << AST::NodeToString(arg->type) << "\n";
+    return false;
+  }
+
+  auto *paren = arg->template As<AST::Parenthetical>();
+  if (!paren) {
+    ExpectedMsg += "From IsParenthetical Matcher: paren isn't nullptr\n";
+    *result_listener << "got paren = nullptr\n";
+    return false;
+  }
+
+  return ExplainMatchResult(M1, paren->expression, result_listener);
+}
+
 MATCHER_P(IsStatementBlock, stateSize, "") {
   if (arg->type != AST::NodeType::BLOCK) {
     ExpectedMsg = "From IsStatementBlock Matcher: NodeType = BLOCK";

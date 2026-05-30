@@ -587,12 +587,14 @@ bool AST::CppPrettyPrinter::VisitNewExpression(AST::NewExpression &node) {
     print(") ");
   }
 
-  // Routed through the FullType cache for now; once 4e gives us a native
-  // declarator-expression-tree on TypeSpecifierSeq, this calls VisitTypeSpecifierSeq with a flag
-  // requesting full declarator-chain printing (not just declspecs + base).
+  // Parenthesised type-id (`new (int*)`): VisitDeclaratorClause prints the
+  // type-specifier-seq + the declarator as its expression tree (abstract leaf
+  // prints as nothing, ptr-ops/array bounds as `*`/`[n]`).
   print("(");
   if (node.type) {
-    if (!VisitFullType(node.type->type_info)) return false;
+    // Identical to VISIT_AND_CHECK modulo PNode covariance issue: node.type is a
+    // unique_ptr<DeclaratorClause>, which won't bind to Visit(PNode&).
+    if (!node.type->accept(*this)) return false;
   }
   print(")");
 

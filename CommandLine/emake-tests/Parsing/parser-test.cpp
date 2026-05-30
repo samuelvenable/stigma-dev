@@ -475,6 +475,20 @@ void check_placement(AST::NewExpression *new_) {
   assert_identifier_is(new_->placement_args[0].get(), "nullptr");
 }
 
+// The new-expression type-id is now a DeclaratorClause: the shared type-
+// specifier-seq lives in `specifiers` (its FullType base type in `type_info`),
+// and the abstract declarator is an expression tree on the lone
+// InitDeclarator's `declarator_expr`. Array bounds root in a subscript
+// BinaryExpression (op `[`); pointers in a prefix `*`; a bare type-id bottoms
+// out in the empty-name abstract leaf.
+AST::Node *new_declarator_root(AST::NewExpression *new_) {
+  EXPECT_NE(new_->type, nullptr);
+  if (!new_->type) return nullptr;
+  EXPECT_EQ(new_->type->declarators.size(), 1u);
+  if (new_->type->declarators.size() != 1u) return nullptr;
+  return new_->type->declarators[0]->declarator_expr.get();
+}
+
 // Post-refactor Initializer shape (see ast.h): a unified node with
 // Kind { ASSIGN, EXPR, BRACE, PAREN }, an optional `target` designator, and
 // a `values` vector<PNode>. Brace-/paren-init element designators are
@@ -488,18 +502,21 @@ void check_initializer(AST::NewExpression *new_, AST::Initializer::Kind kind,
   for (int i = 0; i < 5; i++) {
     AST::Node *element = init->values[i].get();
     ASSERT_NE(element, nullptr);
-    // Each value is itself an Initializer wrapping either an EXPR or an
-    // ASSIGN (designated) form. Pull out the underlying literal.
-    auto *elem_init = element->As<AST::Initializer>();
-    ASSERT_NE(elem_init, nullptr);
+    AST::Node *expr = element;
     if (!attributes.empty()) {
+      // Designated initializer: each element is an ASSIGN Initializer whose
+      // target is the `.name` designator and values[0] the assigned value.
+      auto *elem_init = element->As<AST::Initializer>();
+      ASSERT_NE(elem_init, nullptr);
       ASSERT_EQ(elem_init->kind, AST::Initializer::Kind::ASSIGN);
       auto *designator = elem_init->target ? elem_init->target->As<AST::IdentifierAccess>() : nullptr;
       ASSERT_NE(designator, nullptr);
       ASSERT_EQ(designator->name.content, attributes[i]);
+      ASSERT_FALSE(elem_init->values.empty());
+      expr = elem_init->values[0].get();
     }
-    ASSERT_FALSE(elem_init->values.empty());
-    auto *expr = elem_init->values[0].get();
+    // Non-designated brace elements are stored as the raw initializer-clause
+    // expression (here a literal), not wrapped in an Initializer node.
     ASSERT_EQ(expr->type, AST::NodeType::LITERAL);
     ASSERT_EQ(std::get<std::string>(expr->As<AST::Literal>()->value.value), std::to_string(i + 1));
   }
@@ -518,9 +535,10 @@ TEST(ParserTest, NewExpression_1) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 1);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.begin()->kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
 
   check_initializer(new_exp, AST::Initializer::Kind::BRACE);
 }
@@ -538,9 +556,10 @@ TEST(ParserTest, NewExpression_1_NoSemicolon) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 1);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.begin()->kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
 
   check_initializer(new_exp, AST::Initializer::Kind::BRACE);
 }
@@ -556,13 +575,13 @@ TEST(ParserTest, NewExpression_2) {
   ASSERT_TRUE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  EXPECT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 2);
-  // jdi::ref_stack stack;
-  //   new_exp->type->type_info.decl.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int[][15]` -> Subscript(Subscript(<abstract>, <empty>), 15): two nested
+  // subscripts, the outer being the second `[15]`.
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsBinaryOperation(TT_BEGINBRACKET,
+                  IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")),
+                  IsLiteral("15")));
 
   check_initializer(new_exp, AST::Initializer::Kind::BRACE);
 }
@@ -578,13 +597,13 @@ TEST(ParserTest, NewExpression_2_NoSemiconlon) {
   ASSERT_TRUE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  EXPECT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 2);
-  // jdi::ref_stack stack;
-  //   new_exp->type->type_info.decl.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int[][15]` -> Subscript(Subscript(<abstract>, <empty>), 15): two nested
+  // subscripts, the outer being the second `[15]`.
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsBinaryOperation(TT_BEGINBRACKET,
+                  IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")),
+                  IsLiteral("15")));
 
   check_initializer(new_exp, AST::Initializer::Kind::BRACE);
 }
@@ -601,16 +620,16 @@ TEST(ParserTest, NewExpression_3) {
 
   check_placement(new_exp);
 
-  ASSERT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 2);
-  // jdi::ref_stack stack;
-  //   new_exp->type->type_info.decl.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  ASSERT_EQ(new_exp->type->type_info.decl.name.content, "");
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
+  // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsUnaryPrefixOperator(TT_STAR,
+                  IsBinaryOperation(TT_BEGINBRACKET,
+                      IsParenthetical(
+                          IsUnaryPrefixOperator(TT_STAR,
+                              IsUnaryPrefixOperator(TT_STAR, IsIdentifier("")))),
+                      IsLiteral("10"))));
 
   check_initializer(new_exp, AST::Initializer::Kind::PAREN);
 }
@@ -627,15 +646,16 @@ TEST(ParserTest, NewExpression_3_NoSemicolon) {
 
   check_placement(new_exp);
 
-  ASSERT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 2);
-  // jdi::ref_stack stack;
-  //   new_exp->type->type_info.decl.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
+  // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsUnaryPrefixOperator(TT_STAR,
+                  IsBinaryOperation(TT_BEGINBRACKET,
+                      IsParenthetical(
+                          IsUnaryPrefixOperator(TT_STAR,
+                              IsUnaryPrefixOperator(TT_STAR, IsIdentifier("")))),
+                      IsLiteral("10"))));
 
   check_initializer(new_exp, AST::Initializer::Kind::PAREN);
 }
@@ -651,15 +671,16 @@ TEST(ParserTest, NewExpression_4) {
   ASSERT_FALSE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  ASSERT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 2);
-  // jdi::ref_stack stack;
-  //   new_exp->type->type_info.decl.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
+  // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsUnaryPrefixOperator(TT_STAR,
+                  IsBinaryOperation(TT_BEGINBRACKET,
+                      IsParenthetical(
+                          IsUnaryPrefixOperator(TT_STAR,
+                              IsUnaryPrefixOperator(TT_STAR, IsIdentifier("")))),
+                      IsLiteral("10"))));
 }
 
 TEST(ParserTest, NewExpression_4_NoSemicolon) {
@@ -673,15 +694,16 @@ TEST(ParserTest, NewExpression_4_NoSemicolon) {
   ASSERT_FALSE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  ASSERT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 2);
-  // jdi::ref_stack stack;
-  //   new_exp->type->type_info.decl.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
+  // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsUnaryPrefixOperator(TT_STAR,
+                  IsBinaryOperation(TT_BEGINBRACKET,
+                      IsParenthetical(
+                          IsUnaryPrefixOperator(TT_STAR,
+                              IsUnaryPrefixOperator(TT_STAR, IsIdentifier("")))),
+                      IsLiteral("10"))));
 }
 
 TEST(ParserTest, NewExpression_5) {
@@ -695,8 +717,9 @@ TEST(ParserTest, NewExpression_5) {
   ASSERT_FALSE(new_->is_array);
 
   ASSERT_TRUE(new_->placement_args.empty());
-  ASSERT_EQ(new_->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_->type->type_info.decl.components.size(), 0);
+  ASSERT_EQ(new_->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // Bare `int`: the abstract declarator is just the empty-name leaf.
+  EXPECT_THAT(new_declarator_root(new_), IsIdentifier(""));
 }
 
 TEST(ParserTest, NewExpression_5_NoSemicolon) {
@@ -710,8 +733,9 @@ TEST(ParserTest, NewExpression_5_NoSemicolon) {
   ASSERT_FALSE(new_->is_array);
 
   ASSERT_TRUE(new_->placement_args.empty());
-  ASSERT_EQ(new_->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_->type->type_info.decl.components.size(), 0);
+  ASSERT_EQ(new_->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // Bare `int`: the abstract declarator is just the empty-name leaf.
+  EXPECT_THAT(new_declarator_root(new_), IsIdentifier(""));
 }
 
 TEST(ParserTest, Designated_Initializer) {
@@ -727,9 +751,10 @@ TEST(ParserTest, Designated_Initializer) {
 
   check_placement(new_);
 
-  EXPECT_EQ(new_->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_->type->type_info.decl.components.size(), 1);
-  ASSERT_EQ(new_->type->type_info.decl.components.begin()->kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  EXPECT_EQ(new_->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
+  EXPECT_THAT(new_declarator_root(new_),
+              IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
   check_initializer(new_, AST::Initializer::Kind::BRACE, {"x", "y", "z", "u", "v"});
 }
 
@@ -1063,9 +1088,10 @@ TEST(ParserTest, SwitchStatement_5) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 1);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.begin()->kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
 
   check_initializer(new_exp, AST::Initializer::Kind::BRACE);
 }
@@ -1093,9 +1119,10 @@ TEST(ParserTest, SwitchStatement_5_NoSemicolon) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.size(), 1);
-  ASSERT_EQ(new_exp->type->type_info.decl.components.begin()->kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  EXPECT_EQ(new_exp->type->specifiers->type_info.def, jdi::builtin_type__int);
+  // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
+  EXPECT_THAT(new_declarator_root(new_exp),
+              IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
 
   check_initializer(new_exp, AST::Initializer::Kind::BRACE);
 }
