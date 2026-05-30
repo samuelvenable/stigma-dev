@@ -234,7 +234,7 @@ void AST::DeleteExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expression);
 }
 void AST::DeclarationStatement::RecursiveSubVisit(Visitor &visitor) {
-  RV(visitor, type, declarations);
+  RV(visitor, clause);
 }
 void AST::InitDeclarator::RecursiveSubVisit(Visitor &visitor) {
   // `declarator` is the FullType (JDI-bridge) form, not a Node;

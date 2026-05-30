@@ -617,18 +617,17 @@ class AST {
       GLOBAL,
     };
 
-    PNode type;
+    // A declaration is its DeclaratorClause (shared type-specifier-seq + the
+    // init-declarator-list) plus how the surrounding statement scopes it.
+    std::unique_ptr<DeclaratorClause> clause;
     StorageClass storage_class;
-    std::vector<std::unique_ptr<InitDeclarator>> declarations;
     static const std::vector<std::string> StorageNames; // what is the use of this?
 
     BASIC_NODE_ROUTINES(DeclarationStatement);
     static std::string StorageToString(StorageClass st);
 
-    DeclarationStatement(StorageClass sc, PNode type_,
-                         std::vector<std::unique_ptr<InitDeclarator>> declarations_):
-        type{std::move(type_)}, storage_class{sc},
-        declarations{std::move(declarations_)} {}
+    DeclarationStatement(StorageClass sc, std::unique_ptr<DeclaratorClause> clause_):
+        clause{std::move(clause_)}, storage_class{sc} {}
   };
 
   class Visitor {

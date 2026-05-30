@@ -403,7 +403,8 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
   }
 
   auto type_node = std::make_unique<AST::TypeSpecifierSeq>(ft.def, nullptr, std::move(declspecs));
-  return std::make_unique<AST::DeclarationStatement>(sc, std::move(type_node), std::move(decls));
+  auto clause = std::make_unique<AST::DeclaratorClause>(std::move(type_node), std::move(decls));
+  return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
 }
 
 void maybe_infer_int(FullType &type) {
@@ -2573,9 +2574,9 @@ class SyntaxChecker : public AST::Visitor {
     // with syntactic checks. Tracked separately.
     //
     // Flag conflicts are properties of the shared decl-spec sequence, read
-    // from node.type->declspecs (per-declarator FullType::flags is a
-    // transitional mirror, retired in step 4).
-    auto *type_id = node.type ? node.type->As<AST::TypeSpecifierSeq>() : nullptr;
+    // from the clause's specifiers->declspecs (per-declarator FullType::flags
+    // is a transitional mirror, retired in step 4).
+    auto *type_id = node.clause ? node.clause->specifiers.get() : nullptr;
     std::size_t flags = (type_id && type_id->declspecs) ? type_id->declspecs->flags : 0;
     static constexpr struct { const char *a, *b; TokenType reporter; } conflicts[] = {
       {"unsigned", "signed",   TT_DECLSPEC },

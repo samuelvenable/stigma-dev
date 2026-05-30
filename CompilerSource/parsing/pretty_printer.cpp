@@ -610,7 +610,7 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
     // GLOBAL/LOCAL print the access-shim assignment, not the declaration form
     // itself — so this fork doesn't go through VisitInitDeclarator.
     bool printed = false;
-    for (auto &entry : node.declarations) {
+    for (auto &entry : node.clause->declarators) {
       if (entry->init) {
         if (printed) print(", ");
         std::string name(entry->name.content);
@@ -628,13 +628,14 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
   // The shared type (declspecs + base type name) prints once via VisitTypeSpecifierSeq.
   // Each init-declarator then contributes its own declarator chain + init via
   // VisitInitDeclarator.
-  if (node.type) {
-    VISIT_AND_CHECK(node.type);
+  if (node.clause && node.clause->specifiers) {
+    // Identical to VISIT_AND_CHECK modulo PNode covariance issue
+    if (!node.clause->specifiers->accept(*this)) return false;
     print(" ");
   }
-  for (std::size_t i = 0; i < node.declarations.size(); i++) {
-    if (!VisitInitDeclarator(*node.declarations[i])) return false;
-    if (i != node.declarations.size() - 1) {
+  for (std::size_t i = 0; i < node.clause->declarators.size(); i++) {
+    if (!VisitInitDeclarator(*node.clause->declarators[i])) return false;
+    if (i != node.clause->declarators.size() - 1) {
       print(", ");
     }
   }

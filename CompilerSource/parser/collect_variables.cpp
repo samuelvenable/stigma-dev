@@ -225,9 +225,9 @@ class DeclGatheringVisitor : public AST::Visitor {
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) {
     bool is_global = node.storage_class == AST::DeclarationStatement::StorageClass::GLOBAL;
     bool is_local = node.storage_class == AST::DeclarationStatement::StorageClass::LOCAL;
-    auto *type_id = node.type ? node.type->As<AST::TypeSpecifierSeq>() : nullptr;
+    auto *type_id = node.clause ? node.clause->specifiers.get() : nullptr;
     jdi::definition *spec_def = type_id ? type_id->to_jdi_fulltype().def : nullptr;
-    for (const auto &entry : node.declarations) {
+    for (const auto &entry : node.clause->declarators) {
       std::string name(entry->name.content);
       jdi::full_type jft;
       if (type_id) jft = type_id->to_jdi_fulltype();
@@ -250,7 +250,7 @@ class DeclGatheringVisitor : public AST::Visitor {
       parsed_scope->declarations[name] = spec_def;
     }
 
-    for (const auto &entry : node.declarations) {
+    for (const auto &entry : node.clause->declarators) {
       if (entry->init) {
         VisitInitializer(*entry->init);
       }

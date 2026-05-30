@@ -39,7 +39,7 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   }
 
   bool b1 = decl->storage_class == AST::DeclarationStatement::StorageClass::TEMPORARY,
-       b2 = decl->declarations.size() == decls.size();
+       b2 = decl->clause->declarators.size() == decls.size();
 
   if (!b1 || !b2) {
     ExpectedMsg = "From IsDeclaration Matcher: ";
@@ -51,14 +51,14 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
     }
     if (!b2) {
       ExpectedMsg += "DeclarationsSize = " + to_string(decls.size()) + "\n";
-      *result_listener << "got DeclarationsSize = " << to_string(decl->declarations.size()) << "\n";
+      *result_listener << "got DeclarationsSize = " << to_string(decl->clause->declarators.size()) << "\n";
     }
   }
 
   bool b3 = true;
   auto *expected_def = static_cast<jdi::definition*>(decl_type);
   for (size_t i = 0; i < decls.size(); i++) {
-    auto &init_decl = *decl->declarations[i];
+    auto &init_decl = *decl->clause->declarators[i];
     auto &decli = init_decl.declarator->decl;
     auto *parsed_def = init_decl.declarator->def;
     b3 = b3 && init_decl.init != nullptr;

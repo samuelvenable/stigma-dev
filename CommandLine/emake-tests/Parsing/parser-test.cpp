@@ -269,10 +269,10 @@ TEST(ParserTest, Declarator_3) {
   auto node = test->TryParseStatement();
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->declarations.size(), 1);
+  ASSERT_EQ(decls->clause->declarators.size(), 1);
 
-  ASSERT_EQ(decls->declarations[0]->init, nullptr);
-  auto &decl1 = decls->declarations[0]->declarator->decl;
+  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
+  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
   ASSERT_EQ(decl1.name.content, "a");
   ASSERT_EQ(decl1.components.size(), 2);
 
@@ -314,10 +314,10 @@ TEST(ParserTest, Declarator_3_NoSemicolon) {
   auto node = test->TryParseStatement();
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->declarations.size(), 1);
+  ASSERT_EQ(decls->clause->declarators.size(), 1);
 
-  ASSERT_EQ(decls->declarations[0]->init, nullptr);
-  auto &decl1 = decls->declarations[0]->declarator->decl;
+  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
+  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
   ASSERT_EQ(decl1.name.content, "a");
   ASSERT_EQ(decl1.components.size(), 2);
 
@@ -358,10 +358,10 @@ TEST(ParserTest, Declarator_4) {
   auto node = test->TryParseStatement();
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->declarations.size(), 1);
+  ASSERT_EQ(decls->clause->declarators.size(), 1);
 
-  ASSERT_EQ(decls->declarations[0]->init, nullptr);
-  auto &decl1 = decls->declarations[0]->declarator->decl;
+  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
+  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
   ASSERT_EQ(decl1.name.content, "a");
   ASSERT_EQ(decl1.components.size(), 2);
 
@@ -381,10 +381,10 @@ TEST(ParserTest, Declarator_4_NoSemicolon) {
   auto node = test->TryParseStatement();
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->declarations.size(), 1);
+  ASSERT_EQ(decls->clause->declarators.size(), 1);
 
-  ASSERT_EQ(decls->declarations[0]->init, nullptr);
-  auto &decl1 = decls->declarations[0]->declarator->decl;
+  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
+  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
   ASSERT_EQ(decl1.name.content, "a");
   ASSERT_EQ(decl1.components.size(), 2);
 
@@ -406,7 +406,7 @@ TEST(ParserTest, Declaration) {
   EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
   EXPECT_EQ(test.lexer.ReadToken().type, TT_ENDOFCODE);
   auto decl = node->As<AST::DeclarationStatement>();
-  // EXPECT_TRUE(contains_flag2(*decl->declarations[0]->declarator, jdi::builtin_flag__const));
+  // EXPECT_TRUE(contains_flag2(*decl->clause->declarators[0]->declarator, jdi::builtin_flag__const));
 }
 
 TEST(ParserTest, Declaration_NoSemicolon) {
@@ -426,20 +426,20 @@ TEST(ParserTest, Declarations) {
 
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  if (decls->type->As<AST::TypeSpecifierSeq>()->def) EXPECT_EQ(decls->type->As<AST::TypeSpecifierSeq>()->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  if (decls->clause->specifiers->def) EXPECT_EQ(decls->clause->specifiers->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
 
-  EXPECT_EQ(decls->declarations.size(), 3);
-  EXPECT_NE(decls->declarations[0]->init, nullptr);
-  if (decls->declarations[0]->declarator->def) EXPECT_EQ(decls->declarations[0]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->declarations[0]->declarator->decl.components.begin()->kind, DeclaratorNode::Kind::POINTER_TO);
+  EXPECT_EQ(decls->clause->declarators.size(), 3);
+  EXPECT_NE(decls->clause->declarators[0]->init, nullptr);
+  if (decls->clause->declarators[0]->declarator->def) EXPECT_EQ(decls->clause->declarators[0]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  EXPECT_EQ(decls->clause->declarators[0]->declarator->decl.components.begin()->kind, DeclaratorNode::Kind::POINTER_TO);
 
-  EXPECT_EQ(decls->declarations[1]->init, nullptr);
-  if (decls->declarations[1]->declarator->def) EXPECT_EQ(decls->declarations[1]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->declarations[1]->declarator->decl.components.size(), 0);
+  EXPECT_EQ(decls->clause->declarators[1]->init, nullptr);
+  if (decls->clause->declarators[1]->declarator->def) EXPECT_EQ(decls->clause->declarators[1]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  EXPECT_EQ(decls->clause->declarators[1]->declarator->decl.components.size(), 0);
 
-  EXPECT_NE(decls->declarations[2]->init, nullptr);
-  if (decls->declarations[2]->declarator->def) EXPECT_EQ(decls->declarations[2]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->declarations[2]->declarator->decl.components.size(), 1);
+  EXPECT_NE(decls->clause->declarators[2]->init, nullptr);
+  if (decls->clause->declarators[2]->declarator->def) EXPECT_EQ(decls->clause->declarators[2]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  EXPECT_EQ(decls->clause->declarators[2]->declarator->decl.components.size(), 1);
 }
 
 TEST(ParserTest, Declarations_NoSemicolon) {
@@ -451,20 +451,20 @@ TEST(ParserTest, Declarations_NoSemicolon) {
 
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decls = node->As<AST::DeclarationStatement>();
-  if (decls->type->As<AST::TypeSpecifierSeq>()->def) EXPECT_EQ(decls->type->As<AST::TypeSpecifierSeq>()->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  if (decls->clause->specifiers->def) EXPECT_EQ(decls->clause->specifiers->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
 
-  EXPECT_EQ(decls->declarations.size(), 3);
-  EXPECT_NE(decls->declarations[0]->init, nullptr);
-  if (decls->declarations[0]->declarator->def) EXPECT_EQ(decls->declarations[0]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->declarations[0]->declarator->decl.components.begin()->kind, DeclaratorNode::Kind::POINTER_TO);
+  EXPECT_EQ(decls->clause->declarators.size(), 3);
+  EXPECT_NE(decls->clause->declarators[0]->init, nullptr);
+  if (decls->clause->declarators[0]->declarator->def) EXPECT_EQ(decls->clause->declarators[0]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  EXPECT_EQ(decls->clause->declarators[0]->declarator->decl.components.begin()->kind, DeclaratorNode::Kind::POINTER_TO);
 
-  EXPECT_EQ(decls->declarations[1]->init, nullptr);
-  if (decls->declarations[1]->declarator->def) EXPECT_EQ(decls->declarations[1]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->declarations[1]->declarator->decl.components.size(), 0);
+  EXPECT_EQ(decls->clause->declarators[1]->init, nullptr);
+  if (decls->clause->declarators[1]->declarator->def) EXPECT_EQ(decls->clause->declarators[1]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  EXPECT_EQ(decls->clause->declarators[1]->declarator->decl.components.size(), 0);
 
-  EXPECT_NE(decls->declarations[2]->init, nullptr);
-  if (decls->declarations[2]->declarator->def) EXPECT_EQ(decls->declarations[2]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->declarations[2]->declarator->decl.components.size(), 1);
+  EXPECT_NE(decls->clause->declarators[2]->init, nullptr);
+  if (decls->clause->declarators[2]->declarator->def) EXPECT_EQ(decls->clause->declarators[2]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  EXPECT_EQ(decls->clause->declarators[2]->declarator->decl.components.size(), 1);
 }
 
 // New-expression placement args (the parenthesised `(expr...)` between
@@ -1482,9 +1482,9 @@ TEST(ParserTest, TemporaryInitialization_2) {
 
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decl = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decl->declarations.size(), 1);
-  ASSERT_EQ(decl->type->As<AST::TypeSpecifierSeq>()->def, jdi::builtin_type__int);
-  auto *decl1 = decl->declarations[0].get();
+  ASSERT_EQ(decl->clause->declarators.size(), 1);
+  ASSERT_EQ(decl->clause->specifiers->def, jdi::builtin_type__int);
+  auto *decl1 = decl->clause->declarators[0].get();
   ASSERT_EQ(decl1->declarator->def, jdi::builtin_type__int);
   ASSERT_EQ(decl1->declarator->flags, 0);
 
