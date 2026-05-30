@@ -154,11 +154,14 @@ TEST(ParserTest, SizeofType) {
 
   ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
   auto *sizeof_exp = expr->As<AST::SizeofExpression>();
-  // Type form: argument is a TypeSpecifierSeq PNode; reach its cached FullType for
-  // the flag/def checks the old variant-typed shape exposed directly.
+  // Type form: argument is a DeclaratorClause (type-specifier-seq + declarator).
+  // Flags live on the spec-seq's cached FullType; the `**(*)[10]` declarator is
+  // an expression tree on the clause's lone (abstract) declarator.
   ASSERT_NE(sizeof_exp->argument, nullptr);
-  ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::TYPE_SPECIFIER_SEQ);
-  auto &value = sizeof_exp->argument->As<AST::TypeSpecifierSeq>()->type_info;
+  ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::DECLARATOR_CLAUSE);
+  auto *clause = sizeof_exp->argument->As<AST::DeclaratorClause>();
+  ASSERT_NE(clause->specifiers, nullptr);
+  auto &value = clause->specifiers->type_info;
   ASSERT_TRUE((value.flags & jdi::builtin_flag__const->mask) == jdi::builtin_flag__const->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__volatile->mask) == jdi::builtin_flag__volatile->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__unsigned->mask) == jdi::builtin_flag__unsigned->value);
@@ -169,14 +172,12 @@ TEST(ParserTest, SizeofType) {
     ASSERT_EQ(value.def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
     ASSERT_EQ(value.def->name, "int");
   }
-  ASSERT_EQ(value.decl.components.size(), 3);
-  // jdi::ref_stack stack;
-  //   value.decl.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
+  ASSERT_EQ(clause->declarators.size(), 1);
+  auto *decl_expr = clause->declarators[0]->declarator_expr.get();
+  ASSERT_NE(decl_expr, nullptr);
+  // `**(*)[10]`: outermost operator is the leading pointer `*`.
+  ASSERT_EQ(decl_expr->type, AST::NodeType::UNARY_PREFIX_EXPRESSION);
+  ASSERT_EQ(decl_expr->As<AST::UnaryPrefixExpression>()->operation.type, TT_STAR);
 }
 
 TEST(ParserTest, AlignofType) {
@@ -185,7 +186,10 @@ TEST(ParserTest, AlignofType) {
 
   ASSERT_EQ(expr->type, AST::NodeType::ALIGNOF);
   auto *alignof_exp = expr->As<AST::AlignofExpression>();
-  auto &value = alignof_exp->type->As<AST::TypeSpecifierSeq>()->type_info;
+  ASSERT_EQ(alignof_exp->type->type, AST::NodeType::DECLARATOR_CLAUSE);
+  auto *clause = alignof_exp->type->As<AST::DeclaratorClause>();
+  ASSERT_NE(clause->specifiers, nullptr);
+  auto &value = clause->specifiers->type_info;
   ASSERT_TRUE((value.flags & jdi::builtin_flag__const->mask) == jdi::builtin_flag__const->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__volatile->mask) == jdi::builtin_flag__volatile->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__unsigned->mask) == jdi::builtin_flag__unsigned->value);
@@ -194,10 +198,12 @@ TEST(ParserTest, AlignofType) {
     ASSERT_EQ(value.def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
     ASSERT_EQ(value.def->name, "int");
   }
-  ASSERT_EQ(value.decl.components.size(), 1);
-  // TODO: Fix after jdi::ref_stack is restored
-  // jdi::ref_stack stack;
-  //   // value.decl.to_jdi_refstack(stack);
+  ASSERT_EQ(clause->declarators.size(), 1);
+  auto *decl_expr = clause->declarators[0]->declarator_expr.get();
+  ASSERT_NE(decl_expr, nullptr);
+  // `*`: a single pointer abstract declarator.
+  ASSERT_EQ(decl_expr->type, AST::NodeType::UNARY_PREFIX_EXPRESSION);
+  ASSERT_EQ(decl_expr->As<AST::UnaryPrefixExpression>()->operation.type, TT_STAR);
 }
 
 bool contains_flag(FullType *ft, std::size_t decflag) { return (ft->flags & decflag) == decflag; }

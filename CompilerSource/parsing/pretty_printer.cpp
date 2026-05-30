@@ -481,6 +481,23 @@ bool AST::CppPrettyPrinter::VisitTypeSpecifierSeq(AST::TypeSpecifierSeq &node) {
   return true;
 }
 
+bool AST::CppPrettyPrinter::VisitDeclaratorClause(AST::DeclaratorClause &node) {
+  // type-specifier-seq, then each declarator as an expression tree. An abstract
+  // declarator's tree bottoms out in an empty-name leaf, which prints as
+  // nothing, so a bare type-id (`int`) renders just its specifiers.
+  if (node.specifiers && !node.specifiers->accept(*this)) return false;
+  for (std::size_t i = 0; i < node.declarators.size(); ++i) {
+    if (i > 0) print(",");
+    auto &decl = *node.declarators[i];
+    if (decl.declarator_expr) {
+      print(" ");
+      if (!decl.declarator_expr->accept(*this)) return false;
+    }
+    if (decl.init && !decl.init->accept(*this)) return false;
+  }
+  return true;
+}
+
 bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
   // Functional casts now live in Initializer (with a TypeSpecifierSeq target); not handled here.
   if (node.kind == AST::CastExpression::Kind::C_STYLE) {

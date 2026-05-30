@@ -55,7 +55,8 @@ class AST {
     PARENTHETICAL, ARRAY,
     IDENTIFIER, SCOPE_ACCESS, LITERAL, FUNCTION_CALL,
     IF, FOR, WHILE, DO, WITH, REPEAT, SWITCH, CASE, DEFAULT,
-    BREAK, CONTINUE, RETURN, DECLARATION, INIT_DECLARATOR, INITIALIZER
+    BREAK, CONTINUE, RETURN, DECLARATION, INIT_DECLARATOR, INITIALIZER,
+    DECLARATOR_CLAUSE
   };
 
   struct Node;
@@ -588,6 +589,27 @@ class AST {
       declarator_expr{std::move(declarator_expr_)}, init{std::move(init)} {}
   };
 
+  // A type-specifier-seq paired with its declarator(s): the unified shape that
+  // can sit in expression position (cast/sizeof/alignof/new targets, and later
+  // function-params/arrow-fns/tuples) as well as back a DeclarationStatement.
+  // `declarators` holds a single (possibly abstract) InitDeclarator for a lone
+  // type-id, or several for an init-declarator-list. An abstract declarator is
+  // an InitDeclarator whose declarator_expr bottoms out in an empty-name leaf
+  // (see make_abstract_operand in the parser). Context-illegal combinations
+  // (e.g. a name or initializer inside a sizeof type-id) are left for the
+  // semantic phase to reject, not screened out here -- the parser stays
+  // context-free, per the types-as-trees rule.
+  struct DeclaratorClause : TypedNode<NodeType::DECLARATOR_CLAUSE> {
+    std::unique_ptr<TypeSpecifierSeq> specifiers;
+    std::vector<std::unique_ptr<InitDeclarator>> declarators;
+
+    BASIC_NODE_ROUTINES(DeclaratorClause);
+
+    DeclaratorClause(std::unique_ptr<TypeSpecifierSeq> specifiers_,
+                     std::vector<std::unique_ptr<InitDeclarator>> declarators_):
+        specifiers(std::move(specifiers_)), declarators(std::move(declarators_)) {}
+  };
+
   struct DeclarationStatement: TypedNode<NodeType::DECLARATION> {
     enum class StorageClass {
       TEMPORARY,
@@ -648,6 +670,7 @@ class AST {
     virtual bool VisitDeleteExpression(DeleteExpression &node){ return DefaultVisit(node); }
     virtual bool VisitDeclarationStatement(DeclarationStatement &node){ return DefaultVisit(node); }
     virtual bool VisitInitDeclarator(InitDeclarator &node){ return DefaultVisit(node); }
+    virtual bool VisitDeclaratorClause(DeclaratorClause &node){ return DefaultVisit(node); }
     virtual bool Visit(PNode &node) {
       return node->accept(*this);
     }
@@ -701,6 +724,7 @@ class AST {
     bool VisitDeleteExpression(DeleteExpression &node);
     bool VisitDeclarationStatement(DeclarationStatement &node);
     bool VisitInitDeclarator(InitDeclarator &node);
+    bool VisitDeclaratorClause(DeclaratorClause &node);
   };
 
   // Used to adapt to current single-error syntax checking interface.

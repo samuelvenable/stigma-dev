@@ -242,6 +242,9 @@ void AST::InitDeclarator::RecursiveSubVisit(Visitor &visitor) {
   // declarator parser emits it).
   RV(visitor, declarator_expr, init);
 }
+void AST::DeclaratorClause::RecursiveSubVisit(Visitor &visitor) {
+  RV(visitor, specifiers, declarators);
+}
 
 const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
     ERROR,
@@ -278,7 +281,8 @@ const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
     RETURN,
     DECLARATION,
     INIT_DECLARATOR,
-    INITIALIZER);
+    INITIALIZER,
+    DECLARATOR_CLAUSE);
 
 const std::vector<std::string> AST::DeclarationStatement::StorageNames =
     ENUM_NAME_VECTOR(StorageClass, TEMPORARY, LOCAL, GLOBAL);

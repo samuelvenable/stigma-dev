@@ -1101,6 +1101,35 @@ std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
   return result;
 }
 
+// Parse a full type-id (type-specifier-seq + abstract-declarator) into a
+// DeclaratorClause. The declarator is parsed through the unified expression
+// path with allow_abstract_operand_ set, so a missing operand -- bare `int`,
+// `int *`, `int **(*)[10]`, ... -- becomes an abstract-declarator leaf instead
+// of an error. This is the first setter of the abstract-operand mechanism.
+// Used at type-id-demanding sites bounded by `)` / `>` (sizeof/alignof so far).
+// The lone InitDeclarator carries the declarator tree in declarator_expr; its
+// name/init stay empty for a type-id. NB: postfix-only abstract declarators
+// with no grouping (`int[10]`, `int(args)`) aren't covered yet -- the abstract
+// leaf only fires at `) ] , ; > EOF`, not before a leading `[`/`(`.
+//
+// Parse*, never returns null: TryParseTypeID always builds a TypeSpecifierSeq
+// (despite the Try* name -- it's misnamed at the call site), and ParseExpression
+// only yields null on genuine malformed input, in which case the inner call has
+// already reported the error on herr.
+std::unique_ptr<AST::DeclaratorClause> ParseTypeIdClause() {
+  auto specifiers = TryParseTypeID();
+  AST::PNode declarator_expr;
+  {
+    ScopedFlag allow_abstract(allow_abstract_operand_, true);
+    declarator_expr = ParseExpression(Precedence::kAll);
+  }
+  std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
+  auto decl = std::make_unique<AST::InitDeclarator>();
+  decl->declarator_expr = std::move(declarator_expr);
+  declarators.push_back(std::move(decl));
+  return std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
+}
+
 void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs) {
   switch (token.type) {
     case TT_TYPEDEF: {
@@ -1615,7 +1644,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       token = lexer->ReadToken();
       if (token.type == TT_BEGINPARENTH) {
         token = lexer->ReadToken();
-        auto type_node = TryParseTypeID();
+        auto type_node = ParseTypeIdClause();
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after sizeof-expression");
         return std::make_unique<AST::SizeofExpression>(std::move(type_node));
       } else if (token.type == TT_ELLIPSES) {
@@ -1639,7 +1668,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_ALIGNOF: {
       token = lexer->ReadToken();
       if (require_token(TT_BEGINPARENTH, "Expected opening parenthesis ('(') after 'alignof'")) {
-        auto type_node = TryParseTypeID();
+        auto type_node = ParseTypeIdClause();
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after alignof-expression");
         return std::make_unique<AST::AlignofExpression>(std::move(type_node));
       } else {
