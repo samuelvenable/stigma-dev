@@ -112,11 +112,15 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
     return false;
   }
 
-  // cast->type is a PNode wrapping the AST::TypeSpecifierSeq; type_info is the cached
-  // FullType (JDI-bridge form) populated by the parser.
-  auto *typeid_node = cast->type ? cast->type->template As<AST::TypeSpecifierSeq>() : nullptr;
+  // cast->type is a PNode wrapping a DeclaratorClause; the cast's type is its
+  // `specifiers` (a TypeSpecifierSeq). type_info is the cached FullType
+  // (JDI-bridge form) populated by the parser. The clause's abstract declarator
+  // (the `*`/`&`/`[]` chain, empty for these simple-type cast tests) isn't
+  // checked here.
+  auto *clause = cast->type ? cast->type->template As<AST::DeclaratorClause>() : nullptr;
+  auto *typeid_node = clause ? clause->specifiers.get() : nullptr;
   if (!typeid_node) {
-    ExpectedMsg += "From IsCast Matcher: cast->type is a TypeSpecifierSeq\n";
+    ExpectedMsg += "From IsCast Matcher: cast->type is a DeclaratorClause with specifiers\n";
     *result_listener << "got cast->type = "
                      << (cast->type ? AST::NodeToString(cast->type->type) : std::string{"nullptr"}) << "\n";
     return false;

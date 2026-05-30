@@ -1107,11 +1107,19 @@ std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
 // path with allow_abstract_operand_ set, so a missing operand -- bare `int`,
 // `int *`, `int **(*)[10]`, ... -- becomes an abstract-declarator leaf instead
 // of an error. This is the first setter of the abstract-operand mechanism.
-// Used at type-id-demanding sites bounded by `)` / `>` (sizeof/alignof so far).
-// The lone InitDeclarator carries the declarator tree in declarator_expr; its
-// name/init stay empty for a type-id. NB: postfix-only abstract declarators
-// with no grouping (`int[10]`, `int(args)`) aren't covered yet -- the abstract
-// leaf only fires at `) ] , ; > EOF`, not before a leading `[`/`(`.
+// Used at type-id-demanding sites bounded by `)` / `>` (sizeof/alignof, and
+// C-style + named cast targets). The lone InitDeclarator carries the declarator
+// tree in declarator_expr; its name/init stay empty for a type-id. NB:
+// postfix-only abstract declarators with no grouping (`int[10]`, `int(args)`)
+// aren't covered yet -- the abstract leaf only fires at `) ] , ; > EOF`, not
+// before a leading `[`/`(`.
+//
+// The declarator is parsed at kUnaryPrefix, not kAll: a single type-id's
+// declarator is built solely from prefix `* &` and the postfix `[] ()` that
+// bind tighter, never a top-level binary or comma operator. Parsing at kAll
+// would wrongly let the binary loop consume a trailing `>` (as greater-than)
+// when this is a named-cast target -- kUnaryPrefix stops before any binary
+// operator, so the `>` is left for the caller's require_token to close.
 //
 // Parse*, never returns null: TryParseTypeID always builds a TypeSpecifierSeq
 // (despite the Try* name -- it's misnamed at the call site), and ParseExpression
@@ -1122,7 +1130,7 @@ std::unique_ptr<AST::DeclaratorClause> ParseTypeIdClause() {
   AST::PNode declarator_expr;
   {
     ScopedFlag allow_abstract(allow_abstract_operand_, true);
-    declarator_expr = ParseExpression(Precedence::kAll);
+    declarator_expr = ParseExpression(Precedence::kUnaryPrefix);
   }
   std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
   auto decl = std::make_unique<AST::InitDeclarator>();
@@ -1608,7 +1616,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       auto paren = token;
       token = lexer->ReadToken();
       if (next_is_type_specifier()) {
-        auto type_node = TryParseTypeID();
+        auto type_node = ParseTypeIdClause();
         require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
         auto expr = ParseExpression(Precedence::kUnaryPrefix);
         return std::make_unique<AST::CastExpression>(
@@ -1706,7 +1714,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       Token oper = token;
       token = lexer->ReadToken();
       require_token(TT_LESS, "Expected '<' after '", oper.content, "'");
-      auto type_node = TryParseTypeID();
+      auto type_node = ParseTypeIdClause();
       require_token(TT_GREATER, "Expected '>' after '", oper.content, "' type");
       require_token(TT_BEGINPARENTH, "Expected '(' before '", oper.content, "' expression");
       auto expr = ParseExpression(Precedence::kAll);
@@ -2310,7 +2318,14 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       return ParseExpression(Precedence::kAll, std::move(call));
     } else if (token.type == TT_ENDPARENTH && maybe_c_style_cast) {
       token = lexer->ReadToken();
-      auto type_node = std::make_unique<AST::TypeSpecifierSeq>(nullptr, std::move(type));
+      // The spec-seq was consumed up-front and the `)` proves there's no
+      // declarator, so wrap it in a DeclaratorClause with a single abstract
+      // (declarator-less) init-declarator -- keeping cast->type uniformly a
+      // DeclaratorClause, same as the operand-level C-style and named casts.
+      auto specifiers = std::make_unique<AST::TypeSpecifierSeq>(nullptr, std::move(type));
+      std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
+      declarators.push_back(std::make_unique<AST::InitDeclarator>());
+      auto type_node = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
       return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::C_STYLE, token, std::move(type_node),
                                                    ParseExpression(Precedence::kAll));
     } else {

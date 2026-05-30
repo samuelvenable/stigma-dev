@@ -1443,11 +1443,11 @@ TEST(ParserTest, TemporaryInitialization_1) {
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
   // ASSERT_EQ(cast->kind, AST::CastExpression::Kind::FUNCTIONAL);  // FUNCTIONAL removed
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.flags, 0);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.components.size(), 0);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.name.content, "");
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.has_nested_declarator, false);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.flags, 0);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.components.size(), 0);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.name.content, "");
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.has_nested_declarator, false);
 
   ASSERT_EQ(cast->expr->type, AST::NodeType::BINARY_EXPRESSION);
   auto *binary = cast->expr->As<AST::BinaryExpression>();
@@ -1523,11 +1523,11 @@ TEST(ParserTest, TemporaryInitialization_3) {
 
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.flags, 0);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.components.size(), 0);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.name.content, "");
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.has_nested_declarator, false);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.flags, 0);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.components.size(), 0);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.name.content, "");
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.has_nested_declarator, false);
 
   ASSERT_EQ(cast->expr->type, AST::NodeType::BINARY_EXPRESSION);
   auto *binary = cast->expr->As<AST::BinaryExpression>();
@@ -1569,11 +1569,11 @@ TEST(ParserTest, TemporaryInitialization_4) {
 
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.flags, 0);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.components.size(), 0);
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.name.content, "");
-  ASSERT_EQ(cast->type->As<AST::TypeSpecifierSeq>()->type_info.decl.has_nested_declarator, false);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.flags, 0);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.components.size(), 0);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.name.content, "");
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.has_nested_declarator, false);
 
   // ASSERT_EQ(cast->kind, AST::CastExpression::Kind::FUNCTIONAL);  // FUNCTIONAL removed
   ASSERT_EQ(cast->expr->type, AST::NodeType::UNARY_PREFIX_EXPRESSION);
