@@ -158,7 +158,7 @@ std::string directory_get_special_path(int dtype) {
               if (!directory_exists(str)) {
                 directory_create(str);
               }
-              result = filename_addslash(filename_absolute(result));
+              result = filename_addslash(filename_absolute(str));
             }
             pclose(fp);
           }
