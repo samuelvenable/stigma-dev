@@ -657,12 +657,15 @@ std::unique_ptr<AST::Node> TryParseIdExpression() {
     return nullptr;
   } else if (map_contains(declarations, decl.name.content)) {
     return std::make_unique<AST::IdentifierAccess>(declarations[decl.name.content], decl.name);
-  } else {
-    if (def == nullptr) {
-      herr->Error(token) << "The name `" << decl.name.content << "` was not found";
-      return nullptr;
-    }
+  } else if (def != nullptr) {
     return std::make_unique<AST::IdentifierAccess>(def, decl.name);
+  } else {
+    // Unresolved identifier. Per types-as-trees, the parser does not resolve
+    // names: an identifier matching neither a JDI definition nor a locally
+    // declared name is emitted as an unresolved IdentifierAccess (CPP kind,
+    // empty type) for the semantic phase to bind. EDL further permits
+    // implicitly-declared variables, so an unknown name is not a parse error.
+    return std::make_unique<AST::IdentifierAccess>(decl.name);
   }
 }
 
