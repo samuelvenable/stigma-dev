@@ -65,7 +65,7 @@ namespace exepath {
         }
         CloseHandle(hFile);
       }
-      wcsncpy_s(resolved_path, result.c_str(), (sizeof(resolved_path) / sizeof(resolved_path[0])));
+      wcsncpy_s(resolved_path, MAX_PATH, result.c_str(), MAX_PATH);
       return (wchar_t *)resolved_path;
     };
     auto narrow = [](std::wstring wstr) {
