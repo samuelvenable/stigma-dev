@@ -153,15 +153,7 @@ bool AST::CppPrettyPrinter::VisitUnaryPostfixExpression(AST::UnaryPostfixExpress
 
 bool AST::CppPrettyPrinter::VisitUnaryPrefixExpression(AST::UnaryPrefixExpression &node) {
   print(node.operation.token);
-  if (node.operation.type == TT_STAR && node.operand->type != AST::NodeType::PARENTHETICAL) {
-    print("(");
-  }
-
   VISIT_AND_CHECK(node.operand);
-
-  if (node.operation.type == TT_STAR && node.operand->type != AST::NodeType::PARENTHETICAL) {
-    print(")");
-  }
   return true;
 }
 
