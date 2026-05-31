@@ -1,5 +1,5 @@
 SHARED_SRC_DIR := ../../shared
-SOURCES += $(SHARED_SRC_DIR)/__getexecname/internal.cpp
+SOURCES += $(SHARED_SRC_DIR)/exepath/exepath.cpp
 ifeq ($(TARGET-PLATFORM), Android)
 	override CXXFLAGS += -IPlatforms/SDL/fileio
 	override CFLAGS += -IPlatforms/SDL/fileio
