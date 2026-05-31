@@ -430,11 +430,26 @@ bool AST::CppPrettyPrinter::VisitFullType(FullType &ft, bool print_type) {
 }
 
 bool AST::CppPrettyPrinter::VisitSizeofExpression(AST::SizeofExpression &node) {
-  print("sizeof(");
-  if (node.argument) {
-    VISIT_AND_CHECK(node.argument);
+  // `sizeof expr` takes no parens; `sizeof(type)` and `sizeof...(pack)` require
+  // them. A redundantly-parenthesised operand (`sizeof(x)`) round-trips via the
+  // operand's own Parenthetical node, so EXPR never synthesises parens.
+  print("sizeof");
+  switch (node.kind) {
+    case AST::SizeofExpression::Kind::EXPR:
+      print(" ");
+      if (node.argument) VISIT_AND_CHECK(node.argument);
+      break;
+    case AST::SizeofExpression::Kind::VARIADIC:
+      print("...(");
+      if (node.argument) VISIT_AND_CHECK(node.argument);
+      print(")");
+      break;
+    case AST::SizeofExpression::Kind::TYPE:
+      print("(");
+      if (node.argument) VISIT_AND_CHECK(node.argument);
+      print(")");
+      break;
   }
-  print(")");
   return true;
 }
 

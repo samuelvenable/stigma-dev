@@ -1660,7 +1660,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
         token = lexer->ReadToken();
         auto type_node = ParseTypeIdClause();
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after sizeof-expression");
-        return std::make_unique<AST::SizeofExpression>(std::move(type_node));
+        return std::make_unique<AST::SizeofExpression>(AST::SizeofExpression::Kind::TYPE, std::move(type_node));
       } else if (token.type == TT_ELLIPSES) {
         token = lexer->ReadToken();
         require_token(TT_BEGINPARENTH, "Expected opening '(' after 'sizeof ...'");
@@ -1669,7 +1669,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
           require_token(TT_ENDPARENTH, "Expected closing ')' after variadic sizeof");
           // TODO: model pack-expansion explicitly; for now drop into an IdentifierAccess.
           return std::make_unique<AST::SizeofExpression>(
-              std::make_unique<AST::IdentifierAccess>(arg));
+              AST::SizeofExpression::Kind::VARIADIC, std::make_unique<AST::IdentifierAccess>(arg));
         } else {
           return nullptr;
         }

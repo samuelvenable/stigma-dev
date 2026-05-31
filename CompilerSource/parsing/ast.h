@@ -313,6 +313,7 @@ class AST {
     BASIC_NODE_ROUTINES(SizeofExpression);
 
     explicit SizeofExpression(PNode arg): kind{Kind::EXPR}, argument{std::move(arg)} {}
+    SizeofExpression(Kind k, PNode arg): kind{k}, argument{std::move(arg)} {}
   };
 
   // Alignof expression
