@@ -30,6 +30,7 @@ SOFTWARE.
 #include <vector>
 #include <cwchar>
 #include <cstddef>
+#include <cstring>
 #include <cstdlib>
 #include <windef.h>
 #include <fileapi.h>
@@ -53,7 +54,7 @@ SOFTWARE.
 #if (defined(TARGET_OS_OSX) && TARGET_OS_OSX)
 #include <libproc.h>
 #endif
-#elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__GNU__) || defined(__gnu_hurd__)) || defined(__CYGWIN__))
+#elif ((defined(__linux__) || defined(__ANDROID__)) || ((defined(__GNU__) || defined(__gnu_hurd__)) && defined(__MACH__)) || defined(__CYGWIN__))
 #include <climits>
 #include <cstdlib>
 #include <unistd.h>
@@ -111,14 +112,14 @@ const char *__getbasepath(long long pid) {
   }
   #if (defined(_WIN32) || defined(_WIN64))
   DWORD processid = (DWORD)pid;
-  auto resolve_symbolic_links = [](std::wstring wstr) {
+  auto _wrealpath = [](const wchar_t *path, wchar_t *resolved_path) {
     std::wstring result;
-    wchar_t path[MAX_PATH];
-    HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (!resolved_path) resolved_path = (wchar_t *)malloc(MAX_PATH);
+    HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (hFile != INVALID_HANDLE_VALUE) {
-      DWORD len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+      DWORD len = GetFinalPathNameByHandleW(hFile, resolved_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
       if (len) {
-        result = path;
+        result = resolved_path;
         if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
           result = L"\\" + result.substr(7);
         } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
@@ -127,7 +128,8 @@ const char *__getbasepath(long long pid) {
       }
       CloseHandle(hFile);
     }
-    return result;
+    wcsncpy_s(resolved_path, MAX_PATH, result.c_str(), MAX_PATH);
+    return (wchar_t *)resolved_path;
   };
   auto narrow = [](std::wstring wstr) {
     if (wstr.empty()) return std::string("");
@@ -162,8 +164,10 @@ const char *__getbasepath(long long pid) {
   if (pid == -1 || processid == GetCurrentProcessId()) {
     wchar_t buffer[MAX_PATH];
     if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
-      std::wstring exe = resolve_symbolic_links(buffer);
-      path = narrow(exe);
+      wchar_t exe[MAX_PATH];
+      if (_wrealpath(buffer, exe)) {
+        path = narrow(exe);
+      }
     }
   } else {
     HANDLE process = open_process_with_debug_privilege(processid);
@@ -173,8 +177,10 @@ const char *__getbasepath(long long pid) {
     wchar_t buffer[MAX_PATH];
     DWORD size = sizeof(buffer);
     if (QueryFullProcessImageNameW(process, 0, buffer, &size)) {
-      std::wstring exe = resolve_symbolic_links(buffer);
-      path = narrow(exe);
+      wchar_t exe[MAX_PATH];
+      if (_wrealpath(buffer, exe)) {
+        path = narrow(exe);
+      }
     }
     CloseHandle(process);
   }
@@ -200,7 +206,7 @@ const char *__getbasepath(long long pid) {
     }
   #endif
   }
-  #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__GNU__) || defined(__gnu_hurd__)) || defined(__CYGWIN__))
+  #elif ((defined(__linux__) || defined(__ANDROID__)) || ((defined(__GNU__) || defined(__gnu_hurd__)) && defined(__MACH__)) || defined(__CYGWIN__))
   pid_t processid = (pid_t)pid;
   char exe[PATH_MAX];
   if (processid == -1 || processid == getpid()) {
