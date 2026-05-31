@@ -128,6 +128,7 @@ TEST(ParserTest, SizeofExpression) {
 
   ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
   auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::EXPR);
   // argument is now always a PNode; expression form wraps a Literal here.
   ASSERT_NE(sizeof_exp->argument, nullptr);
   ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::LITERAL);
@@ -141,6 +142,7 @@ TEST(ParserTest, SizeofVariadic) {
 
   ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
   auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::VARIADIC);
   // Variadic-sizeof drops into an IdentifierAccess wrapping the pack name; see
   // parser.cpp ~1685 (TODO: model pack-expansion explicitly).
   ASSERT_NE(sizeof_exp->argument, nullptr);
@@ -154,6 +156,7 @@ TEST(ParserTest, SizeofType) {
 
   ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
   auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::TYPE);
   // Type form: argument is a DeclaratorClause (type-specifier-seq + declarator).
   // Flags live on the spec-seq's cached FullType; the `**(*)[10]` declarator is
   // an expression tree on the clause's lone (abstract) declarator.
@@ -178,6 +181,71 @@ TEST(ParserTest, SizeofType) {
   // `**(*)[10]`: outermost operator is the leading pointer `*`.
   ASSERT_EQ(decl_expr->type, AST::NodeType::UNARY_PREFIX_EXPRESSION);
   ASSERT_EQ(decl_expr->As<AST::UnaryPrefixExpression>()->operation.type, TT_STAR);
+}
+
+// `sizeof(int)`: simplest type form -- a single builtin type-specifier, abstract
+// (no declarator). Kind is TYPE; the operand is a DeclaratorClause carrying just
+// the spec-seq.
+TEST(ParserTest, SizeofTypeBuiltin) {
+  ParserTester test = ParserTester::CreateWithSetUp("sizeof(int)");
+  auto expr = test->TryParseStatement();
+
+  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
+  auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::TYPE);
+  ASSERT_NE(sizeof_exp->argument, nullptr);
+  ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::DECLARATOR_CLAUSE);
+  auto *clause = sizeof_exp->argument->As<AST::DeclaratorClause>();
+  ASSERT_NE(clause->specifiers, nullptr);
+  // Abstract type-id: no declarators, or a single empty-name (abstract) one.
+  if (!clause->declarators.empty()) {
+    ASSERT_EQ(clause->declarators.size(), 1u);
+  }
+}
+
+// Multiple type-specifiers in source order (`long unsigned const`) fold into the
+// spec-seq's cached flags. Order shouldn't matter to the flag set.
+TEST(ParserTest, SizeofTypeSpecifierSeq) {
+  ParserTester test = ParserTester::CreateWithSetUp("sizeof(long unsigned const)");
+  auto expr = test->TryParseStatement();
+
+  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
+  auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::TYPE);
+  ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::DECLARATOR_CLAUSE);
+  auto &value = sizeof_exp->argument->As<AST::DeclaratorClause>()->specifiers->type_info;
+  ASSERT_TRUE((value.flags & jdi::builtin_flag__long->mask) == jdi::builtin_flag__long->value);
+  ASSERT_TRUE((value.flags & jdi::builtin_flag__unsigned->mask) == jdi::builtin_flag__unsigned->value);
+  ASSERT_TRUE((value.flags & jdi::builtin_flag__const->mask) == jdi::builtin_flag__const->value);
+}
+
+// `sizeof(local_var)` -- a parenthesised *value*, not a type. Per types-as-trees,
+// the parser does NOT distinguish this from `sizeof(type)`: anything parenthesised
+// after `sizeof` is parsed as a type-id-shaped tree (Kind::TYPE, a DeclaratorClause
+// whose "type-specifier" is the unresolved name) and the value-vs-type decision is
+// deferred to the semantic phase. The name need not resolve here (see f3e2f144a).
+TEST(ParserTest, SizeofParenthesizedName) {
+  ParserTester test = ParserTester::CreateWithSetUp("sizeof(local_var)");
+  auto expr = test->TryParseStatement();
+
+  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
+  auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::TYPE);
+  ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::DECLARATOR_CLAUSE);
+}
+
+// DISABLED: `sizeof` of a template-id. Two gaps compound here: (1) the parser has
+// no template-id production, so `<` lexes as less-than and the operand collapses
+// to a BinaryExpression; (2) even the name `std::map` doesn't resolve (JDI has no
+// headers in this harness). Asserts the intended shape so it can flip green once
+// template-ids are supported. Re-enable by dropping the DISABLED_ prefix.
+TEST(ParserTest, DISABLED_SizeofTemplateType) {
+  ParserTester test = ParserTester::CreateWithSetUp("sizeof(std::map<int, variant>)");
+  auto expr = test->TryParseStatement();
+
+  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
+  auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::TYPE);
 }
 
 TEST(ParserTest, AlignofType) {
