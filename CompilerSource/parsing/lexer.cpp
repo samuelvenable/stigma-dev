@@ -451,6 +451,17 @@ Token Lexer::ReadRawToken() {
       }
     }
 
+    case '.': {
+      // A dot starts a fractional literal (`.5`) only when a digit follows.
+      // Otherwise it's the member-access / pointer-to-member / ellipsis
+      // operator, resolved by the operator trie below.
+      if (pos < code.length() && is_digit(code[pos])) {
+        while (pos < code.length() && is_digit(code[pos])) ++pos;
+        return Token(TT_DECLITERAL, Mark(spos, pos - spos));
+      }
+      break;
+    }
+
     case '0': {
       if (pos >= code.length())
         return Token(TT_DECLITERAL, Mark(spos, pos - spos));
