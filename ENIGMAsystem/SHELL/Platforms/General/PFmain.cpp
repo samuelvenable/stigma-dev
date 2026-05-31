@@ -137,7 +137,7 @@ std::string directory_get_special_path(int dtype) {
     default: { fid = "XDG_DESKTOP_DIR=";     break; }
   }
   if (filename_absolute(environment_get_variable("HOME")).empty()) return result;
-  std::string conf = filename_addslash(environment_get_variable("HOME")) + ".config/user-dirs.dirs";
+  std::string conf = filename_addslash(filename_absolute(environment_get_variable("HOME"))) + ".config/user-dirs.dirs";
   if (file_exists(conf)) {
     int dirs = file_text_open_read(conf);
     if (dirs != -1) {
