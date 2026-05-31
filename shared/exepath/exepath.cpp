@@ -15,7 +15,7 @@
 *** with this code. If not, see <http://www.gnu.org/licenses/>
 **/
 
-#include "exepath.h"
+#include "exepath.hpp"
 #if (defined(_WIN32) || defined(_WIN64))
 #include <vector>
 #include <cwchar>
