@@ -60,25 +60,19 @@ namespace enigma
 
     struct object_basic
     {
-      static constexpr unsigned char objtype = 0xAA;
-
       const unsigned id;
       const int object_index;
 
       virtual void unlink();
       virtual void deactivate();
       virtual void activate();
-      virtual ::variant myevent_create();
-      virtual ::variant myevent_gamestart();
-      virtual ::variant myevent_gameend();
-      virtual ::variant myevent_closebutton();
-      virtual ::variant myevent_roomstart();
-      virtual ::variant myevent_roomend();
-      virtual ::variant myevent_destroy();
-
-      virtual std::vector<std::byte> serialize();
-      virtual std::size_t deserialize_self(std::byte *iter);
-      static std::pair<object_basic, std::size_t> deserialize(std::byte *iter);
+      virtual variant myevent_create();
+      virtual variant myevent_gamestart();
+      virtual variant myevent_gameend();
+      virtual variant myevent_closebutton();
+      virtual variant myevent_roomstart();
+      virtual variant myevent_roomend();
+      virtual variant myevent_destroy();
 
       object_basic();
       object_basic(int uid, int uoid);

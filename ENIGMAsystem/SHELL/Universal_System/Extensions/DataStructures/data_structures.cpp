@@ -39,12 +39,7 @@
 
 #include <floatcomp.h>
 
-using std::map;
-using std::vector;
-using std::deque;
-using std::string;
-using std::pair;
-using std::multimap;
+using namespace std;
 
 #include "include.h"
 
