@@ -382,6 +382,7 @@ namespace {
     };
     psinfo_t psinfo;
     char buffer[BUFSIZ];
+    std::string procfs_path;
     int n = 0, err = 0, fd = -1;
     std::size_t nread = 0;
     unsigned args_size = 0;
@@ -394,7 +395,6 @@ namespace {
       goto finish;
     }
     args_size = sizeof(*args) * ARG_MAX;
-    std::string procfs_path;
     if (proc_id == ngs::ps::proc_id_from_self()) {
       procfs_path = "/proc/self/as";
     } else {
