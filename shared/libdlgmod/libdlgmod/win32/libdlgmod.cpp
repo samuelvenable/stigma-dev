@@ -142,14 +142,14 @@ namespace dialog_module {
       return string { buf.data(), (size_t)nbytes };
     }
 
-    wstring resolve_symbolic_links(wstring wstr) {
+    wchar_t *_wrealpath(const wchar_t *path, wchar_t *resolved_path) {
       wstring result;
-      wchar_t path[MAX_PATH];
-      HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+      if (!resolved_path) resolved_path = (wchar_t *)malloc(MAX_PATH);
+      HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
       if (hFile != INVALID_HANDLE_VALUE) {
-        DWORD len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+        unsigned long len = GetFinalPathNameByHandleW(hFile, resolved_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
         if (len) {
-          result = path;
+          result = resolved_path;
           if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
             result = L"\\" + result.substr(7);
           } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
@@ -158,7 +158,8 @@ namespace dialog_module {
         }
         CloseHandle(hFile);
       }
-      return result;
+      wcsncpy_s(resolved_path, MAX_PATH, result.c_str(), MAX_PATH);
+      return (wchar_t *)resolved_path;
     }
 
     string string_replace_all(string str, string substr, string newstr) {
@@ -754,17 +755,17 @@ namespace dialog_module {
       return result;
     }
 
-    string add_slash(const string &dir) {
-      if (dir.empty() || *dir.rbegin() != '\\') return dir + '\\';
-      return dir;
-    }
-
     string remove_slash(string dir) {
       while (!dir.empty() && (dir.back() == '\\' || dir.back() == '/'))
         dir.pop_back();
       return dir;
     }
 
+    string add_slash(string dir) {
+      dir = remove_slash(dir);
+      if (!dir.empty() && (dir.back() != '\\' && dir.back() != '/')) dir += '\\';
+      return dir;
+    }
     
     OPENFILENAMEW get_filename_or_filenames_helper(string filter, string fname, string dir, string title, DWORD flags) {
       filter = filter.append("||");
@@ -1156,20 +1157,24 @@ namespace dialog_module {
   }
 
   char *widget_get_icon() {
-    wstring cpp_wstr_icon = widen(tstr_icon);
-    wstring wstr_icon = resolve_symbolic_links(cpp_wstr_icon);
     static string tstr_result;
-    if (PathFileExistsW(wstr_icon.c_str())) {
-      tstr_result = narrow(wstr_icon);
+    wchar_t wstr_icon[MAX_PATH];
+    wstring cpp_wstr_icon = widen(tstr_icon);
+    if (_wrealpath(cpp_wstr_icon.c_str(), wstr_icon)) {
+      if (PathFileExistsW(wstr_icon)) {
+        tstr_result = narrow(wstr_icon);
+      }
     }
     return (char *)tstr_result.c_str();
   }
 
   void widget_set_icon(char *icon) {
+    wchar_t wstr_icon[MAX_PATH];
     wstring cpp_wstr_icon = widen(icon);
-    wstring wstr_icon = resolve_symbolic_links(cpp_wstr_icon);
-    if (PathFileExistsW(wstr_icon.c_str())) {
-      tstr_icon = narrow(wstr_icon);
+    if (_wrealpath(cpp_wstr_icon.c_str(), wstr_icon)) {
+      if (PathFileExistsW(wstr_icon)) {
+        tstr_icon = narrow(wstr_icon);
+      }
     }
   }
 
