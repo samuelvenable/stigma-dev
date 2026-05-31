@@ -617,9 +617,10 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
         if (printed) print(", ");
         std::string name(entry->name.content);
         if (is_global)
-          print("enigma::varaccess_" + name + "(int(global)) =");
+          print("enigma::varaccess_" + name + "(int(global))");
         else
-          print(name + " = ");
+          print(name);
+        // The Initializer owns the separator (ASSIGN prints " = v").
         if (!VisitInitializer(*entry->init)) return false;
         printed = true;
       }
@@ -654,7 +655,10 @@ bool AST::CppPrettyPrinter::VisitInitDeclarator(AST::InitDeclarator &node) {
     print(std::string(node.name.content));
   }
   if (node.init) {
-    print(" = ");  // TODO: corner case: int x {}, maybe we need extra flag in the AST?
+    // The Initializer owns its full rendering, including any separator: ASSIGN
+    // prints " = v", brace/paren print "{...}"/"(...)" with no '='. Copy-list-init
+    // ("= {...}") round-tripping the literal '=' requires recording copy-vs-direct
+    // on the node, which is tracked separately as init-form fidelity.
     if (!VisitInitializer(*node.init)) return false;
   }
   return true;
