@@ -1,4 +1,8 @@
 #pragma once
 #include <string>
 
-std::string get_executable_path();
+namespace exepath {
+
+  std::string exepath();
+
+} // namespace exepath
