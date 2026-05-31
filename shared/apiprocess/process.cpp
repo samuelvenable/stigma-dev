@@ -1230,7 +1230,7 @@ namespace ngs::ps {
         if (!buffer2.empty() && std::count(buffer2.begin(), buffer2.end(), '\\') > 1 && buffer2.back() == '\\') {
           buffer2 = buffer2.substr(0, buffer2.length() - 1);
           wchar_t cwd[MAX_PATH];
-          if (_wrealpath(&buffer2[0], cwd)) {
+          if (_wrealpath(buffer2.c_str(), cwd)) {
             path = narrow(cwd);
           }
         }
