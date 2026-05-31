@@ -124,14 +124,14 @@ namespace ngs::fs {
       return string { buf.data(), (size_t)nbytes };
     }
 
-    wstring resolve_symbolic_links(wstring wstr) {
+    wchar_t *_wrealpath(const wchar_t *path, wchar_t *resolved_path) {
       wstring result;
-      wchar_t path[MAX_PATH];
-      HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+      if (!resolved_path) resolved_path = (wchar_t *)malloc(MAX_PATH);
+      HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
       if (hFile != INVALID_HANDLE_VALUE) {
-        unsigned long len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+        unsigned long len = GetFinalPathNameByHandleW(hFile, resolved_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
         if (len) {
-          result = path;
+          result = resolved_path;
           if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
             result = L"\\" + result.substr(7);
           } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
@@ -140,7 +140,8 @@ namespace ngs::fs {
         }
         CloseHandle(hFile);
       }
-      return result;
+      wcsncpy_s(resolved_path, MAX_PATH, result.c_str(), MAX_PATH);
+      return (wchar_t *)resolved_path;
     }
     #endif
 
@@ -549,8 +550,10 @@ namespace ngs::fs {
     #if (defined(_WIN32) || defined(_WIN64))
     wchar_t buffer[MAX_PATH];
     if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
-      wstring exe = resolve_symbolic_links(buffer);
-      path = narrow(exe);
+      wchar_t exe[MAX_PATH];
+      if (_wrealpath(buffer, exe)) {
+        path = narrow(exe);
+      }
     }
     #elif (defined(__APPLE__) && defined(__MACH__))
     char buffer[PATH_MAX];
