@@ -394,6 +394,23 @@ TEST(PrinterTest, test20) {
   ASSERT_TRUE(compare(code, printed));
 }
 
+// `char`, `signed char`, and `unsigned char` are three distinct types, and
+// although ENIGMA's semantic layer may treat plain `char` as signed, the
+// printer must preserve the exact decl-spec tokens the user wrote so the
+// pretty-printer can double as a faithful code formatter. The signedness
+// keyword is retained in TypeSpecifierSeq::declspecs->specs (the source-order
+// token vector), independently of the flag bitmask -- `signed`'s flag value is
+// 0, so a flags-derived reconstruction would silently drop it.
+TEST(PrinterTest, DeclSpecSignednessFidelity) {
+  std::string code = "signed char i = 'A';unsigned char j = 'B';char k = 'C';";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
+}
+
 TEST(PrinterTest, test21) {
   std::string code =
       "for (char i = 'A'; i <= 'B'; ++i) {for (char j = '1'; j <= '2'; ++j) {for (char k = 'a'; k <= 'b'; ++k) {for "
@@ -409,9 +426,9 @@ TEST(PrinterTest, test21) {
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
   code =
-      "for (signed char i = 'A'; i <= 'B'; ++i) {for (signed char j = '1'; j <= '2'; ++j) {for (signed char k = 'a'; k "
+      "for (char i = 'A'; i <= 'B'; ++i) {for (char j = '1'; j <= '2'; ++j) {for (char k = 'a'; k "
       "<= 'b'; ++k) {for "
-      "(signed char l = 'X'; l <= 'Y'; ++l) {c++;}}}}";
+      "(char l = 'X'; l <= 'Y'; ++l) {c++;}}}}";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -431,8 +448,8 @@ TEST(PrinterTest, test22) {
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
   code =
-      "signed char i = 'A';do {signed char j = '1';while (j <= '2') {for (signed char k = 'a'; k <= 'b'; ++k) {signed "
-      "char l = 'X';do {++l;} while "
+      "char i = 'A';do {char j = '1';while (j <= '2') {for (char k = 'a'; k <= 'b'; ++k) {char "
+      "l = 'X';do {++l;} while "
       "(l <= 'Y');}++j;}++i;} while (i <= 'B');";
 
   ASSERT_TRUE(compare(code, printed));
