@@ -20,6 +20,7 @@
 #include <vector>
 #include <cwchar>
 #include <cstddef>
+#include <cstring>
 #include <cstdlib>
 #include <windef.h>
 #include <fileapi.h>
@@ -43,73 +44,80 @@
 #include <sys/sysctl.h>
 #endif
 
-std::string get_executable_path() {
-  std::string path;
-  #if (defined(_WIN32) || defined(_WIN64))
-  auto resolve_symbolic_links = [](std::wstring wstr) {
-    std::wstring result;
-    wchar_t path[MAX_PATH];
-    HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-    if (hFile != INVALID_HANDLE_VALUE) {
-      DWORD len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-      if (len) {
-        result = path;
-        if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
-          result = L"\\" + result.substr(7);
-        } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
-          result = result.substr(4);
+namespace exepath {
+
+  std::string exepath() {
+    std::string path;
+    #if (defined(_WIN32) || defined(_WIN64))
+    auto _wrealpath = [](const wchar_t *path, wchar_t *resolved_path) {
+      std::wstring result;
+      if (!resolved_path) resolved_path = (wchar_t *)malloc(MAX_PATH);
+      HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+      if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD len = GetFinalPathNameByHandleW(hFile, resolved_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+        if (len) {
+          result = resolved_path;
+          if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
+            result = L"\\" + result.substr(7);
+          } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
+            result = result.substr(4);
+          }
         }
+        CloseHandle(hFile);
       }
-      CloseHandle(hFile);
+      wcsncpy_s(resolved_path, result.c_str(), _countof(resolved_path));
+      return (wchar_t *)resolved_path;
+    };
+    auto narrow = [](std::wstring wstr) {
+      if (wstr.empty()) return std::string("");
+      int nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), nullptr, 0, nullptr, nullptr);
+      if (!nbytes) return std::string("");
+      std::vector<char> buf((size_t)nbytes);
+      nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), buf.data(), nbytes, nullptr, nullptr);
+      if (!nbytes) return std::string("");
+      return std::string { buf.data(), (size_t)nbytes };
+    };
+    wchar_t buffer[MAX_PATH];
+    if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
+      wchar_t exe[MAX_PATH]
+      if (_wrealpath(buffer, exe)) {
+        path = narrow(exe);
+      }
     }
-    return result;
-  };
-  auto narrow = [](std::wstring wstr) {
-    if (wstr.empty()) return std::string("");
-    int nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), nullptr, 0, nullptr, nullptr);
-    if (!nbytes) return std::string("");
-    std::vector<char> buf((size_t)nbytes);
-    nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), buf.data(), nbytes, nullptr, nullptr);
-    if (!nbytes) return std::string("");
-    return std::string { buf.data(), (size_t)nbytes };
-  };
-  wchar_t buffer[MAX_PATH];
-  if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
-    std::wstring exe = resolve_symbolic_links(buffer);
-    path = narrow(exe);
-  }
-  #elif (defined(__APPLE__) && defined(__MACH__))
-  char buffer[PATH_MAX];
-  uint32_t size = sizeof(buffer);
-  if (!_NSGetExecutablePath(buffer, &size)) {
-    char exe[PATH_MAX];
-    if (realpath(buffer, exe)) {
-      path = exe;
-    }
-  }
-  #elif (defined(__linux__) || defined(__ANDROID__))
-  char exe[PATH_MAX];
-  if (realpath("/proc/self/exe", exe)) {
-    path = exe;
-  }
-  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
-  int mib[4]; 
-  size_t len = 0;
-  mib[0] = CTL_KERN;
-  mib[1] = KERN_PROC;
-  mib[2] = KERN_PROC_PATHNAME;
-  mib[3] = -1;
-  if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
-    std::string strbuff;
-    strbuff.resize(len, '\0');
-    char *buffer = strbuff.data();
-    if (!sysctl(mib, 4, buffer, &len, nullptr, 0)) {
+    #elif (defined(__APPLE__) && defined(__MACH__))
+    char buffer[PATH_MAX];
+    uint32_t size = sizeof(buffer);
+    if (!_NSGetExecutablePath(buffer, &size)) {
       char exe[PATH_MAX];
       if (realpath(buffer, exe)) {
         path = exe;
       }
     }
+    #elif (defined(__linux__) || defined(__ANDROID__))
+    char exe[PATH_MAX];
+    if (realpath("/proc/self/exe", exe)) {
+      path = exe;
+    }
+    #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
+    int mib[4]; 
+    size_t len = 0;
+    mib[0] = CTL_KERN;
+    mib[1] = KERN_PROC;
+    mib[2] = KERN_PROC_PATHNAME;
+    mib[3] = -1;
+    if (!sysctl(mib, 4, nullptr, &len, nullptr, 0)) {
+      std::string strbuff;
+      strbuff.resize(len, '\0');
+      char *buffer = strbuff.data();
+      if (!sysctl(mib, 4, buffer, &len, nullptr, 0)) {
+        char exe[PATH_MAX];
+        if (realpath(buffer, exe)) {
+          path = exe;
+        }
+      }
+    }
+    #endif
+    return path;
   }
-  #endif
-  return path;
-}
+
+} // namespace exepath
