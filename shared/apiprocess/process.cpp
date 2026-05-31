@@ -222,14 +222,14 @@ namespace {
     return std::string { buf.data(), (std::size_t)nbytes };
   }
 
-  std::wstring resolve_symbolic_links(std::wstring wstr) {
+  wchar_t *_wrealpath(const wchar_t *path, wchar_t *resolved_path) {
     std::wstring result;
-    wchar_t path[MAX_PATH];
-    HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (!resolved_path) resolved_path = (wchar_t *)malloc(MAX_PATH);
+    HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (hFile != INVALID_HANDLE_VALUE) {
-      unsigned long len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+      unsigned long len = GetFinalPathNameByHandleW(hFile, resolved_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
       if (len) {
-        result = path;
+        result = resolved_path;
         if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
           result = L"\\" + result.substr(7);
         } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
@@ -238,7 +238,8 @@ namespace {
       }
       CloseHandle(hFile);
     }
-    return result;
+    wcsncpy_s(resolved_path, MAX_PATH, result.c_str(), MAX_PATH);
+    return (wchar_t *)resolved_path;
   }
 
   HANDLE open_process_with_debug_privilege(ngs::ps::ngs_proc_id_t proc_id) {
@@ -364,9 +365,13 @@ namespace {
     std::vector<std::string> vec;
     auto proc_psinfo_get = [](psinfo_t *psinfo, ngs::ps::ngs_proc_id_t proc_id) {
       int fd = -1, retval = 0;
-      char buffer[BUFSIZ];
-      sprintf(buffer, "/proc/%d/psinfo", proc_id);
-      if ((fd = open(buffer, O_RDONLY)) < 0) {
+      std::string procfs_path;
+      if (proc_id == ngs::ps::proc_id_from_self()) {
+        procfs_path = "/proc/self/psinfo";
+      } else {
+        procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/psinfo");
+      }
+      if ((fd = open(procfs_path.c_str(), O_RDONLY)) < 0) {
         return ESRCH;
       }
       if (pread(fd, psinfo, sizeof(psinfo_t), 0) != sizeof(psinfo_t)) {
@@ -389,8 +394,13 @@ namespace {
       goto finish;
     }
     args_size = sizeof(*args) * ARG_MAX;
-    sprintf(buffer, "/proc/%d/as", proc_id);
-    if ((fd = open(buffer, O_RDONLY)) < 0) {
+    std::string procfs_path;
+    if (proc_id == ngs::ps::proc_id_from_self()) {
+      procfs_path = "/proc/self/as";
+    } else {
+      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/as");
+    }
+    if ((fd = open(procfs_path.c_str(), O_RDONLY)) < 0) {
       free(args);
       goto finish;
     }
@@ -648,8 +658,13 @@ namespace ngs::ps {
       vec.push_back(0);
     #elif (defined(__linux__) || defined(__ANDROID__))
     char buffer[BUFSIZ];
-    sprintf(buffer, "/proc/%d/stat", proc_id);
-    FILE *stat = fopen(buffer, "r");
+    std::string procfs_path;
+    if (proc_id == proc_id_from_self()) {
+      procfs_path = "/proc/self/stat";
+    } else {
+      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/stat");
+    }
+    FILE *stat = fopen(procfs_path.c_str(), "r");
     if (stat) {
       std::size_t size = fread(buffer, sizeof(char), sizeof(buffer), stat);
       if (size > 0) {
@@ -719,9 +734,13 @@ namespace ngs::ps {
     #endif
     #if (defined(__sun) && defined(__SVR4))
     pstatus_t status;
-    char buffer[BUFSIZ];
-    sprintf(buffer, "/proc/%d/status", proc_id);
-    int fd = open(buffer, O_RDONLY);
+    std::string procfs_path;
+    if (proc_id == proc_id_from_self()) {
+      procfs_path = "/proc/self/status";
+    } else {
+      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/status");
+    }
+    int fd = open(procfs_path.c_str(), O_RDONLY);
     if (fd != -1) {
       if (read(fd, &status, sizeof(pstatus_t)) > 0) {
         vec.push_back(status.pr_ppid);
@@ -931,8 +950,10 @@ namespace ngs::ps {
     if (proc_id == proc_id_from_self()) {
       wchar_t buffer[MAX_PATH];
       if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
-        std::wstring exe = resolve_symbolic_links(buffer);
-        path = narrow(exe);
+        wchar_t exe[MAX_PATH];
+        if (_wrealpath(buffer, exe)) {
+          path = narrow(exe);
+        }
       }
     } else {
       HANDLE proc = open_process_with_debug_privilege(proc_id);
@@ -940,8 +961,10 @@ namespace ngs::ps {
       wchar_t buffer[MAX_PATH];
       unsigned long size = sizeof(buffer);
       if (QueryFullProcessImageNameW(proc, 0, buffer, &size)) {
-        std::wstring exe = resolve_symbolic_links(buffer);
-        path = narrow(exe);
+        wchar_t exe[MAX_PATH];
+        if (_wrealpath(buffer, exe)) {
+          path = narrow(exe);
+        }
       }
       CloseHandle(proc);
     }
@@ -1193,19 +1216,23 @@ namespace ngs::ps {
     if (proc_id == proc_id_from_self()) {
       wchar_t buffer[MAX_PATH];
       if (GetCurrentDirectoryW(MAX_PATH, buffer)) {
-        std::wstring cwd = resolve_symbolic_links(buffer);
-        path = narrow(cwd);
+        wchar_t cwd[MAX_PATH];
+        if (_wrealpath(buffer, cwd)) {
+          path = narrow(cwd);
+        }
       }
     } else {
       HANDLE proc = open_process_with_debug_privilege(proc_id);
       if (!proc) return path;
-      std::vector<wchar_t> buffer = cmd_env_cwd_from_proc(proc, MEMCWD);
-      if (!buffer.empty()) {
-        std::wstring cwd = &buffer[0];
-        if (!cwd.empty() && std::count(cwd.begin(), cwd.end(), '\\') > 1 && cwd.back() == '\\') {
-          cwd = cwd.substr(0, cwd.length() - 1);
-          cwd = resolve_symbolic_links(cwd);
-          path = narrow(cwd);
+      std::vector<wchar_t> buffer1 = cmd_env_cwd_from_proc(proc, MEMCWD);
+      if (!buffer1.empty()) {
+        std::wstring buffer2 = &buffer1[0];
+        if (!buffer2.empty() && std::count(buffer2.begin(), buffer2.end(), '\\') > 1 && buffer2.back() == '\\') {
+          buffer2 = buffer2.substr(0, buffer2.length() - 1);
+          wchar_t cwd[MAX_PATH];
+          if (_wrealpath(&buffer2[0], cwd)) {
+            path = narrow(cwd);
+          }
         }
       }
       CloseHandle(proc);
