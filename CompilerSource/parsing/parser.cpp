@@ -1271,14 +1271,13 @@ AST::PNode TryParseExprOrBracedInitList(bool is_init_clause, bool in_init_list) 
   // <initializer-clause>            ::= <assignment-expression>
   //                                   | <braced-init-list>
   if (token.type == TT_EQUALS && !is_init_clause) {
+    // `= <initializer-clause>`: delegate to the clause production and wrap as
+    // ASSIGN (so `= {...}` is an ASSIGN over a brace-init-list, not a bare
+    // BRACE), rather than peeking for `{` here.
     token = lexer->ReadToken();
-    if (token.type == TT_BEGINBRACE) {
-      return TryParseBraceInitializer();
-    } else {
-      std::vector<AST::PNode> vals;
-      vals.push_back(ParseExpression(Precedence::kAssign));
-      return std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, nullptr, std::move(vals));
-    }
+    std::vector<AST::PNode> vals;
+    vals.push_back(TryParseExprOrBracedInitList(/*is_init_clause=*/true, in_init_list));
+    return std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, nullptr, std::move(vals));
   } else if (token.type == TT_BEGINBRACE) {
     return TryParseBraceInitializer();
   } else if (is_init_clause) {
@@ -1339,14 +1338,15 @@ AST::InitializerNode TryParseBraceInitializer() {
 AST::InitializerNode TryParseInitializer(bool allow_paren_init = true) {
   switch (token.type) {
     case TT_EQUALS: {
+      // `= <initializer-clause>`: consume the `=`, then delegate to the
+      // initializer-clause production (which itself handles either an
+      // assignment-expression or a braced-init-list) and wrap as ASSIGN. We do
+      // not peek for `{` here -- a copy-list-init `= {...}` is an ASSIGN whose
+      // value is a brace-init-list, which preserves the `=` for round-tripping.
       token = lexer->ReadToken();
-      if (token.type == TT_BEGINBRACE) {
-        return TryParseBraceInitializer();
-      } else {
-        std::vector<AST::PNode> vals;
-        vals.push_back(ParseExpression(Precedence::kAssign));
-        return std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, nullptr, std::move(vals));
-      }
+      std::vector<AST::PNode> vals;
+      vals.push_back(TryParseExprOrBracedInitList(/*is_init_clause=*/true, /*in_init_list=*/false));
+      return std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, nullptr, std::move(vals));
     }
 
     case TT_BEGINBRACE: return TryParseBraceInitializer();
