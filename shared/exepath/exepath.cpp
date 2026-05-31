@@ -79,7 +79,7 @@ namespace exepath {
     };
     wchar_t buffer[MAX_PATH];
     if (GetModuleFileNameW(nullptr, buffer, sizeof(buffer))) {
-      wchar_t exe[MAX_PATH]
+      wchar_t exe[MAX_PATH];
       if (_wrealpath(buffer, exe)) {
         path = narrow(exe);
       }
