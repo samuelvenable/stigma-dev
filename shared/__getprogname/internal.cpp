@@ -112,7 +112,7 @@ const char *__getprogname(void) {
       wcsncpy_s(ptr, MAX_PATH, result.c_str(), _TRUNCATE);
       return (wchar_t *)ptr;
     }
-    return nullptr;
+    return (wchar_t *)nullptr;
   };
   auto narrow = [](std::wstring wstr) {
     if (wstr.empty()) return std::string("");
