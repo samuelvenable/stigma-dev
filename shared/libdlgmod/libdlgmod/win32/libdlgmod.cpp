@@ -144,12 +144,13 @@ namespace dialog_module {
 
     wchar_t *_wrealpath(const wchar_t *path, wchar_t *resolved_path) {
       wstring result;
-      if (!resolved_path) resolved_path = (wchar_t *)malloc(MAX_PATH);
+      wchar_t buf[MAX_PATH];
+      wchar_t *ptr = (((wchar_t *)resolved_path) ? ((wchar_t *)resolved_path) : ((wchar_t *)buf));
       HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
       if (hFile != INVALID_HANDLE_VALUE) {
-        unsigned long len = GetFinalPathNameByHandleW(hFile, resolved_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+        unsigned long len = GetFinalPathNameByHandleW(hFile, ptr, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
         if (len) {
-          result = resolved_path;
+          result = ptr;
           if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
             result = L"\\" + result.substr(7);
           } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
@@ -158,8 +159,13 @@ namespace dialog_module {
         }
         CloseHandle(hFile);
       }
-      wcsncpy_s(resolved_path, MAX_PATH, result.c_str(), MAX_PATH);
-      return (wchar_t *)resolved_path;
+      if (!resolved_path && wcslen(buf)) {
+        return _wcsdup(result.c_str());
+      } else if (resolved_path && !result.empty()) {
+        wcsncpy_s(ptr, MAX_PATH, result.c_str(), _TRUNCATE);
+        return (wchar_t *)ptr;
+      }
+      return nullptr;
     }
 
     string string_replace_all(string str, string substr, string newstr) {
