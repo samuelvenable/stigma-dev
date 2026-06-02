@@ -284,32 +284,38 @@ std::size_t sizeof_builtin_type(std::string_view type) {
 }
 
 static std::pair<std::size_t, std::size_t> jdi_decflag_bitmask(std::string_view tok) {
-  static const std::unordered_map<std::string_view, std::pair<std::size_t, std::size_t>> bitmasks{
-    { "volatile",  {jdi::builtin_flag__volatile->mask,  jdi::builtin_flag__volatile->value}  },
-    { "static",    {jdi::builtin_flag__static->mask,    jdi::builtin_flag__static->value}    },
-    { "const",     {jdi::builtin_flag__const->mask,     jdi::builtin_flag__const->value}     },
-    { "mutable",   {jdi::builtin_flag__mutable->mask,   jdi::builtin_flag__mutable->value}   },
-    { "register",  {jdi::builtin_flag__register->mask,  jdi::builtin_flag__register->value}  },
-    { "inline",    {jdi::builtin_flag__inline->mask,    jdi::builtin_flag__inline->value}    },
-    { "_Complex",  {jdi::builtin_flag__Complex->mask,   jdi::builtin_flag__Complex->value}   },
-    { "restrict",  {jdi::builtin_flag__restrict->mask,  jdi::builtin_flag__restrict->value}  },
-    { "unsigned",  {jdi::builtin_flag__unsigned->mask,  jdi::builtin_flag__unsigned->value}  },
-    { "long",      {jdi::builtin_flag__long->mask,      jdi::builtin_flag__long->value}      },
-    { "signed",    {jdi::builtin_flag__signed->mask,    jdi::builtin_flag__signed->value}    },
-    { "short",     {jdi::builtin_flag__short->mask,     jdi::builtin_flag__short->value}     },
-    { "long long", {jdi::builtin_flag__long_long->mask, jdi::builtin_flag__long_long->value} },
-    { "virtual",   {jdi::builtin_flag__virtual->mask,   jdi::builtin_flag__virtual->value}   },
-    { "explicit",  {jdi::builtin_flag__explicit->mask,  jdi::builtin_flag__explicit->value}  },
-    { "throw",     {128,  128}    },
-    { "override",  {512,  512}    },
-    { "final",     {1024, 1024}   },
+  // Map to the *address* of each jdi global flag pointer, not its dereferenced
+  // mask/value. The globals are null until JDI builtins are initialized; this
+  // function's static map is built on first call, so dereferencing at build
+  // time crashes if the first call precedes init (e.g. parsing a declaration in
+  // a test harness that never ran the full JDI setup). Storing addresses keeps
+  // the map construction safe and lets us read each flag freshly, guarding null.
+  static const std::unordered_map<std::string_view, jdi::typeflag *const *> flags{
+    { "volatile",  &jdi::builtin_flag__volatile  },
+    { "static",    &jdi::builtin_flag__static    },
+    { "const",     &jdi::builtin_flag__const     },
+    { "mutable",   &jdi::builtin_flag__mutable   },
+    { "register",  &jdi::builtin_flag__register  },
+    { "inline",    &jdi::builtin_flag__inline    },
+    { "_Complex",  &jdi::builtin_flag__Complex   },
+    { "restrict",  &jdi::builtin_flag__restrict  },
+    { "unsigned",  &jdi::builtin_flag__unsigned  },
+    { "long",      &jdi::builtin_flag__long      },
+    { "signed",    &jdi::builtin_flag__signed    },
+    { "short",     &jdi::builtin_flag__short     },
+    { "long long", &jdi::builtin_flag__long_long },
+    { "virtual",   &jdi::builtin_flag__virtual   },
+    { "explicit",  &jdi::builtin_flag__explicit  },
   };
 
-  if (auto bitmask = bitmasks.find(tok); bitmask != bitmasks.end()) {
-    return bitmask->second;
-  } else {
-    return {-1, -1};
+  if (tok == "throw")    return {128,  128};
+  if (tok == "override") return {512,  512};
+  if (tok == "final")    return {1024, 1024};
+
+  if (auto it = flags.find(tok); it != flags.end()) {
+    if (const jdi::typeflag *flag = *it->second) return {flag->mask, flag->value};
   }
+  return {-1, -1};
 }
 
 jdi::definition *require_defined_type(const Token &tok) {

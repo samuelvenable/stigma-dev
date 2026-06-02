@@ -20,6 +20,25 @@ void assert_identifier_is(AST::Node *node, std::string_view name) {
   ASSERT_EQ(node->As<AST::IdentifierAccess>()->name.content, name);
 }
 
+// Regression: jdi_decflag_bitmask cached dereferenced jdi::builtin_flag__*
+// globals in a first-call static map; if the first parse of a declaration
+// preceded JDI builtin init, those globals were null and the deref segfaulted.
+// Parsing a declaration here without any SetUp (builtins uninitialized) must not
+// crash -- the decl-flag lookup degrades gracefully instead.
+TEST(ParserTest, DeclFlagsUninitializedDoesNotCrash) {
+  struct SilentHandler : public ErrorHandler {
+    void ReportError(CodeSnippet, std::string_view) final {}
+    void ReportWarning(CodeSnippet, std::string_view) final {}
+  } herr;
+  const ParseContext *ctx = &ParseContext::ForTesting(true);
+  Lexer lexer(std::string("a = (int x);"), ctx, &herr);
+  AstBuilderTestAPI *b = CreateBuilder();
+  b->initialize(&lexer, &herr);
+  auto node = b->TryParseStatement();
+  EXPECT_NE(node, nullptr);
+  delete b;
+}
+
 TEST(ParserTest, Basics) {
   ParserTester test = ParserTester::CreateWithCpp("(x ? y : z ? a : (z[5](6)));");
 
