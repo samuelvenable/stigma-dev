@@ -72,11 +72,11 @@ namespace jdi {
     return ((node_func*)this)->params.size();
   }
   
-  ref_stack::node* ref_stack::iterator::operator*() { return n; }
-  ref_stack::node* ref_stack::iterator::operator->() { return n; }
+  ref_stack::node* ref_stack::iterator::operator*() const { return n; }
+  ref_stack::node* ref_stack::iterator::operator->() const { return n; }
   ref_stack::iterator ref_stack::iterator::operator++(int) { iterator res = *this; n = n->previous; return res; }
   ref_stack::iterator &ref_stack::iterator::operator++() { n = n->previous; return *this; }
-  ref_stack::iterator::operator bool() { return n; }
+  ref_stack::iterator::operator bool() const { return n; }
   ref_stack::iterator::iterator(ref_stack::node *nconstruct): n(nconstruct) { }
   
   ref_stack::iterator ref_stack::begin() const { return ref_stack::iterator(ntop); }

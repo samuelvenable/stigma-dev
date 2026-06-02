@@ -280,8 +280,8 @@ bool def_type_is(FullType *ft, std::size_t dectype) { return ft && ft->def && (f
 
 TEST(ParserTest, TypeSpecifierAndDeclarator) {
   ParserTester test = ParserTester::CreateWithSetUp("const unsigned int ****(***)[10]");
-  auto type_node = test->TryParseTypeID();
-  FullType &ft = type_node->type_info;
+  auto clause = test->ParseTypeIdClause();
+  FullType &ft = clause->specifiers->type_info;
   EXPECT_TRUE(def_type_is(&ft, jdi::DEF_TYPENAME));
   EXPECT_TRUE(contains_flag(&ft, jdi::builtin_flag__const->value));
   EXPECT_TRUE(contains_flag(&ft, jdi::builtin_flag__unsigned->value));
@@ -1575,34 +1575,53 @@ TEST(ParserTest, TemporaryInitialization_2) {
   ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
   ASSERT_EQ(test.lexer.ReadToken().type, TT_ENDOFCODE);
 
+  // `int(*(*a)[10]) = nullptr;` -- a most-vexing-parse that resolves to a
+  // declaration because the single parenthesised operand is a *named*
+  // declarator (its spine bottoms out in `a`). TPEFCOD promotes the
+  // call-shape to a DeclarationStatement at parse time ([stmt.ambig]); the
+  // declarator survives as the expression-tree `*(*a)[10]`.
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decl = node->As<AST::DeclarationStatement>();
   ASSERT_EQ(decl->clause->declarators.size(), 1);
   ASSERT_EQ(decl->clause->specifiers->def, jdi::builtin_type__int);
   auto *decl1 = decl->clause->declarators[0].get();
-  ASSERT_EQ(decl1->declarator->def, jdi::builtin_type__int);
-  ASSERT_EQ(decl1->declarator->flags, 0);
+  ASSERT_EQ(decl1->name.content, "a");
 
-  auto &declarator = decl1->declarator->decl;
-  ASSERT_EQ(declarator.components.size(), 2);
-  ASSERT_EQ(declarator.components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &decl_ptr = declarator.components[0].as<PointerNode>();
-  ASSERT_EQ(decl_ptr.class_def, nullptr);
-  ASSERT_EQ(decl_ptr.is_const, false);
-  ASSERT_EQ(decl_ptr.is_volatile, false);
+  // declarator_expr: `*` ( `(` `*a` `)` `[10]` )
+  ASSERT_NE(decl1->declarator_expr, nullptr);
+  ASSERT_EQ(decl1->declarator_expr->type, AST::NodeType::UNARY_PREFIX_EXPRESSION);
+  auto *outer_star = decl1->declarator_expr->As<AST::UnaryPrefixExpression>();
+  ASSERT_EQ(outer_star->operation.type, TT_STAR);
+  ASSERT_EQ(outer_star->operand->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *subscript = outer_star->operand->As<AST::BinaryExpression>();
+  ASSERT_EQ(subscript->operation.type, TT_BEGINBRACKET);
+  ASSERT_EQ(subscript->right->type, AST::NodeType::LITERAL);
+  ASSERT_EQ(std::get<std::string>(subscript->right->As<AST::Literal>()->value.value), "10");
 
-  ASSERT_EQ(declarator.components[1].kind, DeclaratorNode::Kind::NESTED);
-  auto &nested = declarator.components[1].as<NestedNode>();
-  ASSERT_TRUE(nested.is<std::unique_ptr<Declarator>>());
-  auto &nested_decl = nested.as<std::unique_ptr<Declarator>>();
-  ASSERT_EQ(nested_decl->components.size(), 2);
-  ASSERT_EQ(nested_decl->components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &nested_ptr = nested_decl->components[0].as<PointerNode>();
-  ASSERT_EQ(nested_ptr.class_def, nullptr);
-  ASSERT_EQ(nested_ptr.is_const, false);
-  ASSERT_EQ(nested_ptr.is_volatile, false);
+  ASSERT_EQ(subscript->left->type, AST::NodeType::PARENTHETICAL);
+  auto *paren_inner = subscript->left->As<AST::Parenthetical>()->expression.get();
+  ASSERT_EQ(paren_inner->type, AST::NodeType::UNARY_PREFIX_EXPRESSION);
+  auto *inner_star = paren_inner->As<AST::UnaryPrefixExpression>();
+  ASSERT_EQ(inner_star->operation.type, TT_STAR);
+  assert_identifier_is(inner_star->operand.get(), "a");
 
-  ASSERT_EQ(nested_decl->components[1].kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  // Bridge-layer coverage of the type-modifier chain (replaces the old
+  // parsing::Declarator asserts): synthesize the jdi::ref_stack from the
+  // declarator-expression-tree and verify `*` of nested(`*` of `[10]`).
+  jdi::ref_stack refs;
+  ASSERT_TRUE(enigma::parsing::walk_declarator_expr(decl1->declarator_expr.get(), refs));
+  ASSERT_EQ(refs.size(), 3u);
+  auto ref_it = refs.begin();
+  ASSERT_TRUE(ref_it);
+  ASSERT_EQ(ref_it->type, jdi::ref_stack::RT_POINTERTO);
+  ++ref_it;
+  ASSERT_TRUE(ref_it);
+  ASSERT_EQ(ref_it->type, jdi::ref_stack::RT_POINTERTO);
+  ++ref_it;
+  ASSERT_TRUE(ref_it);
+  ASSERT_EQ(ref_it->type, jdi::ref_stack::RT_ARRAYBOUND);
+  ASSERT_EQ(ref_it->arraysize(), 10u);
+
   ASSERT_NE(decl1->init, nullptr);
   ASSERT_EQ(decl1->init->type, AST::NodeType::INITIALIZER);
   ASSERT_EQ(decl1->init->kind, AST::Initializer::Kind::ASSIGN);
@@ -1616,16 +1635,19 @@ TEST(ParserTest, TemporaryInitialization_3) {
   ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
   ASSERT_EQ(test.lexer.ReadToken().type, TT_ENDOFCODE);
 
-  ASSERT_EQ(node->type, AST::NodeType::CAST);
-  auto *cast = node->As<AST::CastExpression>();
-  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.def, jdi::builtin_type__int);
-  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.flags, 0);
-  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.components.size(), 0);
-  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.name.content, "");
-  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->type_info.decl.has_nested_declarator, false);
+  // `int(*(*a)[10] + b)` -- NOT a declaration: the single operand's spine is
+  // rooted at `+`, so it's not a named declarator (abstract). The parser keeps
+  // the uniform most-vexing-parse call-shape (FunctionCall over a
+  // TypeSpecifierSeq callee); the semantic phase resolves it as a functional
+  // cast / temporary-object expression.
+  ASSERT_EQ(node->type, AST::NodeType::FUNCTION_CALL);
+  auto *call = node->As<AST::FunctionCallExpression>();
+  ASSERT_EQ(call->function->type, AST::NodeType::TYPE_SPECIFIER_SEQ);
+  ASSERT_EQ(call->function->As<AST::TypeSpecifierSeq>()->def, jdi::builtin_type__int);
+  ASSERT_EQ(call->arguments.size(), 1);
 
-  ASSERT_EQ(cast->expr->type, AST::NodeType::BINARY_EXPRESSION);
-  auto *binary = cast->expr->As<AST::BinaryExpression>();
+  ASSERT_EQ(call->arguments[0]->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *binary = call->arguments[0]->As<AST::BinaryExpression>();
   ASSERT_EQ(binary->operation.type, TT_PLUS);
   ASSERT_EQ(binary->operation.token, "+");
 
@@ -1637,7 +1659,6 @@ TEST(ParserTest, TemporaryInitialization_3) {
   auto *operand = left->operand->As<AST::BinaryExpression>();
   ASSERT_EQ(operand->operation.type, TT_BEGINBRACKET);
   ASSERT_EQ(operand->operation.token, "[");
-  ASSERT_EQ(operand->left->type, AST::NodeType::PARENTHETICAL);
 
   ASSERT_EQ(operand->left->type, AST::NodeType::PARENTHETICAL);
   auto *left_operand = (operand->left.get())->As<AST::Parenthetical>()->expression.get();
@@ -1645,8 +1666,7 @@ TEST(ParserTest, TemporaryInitialization_3) {
   auto *left_unary = left_operand->As<AST::UnaryPrefixExpression>();
   ASSERT_EQ(left_unary->operation.type, TT_STAR);
   ASSERT_EQ(left_unary->operation.token, "*");
-  ASSERT_EQ(left_unary->operand->type, AST::NodeType::LITERAL);
-  ASSERT_EQ(std::get<std::string>(left_unary->operand->As<AST::Literal>()->value.value), "a");
+  assert_identifier_is(left_unary->operand.get(), "a");
 
   ASSERT_EQ(operand->right->type, AST::NodeType::LITERAL);
   ASSERT_EQ(std::get<std::string>(dynamic_cast<AST::Literal *>(operand->right.get())->value.value), "10");

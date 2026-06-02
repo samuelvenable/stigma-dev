@@ -570,6 +570,80 @@ TEST(PrinterTest, test27) {
   ASSERT_TRUE(compare(code, printed));
 }
 
+TEST(PrinterTest, FunctionalCastSimple) {
+  std::string code = "int a = int(5);";
+  ParserTester test = ParserTester::CreateWithCpp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
+}
+
+TEST(PrinterTest, FunctionalCastGroupedFnPtr) {
+  std::string code = "int a = ((int(*)())(func))(5);";
+  ParserTester test = ParserTester::CreateWithCpp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
+}
+
+// New-expression coverage. These pin the post-build interpretation in
+// TryParseNewExpression: the operand is parsed like any other type-id, then a
+// top-level grouped/call form on the declarator is reinterpreted as the
+// new-initializer (the standard forbids parens in a new-declarator precisely so
+// `(args)` is unambiguously the initializer; we build first, interpret second).
+// The printer wraps the new-type-id in parens, so the expected forms below are
+// `new (T)…`, not the bare source spelling.
+namespace {
+void expect_new_roundtrip(const std::string &source, const std::string &expected) {
+  ParserTester test = ParserTester::CreateWithCpp(source);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*node->As<AST::CodeBlock>()));
+  EXPECT_TRUE(compare(expected, v.GetPrintedCode()))
+      << "source:   " << source << "\nexpected: " << expected << "\nprinted:  " << v.GetPrintedCode();
+}
+}  // namespace
+
+TEST(PrinterTest, NewScalarNoInit) {
+  expect_new_roundtrip("int* z = new int;", "int* z = new (int);");
+}
+
+TEST(PrinterTest, NewScalarParenInit) {
+  expect_new_roundtrip("int* p = new int(12);", "int* p = new (int)(12);");
+}
+
+TEST(PrinterTest, NewScalarExprInit) {
+  expect_new_roundtrip("float* q = new float(2+3);", "float* q = new (float)(2 + 3);");
+}
+
+TEST(PrinterTest, NewScalarSizeofInit) {
+  expect_new_roundtrip("int* r = new int(sizeof 12);", "int* r = new (int)(sizeof 12);");
+}
+
+TEST(PrinterTest, NewArrayNoInit) {
+  expect_new_roundtrip("int* y = new int[2];", "int* y = new (int[2]);");
+}
+
+TEST(PrinterTest, NewArrayWithInit) {
+  expect_new_roundtrip("int* w = new int[2](5);", "int* w = new (int[2])(5);");
+}
+
+TEST(PrinterTest, NewBuiltinTypes) {
+  expect_new_roundtrip("bool* b = new bool;", "bool* b = new (bool);");
+  expect_new_roundtrip("double* d = new double;", "double* d = new (double);");
+}
+
+TEST(PrinterTest, NewParenthesizedTypeId) {
+  expect_new_roundtrip("int* p = new (int)(7);", "int* p = new (int)(7);");
+}
+
 TEST(PrinterTest, test28) {
   std::string code =
       "int *num1 = new int(5);int *num2 = new int(3);int *result = new int;int choice = 2;do {switch(choice) {case "
@@ -680,7 +754,7 @@ TEST(PrinterTest, test32) {
   code =
       "int x [2]; int* y = new (int[2]); int z[2] = {1,2}; int* p = new (int)(12); float* q = new (float)(2+3); int* r "
       "= new "
-      "(int)(sizeof 12); bool* b = new (bool); signed char* c = new (signed char); double* d = new (double);";
+      "(int)(sizeof 12); bool* b = new (bool); char* c = new (char); double* d = new (double);";
 
   ASSERT_TRUE(compare(code, printed));
 }

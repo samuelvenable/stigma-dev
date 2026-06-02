@@ -143,11 +143,13 @@ bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result) {
     case AST::NodeType::FUNCTION_CALL: {
       auto &c = *expr->As<AST::FunctionCallExpression>();
       if (!walk_declarator_expr(c.function.get(), result)) return false;
-      // Parameter type-spec info is lost in the current expression-tree form:
-      // each argument is a declarator-expression-tree without its own
-      // type-spec attached (a known limitation of the to_expression() path).
-      // Emit an empty parameter list; once function-declarator args carry
-      // typed declarations, walk each here.
+      // Function-declarator parameters now live in `arguments`, but
+      // heterogeneously: a simple named param (`int x`) is a DeclarationStatement,
+      // while abstract/nested params (`int (*)[10]`, `int (*x)(int x)`) stay
+      // expression trees that embed their own type-spec (the leaf TypeSpecifierSeq)
+      // -- the parser keeps the ambiguous call shape and defers commit. Bridging
+      // each shape into a jdi parameter full_type is semantic-phase work; emit an
+      // empty parameter list here until that lands.
       jdi::ref_stack::parameter_ct params;
       result.push_func(params);
       return true;
