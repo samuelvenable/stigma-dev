@@ -106,11 +106,13 @@ const char *__getbasepath(void) {
       }
       CloseHandle(hFile);
     }
-    if (!resolved_path && wcslen(buf)) {
-      return _wcsdup(result.c_str());
-    } else if (resolved_path && !result.empty()) {
-      wcsncpy_s(ptr, MAX_PATH, result.c_str(), _TRUNCATE);
-      return (wchar_t *)ptr;
+    if (!result.empty()) {
+      if (!resolved_path) {
+        return _wcsdup(result.c_str());
+      } else {
+        wcsncpy_s(ptr, MAX_PATH, result.c_str(), _TRUNCATE);
+        return (wchar_t *)ptr;
+      }
     }
     return (wchar_t *)nullptr;
   };
