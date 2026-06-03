@@ -113,7 +113,7 @@ namespace {
   std::vector<std::string> string_split_by_first_equals_sign(std::string str) {
     std::size_t pos = 0;
     std::vector<std::string> vec;
-    if ((pos = str.find_first_of("=")) != std::string::npos) {
+    if ((pos = str.find('=')) != std::string::npos) {
       vec.push_back(str.substr(0, pos));
       vec.push_back(str.substr(pos + 1));
     }
@@ -1668,7 +1668,7 @@ namespace ngs::ps {
     #endif
     struct is_invalid {
       bool operator()(const std::string &s) {
-        return (s.find_first_of("=") == std::string::npos || s.find_first_of("=") == 0);
+        return (s.find('=') == std::string::npos);
       }
     };
     vec.erase(std::remove_if(vec.begin(), vec.end(), is_invalid()), vec.end());
