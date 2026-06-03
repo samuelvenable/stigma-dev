@@ -54,7 +54,7 @@ std::string filename_join(std::string prefix, std::string suffix) {
 // Windows has no direct equivalent to POSIX realpath()
 // _fullpath() / _wfullpath() does not resolve symlinks
 // Therefore I wrote my own implementation from scratch
-static wchar_t *_wrealpath = [](const wchar_t *path, wchar_t *resolved_path) {
+static wchar_t *_wrealpath(const wchar_t *path, wchar_t *resolved_path) {
   std::wstring result;
   wchar_t buf[MAX_PATH];
   wchar_t *ptr = (((wchar_t *)resolved_path) ? ((wchar_t *)resolved_path) : ((wchar_t *)buf));
