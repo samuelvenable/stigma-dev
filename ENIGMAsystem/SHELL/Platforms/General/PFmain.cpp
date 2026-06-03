@@ -50,16 +50,19 @@ std::string filename_join(std::string prefix, std::string suffix) {
   return filename_addslash(prefix) + suffix;
 }
 
-std::string filename_absolute(std::string fname) {
-  #if (defined(_WIN32) || defined(_WIN64))
+#if (defined(_WIN32) || defined(_WIN64))
+// Windows has no direct equivalent to POSIX realpath()
+// _fullpath() / _wfullpath() does not resolve symlinks
+// Therefore I wrote my own implementation from scratch
+static wchar_t *_wrealpath = [](const wchar_t *path, wchar_t *resolved_path) {
   std::wstring result;
-  wchar_t path[MAX_PATH];
-  std::wstring wstr = widen(fname);
-  HANDLE hFile = CreateFileW(wstr.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+  wchar_t buf[MAX_PATH];
+  wchar_t *ptr = (((wchar_t *)resolved_path) ? ((wchar_t *)resolved_path) : ((wchar_t *)buf));
+  HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
   if (hFile != INVALID_HANDLE_VALUE) {
-    DWORD len = GetFinalPathNameByHandleW(hFile, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+    DWORD len = GetFinalPathNameByHandleW(hFile, ptr, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
     if (len) {
-      result = path;
+      result = ptr;
       if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
         result = L"\\" + result.substr(7);
       } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
@@ -68,7 +71,25 @@ std::string filename_absolute(std::string fname) {
     }
     CloseHandle(hFile);
   }
-  return shorten(result);
+  if (!resolved_path && wcslen(buf)) {
+    return _wcsdup(result.c_str());
+  } else if (resolved_path && !result.empty()) {
+    wcsncpy_s(ptr, MAX_PATH, result.c_str(), _TRUNCATE);
+    return (wchar_t *)ptr;
+  }
+  return nullptr;
+}
+#endif
+
+std::string filename_absolute(std::string fname) {
+  #if (defined(_WIN32) || defined(_WIN64))
+  std::string result;
+  wchar_t path[PATH_MAX];
+  std::wstring u8fname = widen(fname);
+  if (_wrealpath(u8fname.c_str(), path)) {
+    result = shorten(path);
+  }
+  return result;
   #else
   std::string result;
   char path[PATH_MAX];
