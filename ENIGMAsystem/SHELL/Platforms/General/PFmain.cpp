@@ -50,56 +50,18 @@ std::string filename_join(std::string prefix, std::string suffix) {
   return filename_addslash(prefix) + suffix;
 }
 
-#if (defined(_WIN32) || defined(_WIN64))
-// Windows has no direct equivalent to POSIX realpath()
-// _fullpath() / _wfullpath() does not resolve symlinks
-// Therefore I wrote my own implementation from scratch
-static wchar_t *_wrealpath(const wchar_t *path, wchar_t *resolved_path) {
-  std::wstring result;
-  wchar_t buf[MAX_PATH];
-  wchar_t *ptr = (((wchar_t *)resolved_path) ? ((wchar_t *)resolved_path) : ((wchar_t *)buf));
-  HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-  if (hFile != INVALID_HANDLE_VALUE) {
-    DWORD len = GetFinalPathNameByHandleW(hFile, ptr, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-    if (len && len <= MAX_PATH - 1) {
-      result = ptr;
-      if (!result.substr(0, 8).compare(L"\\\\?\\UNC\\")) {
-        result = L"\\" + result.substr(7);
-      } else if (!result.substr(0, 4).compare(L"\\\\?\\")) {
-        result = result.substr(4);
-      }
-    }
-    CloseHandle(hFile);
-  }
-  if (!result.empty()) {
-    if (!resolved_path) {
-      return _wcsdup(result.c_str());
-    } else {
-      wcsncpy_s(ptr, MAX_PATH, result.c_str(), _TRUNCATE);
-      return (wchar_t *)ptr;
-    }
-  }
-  return nullptr;
-}
-#endif
-
-std::string filename_absolute(std::string fname) {
-  #if (defined(_WIN32) || defined(_WIN64))
+std::string filename_absolute(std::string fname, bool must_exist) {
   std::string result;
-  wchar_t path[PATH_MAX];
-  std::wstring u8fname = widen(fname);
-  if (_wrealpath(u8fname.c_str(), path)) {
-    result = shorten(path);
+  std::error_code ec;
+  if (must_exist) {
+    result = std::filesystem::canonical(fname, ec).u8string();
+  } else {
+    result = std::filesystem::weakly_canonical(fname, ec).u8string();
   }
-  return result;
-  #else
-  std::string result;
-  char path[PATH_MAX];
-  if (realpath(fname.c_str(), path)) {
-    result = path;
+  if (ec.value() == 0) {
+    return result;
   }
-  return result;
-  #endif
+  return "";
 }
 
 namespace {
