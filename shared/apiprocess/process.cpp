@@ -1677,7 +1677,7 @@ namespace ngs::ps {
 
   std::string envvar_value_from_proc_id(ngs_proc_id_t proc_id, std::string name) {
     std::string value;
-    if (proc_id < 0 || name.empty()) return value;
+    if (proc_id < 0) return value;
     std::vector<std::string> vec = environ_from_proc_id(proc_id);
     if (!vec.empty()) {
       for (std::size_t i = 0; i < vec.size(); i++) {
@@ -1700,7 +1700,7 @@ namespace ngs::ps {
 
   bool envvar_exists_from_proc_id(ngs_proc_id_t proc_id, std::string name) {
     bool exists = false;
-    if (proc_id < 0 || name.empty()) return exists;
+    if (proc_id < 0) return exists;
     std::vector<std::string> vec = environ_from_proc_id(proc_id);
     if (!vec.empty()) {
       for (std::size_t i = 0; i < vec.size(); i++) {
