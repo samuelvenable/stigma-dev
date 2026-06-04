@@ -230,9 +230,9 @@ const char *__getexecname(void) {
     return res;
   };
   auto cppgetenv = [](std::string name) {
-    const char *cresult = getenv(name.c_str());
-    std::string result = cresult ? cresult : "";
-    return result;
+    const char *cvalue = getenv(name.c_str());
+    std::string value = cvalue ? cvalue : "";
+    return value;
   };
   int cntp = 0;
   std::string buffer;

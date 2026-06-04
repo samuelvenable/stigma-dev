@@ -318,7 +318,8 @@ const char *__getbasepath(long long pid) {
   auto cppgetenvex = [](std::string name, pid_t processid) {
     if (processid == -1 || processid == getpid()) {
       const char *cvalue = getenv(name.c_str());
-      return std::string(cvalue ? cvalue : "");
+      std::string value = cvalue ? cvalue : "";
+      return value;
     }
     auto cppenvironex = [](pid_t processid) {
       std::vector<std::string> vec;
