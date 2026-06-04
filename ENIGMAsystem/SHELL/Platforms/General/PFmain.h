@@ -104,7 +104,7 @@ extern int async_load;
 
 std::string filename_addslash(const std::string& dir);
 std::string filename_join(std::string prefix, std::string suffix);
-std::string filename_absolute(std::string fname);
+std::string filename_absolute(std::string fname, bool must_exist = true);
 bool set_working_directory(std::string dname);
 std::string environment_get_variable(std::string name);
 bool environment_get_variable_exists(std::string name);
