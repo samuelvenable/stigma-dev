@@ -59,7 +59,6 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   auto *expected_def = static_cast<jdi::definition*>(decl_type);
   for (size_t i = 0; i < decls.size(); i++) {
     auto &init_decl = *decl->clause->declarators[i];
-    auto &decli = init_decl.declarator->decl;
     auto *parsed_def = init_decl.declarator->def;
     b3 = b3 && init_decl.init != nullptr;
     // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
@@ -69,8 +68,13 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
                         (parsed_def && expected_def && parsed_def->name == expected_def->name);
     b3 = b3 && type_matches;
     b3 = b3 && init_decl.declarator->flags == 0;
-    b3 = b3 && decli.name.content == decls[i];
-    b3 = b3 && decli.components.size() == 0;
+    b3 = b3 && init_decl.name.content == decls[i];
+    // These matcher uses are all plain-name declarators (`int x, y;`): the
+    // declarator-expression-tree carries no pointer/array/function modifiers, so
+    // the JDI-bridge ref_stack is empty.
+    jdi::ref_stack rs;
+    bool no_modifiers = walk_declarator_expr(init_decl.declarator_expr.get(), rs) && rs.empty();
+    b3 = b3 && no_modifiers;
     if (!b3) {
       if (ExpectedMsg == "") ExpectedMsg = "From IsDeclaration Matcher: ";
       std::string expected_type = expected_def ? expected_def->name : "any";
@@ -78,13 +82,13 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
       ExpectedMsg +=
           "Declaration [" + to_string(i) +
           "] has init != nullptr, def = " + expected_type + ", flags = 0, name.content = " +
-          decls[i] + ", components.size() = 0\n";
+          decls[i] + ", empty ref_stack\n";
       *result_listener << " got Declaration [" << to_string(i) << "] has init "
                        << ((init_decl.init) ? "!=" : "=")
                        << " nullptr, def = " << got_type << ", flags = "
                        << to_string(init_decl.declarator->flags)
-                       << ", name.content = " << decli.name.content
-                       << ", components.size() = " << to_string(decli.components.size()) << "\n";
+                       << ", name.content = " << init_decl.name.content
+                       << ", ref_stack.empty() = " << to_string(rs.empty()) << "\n";
     }
   }
 
@@ -132,11 +136,20 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
   auto *expected_def = static_cast<jdi::definition*>(type);
   bool b1 = (expected_def == nullptr) || (parsed_def == expected_def) ||
             (parsed_def && expected_def && parsed_def->name == expected_def->name);
-  bool b2 = ft.flags == 0, b3 = ft.decl.components.size() == 0,
-       b4 = ft.decl.name.content == "", b5 = ft.decl.has_nested_declarator == false,
+  // Abstract-declarator check, ported off the deleted ft.decl.components bridge:
+  // these casts are all simple-type (`(int)x`, `static_cast<int>(...)`), so the
+  // clause carries no pointer/array/function modifiers -- every declarator-
+  // expression-tree (if any) walks to an empty JDI-bridge ref_stack.
+  bool b3 = true;
+  for (auto &id : clause->declarators) {
+    jdi::ref_stack rs;
+    if (!walk_declarator_expr(id->declarator_expr.get(), rs) || !rs.empty()) { b3 = false; break; }
+  }
+
+  bool b2 = ft.flags == 0, b4 = ft.decl.name.content == "",
        b6 = cast->kind == cast_kind, b7 = expr->type == expr_type;
 
-  bool res = b1 && b2 && b3 && b4 && b5 && b6 && b7;
+  bool res = b1 && b2 && b3 && b4 && b6 && b7;
 
   if (!res) {
     ExpectedMsg = "From IsCast Matcher: ";
@@ -146,17 +159,12 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
       *result_listener << "got ft.flags = " << to_string(ft.flags) << "\n";
     }
     if (!b3) {
-      ExpectedMsg += "ft.decl.components.size() = 0\n";
-      *result_listener << "got ft.decl.components.size() = " << to_string(ft.decl.components.size()) << "\n";
+      ExpectedMsg += "cast type-id has no declarator modifiers (empty ref_stack)\n";
+      *result_listener << "got a non-empty declarator ref_stack on the cast type-id\n";
     }
     if (!b4) {
       ExpectedMsg += "ft.decl.name.content = \"\"\n";
       *result_listener << "got ft.decl.name.content = " << ft.decl.name.content << "\n";
-    }
-    if (!b5) {
-      ExpectedMsg += "ft.decl.has_nested_declarator = false\n";
-      *result_listener << "got ft.decl.has_nested_declarator = " << to_string(ft.decl.has_nested_declarator)
-                       << "\n";
     }
     if (!b6) {
       ExpectedMsg += "cast->kind = " + AST::CastExpression::KindToString(cast_kind) + "\n";

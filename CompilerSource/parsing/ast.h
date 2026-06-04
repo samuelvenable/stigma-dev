@@ -80,6 +80,14 @@ class AST {
     // Helper function that calls the appropriate Visitor function for this node type
     virtual bool accept(Visitor& visitor) = 0;
 
+    // JDI bridge: when this node sits in a function-declarator's parameter list,
+    // populate `out` (a slot in the ref_stack's parameter_ct) from this node.
+    // `parameter` is a full_type + default-arg/variadic; today we fill only the
+    // full_type portion (parity with legacy to_jdi_refstack). Default false =
+    // "not a parameter-declaration"; overridden by the node shapes the parser
+    // leaves parameters in (today: DeclarationStatement).
+    virtual bool to_jdi_refstack_parameter(jdi::ref_stack::parameter &out) { (void)out; return false; }
+
     Node(NodeType t = NodeType::ERROR): type(t) {}
     virtual ~Node() = default;
 
@@ -607,6 +615,12 @@ class AST {
 
     BASIC_NODE_ROUTINES(DeclaratorClause);
 
+    // Combine the shared spec-seq with the i-th declarator's expression-tree
+    // into the JDI-bridge full_type: { base def, walk_declarator_expr(...), base
+    // flags }. This is the single home for the spec+declarator recomposition the
+    // legacy Declarator::to_jdi_refstack used to own.
+    jdi::full_type to_jdi_fulltype(std::size_t i = 0);
+
     DeclaratorClause(std::unique_ptr<TypeSpecifierSeq> specifiers_,
                      std::vector<std::unique_ptr<InitDeclarator>> declarators_):
         specifiers(std::move(specifiers_)), declarators(std::move(declarators_)) {}
@@ -627,6 +641,7 @@ class AST {
 
     BASIC_NODE_ROUTINES(DeclarationStatement);
     static std::string StorageToString(StorageClass st);
+    bool to_jdi_refstack_parameter(jdi::ref_stack::parameter &out) override;
 
     DeclarationStatement(StorageClass sc, std::unique_ptr<DeclaratorClause> clause_):
         clause{std::move(clause_)}, storage_class{sc} {}
@@ -701,7 +716,6 @@ class AST {
     bool VisitTypeSpecifierSeq(TypeSpecifierSeq &node);
     bool VisitDeclSpecList(DeclSpecList &node);
     bool VisitLambdaExpression(LambdaExpression &node);
-    bool VisitFullType(FullType &node, bool print_type = true);
     bool VisitSizeofExpression(SizeofExpression &node);
     bool VisitAlignofExpression(AlignofExpression &node);
     bool VisitCastExpression(CastExpression &node);
@@ -726,6 +740,29 @@ class AST {
     bool VisitDeclarationStatement(DeclarationStatement &node);
     bool VisitInitDeclarator(InitDeclarator &node);
     bool VisitDeclaratorClause(DeclaratorClause &node);
+  };
+
+  // Structural dump of an AST subtree: one indented line per node, type name
+  // plus a few salient attributes (operator token, literal text, identifier).
+  // For debugging/diagnostics only -- not part of code generation. Generic
+  // traversal lives in DefaultVisit; richer node kinds override for detail.
+  class DebugPrinter : public AST::Visitor {
+    std::ostream &out;
+    int depth = 0;
+    bool emit(Node &node, const std::string &detail);
+
+   public:
+    explicit DebugPrinter(std::ostream &out_): out{out_} {}
+    // Convenience: dump `node` to a string.
+    static std::string Dump(Node &node);
+
+    bool DefaultVisit(Node &node) override;
+    bool VisitUnaryPrefixExpression(UnaryPrefixExpression &node) override;
+    bool VisitUnaryPostfixExpression(UnaryPostfixExpression &node) override;
+    bool VisitBinaryExpression(BinaryExpression &node) override;
+    bool VisitFunctionCallExpression(FunctionCallExpression &node) override;
+    bool VisitLiteral(Literal &node) override;
+    bool VisitIdentifierAccess(IdentifierAccess &node) override;
   };
 
   // Used to adapt to current single-error syntax checking interface.

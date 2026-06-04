@@ -43,6 +43,19 @@ class AstBuilderTestAPI {
   // pure-expression contexts keep parse-time "missing operand" errors.
   bool allow_abstract_operand_ = false;
 
+  // When true, a type-name operand is promoted to a full type-id clause
+  // (specifiers + declarator) instead of the bare TypeSpecifierSeq that the
+  // surrounding ParseExpression early-returns on. Set across a parenthesized
+  // group that *might* be a declarator list (we don't yet know -- the role is
+  // deferred to the semantic phase: it could be a cast, tie, tuple, lambda
+  // params, or plain grouping), so ParseExpression itself can build a comma-
+  // list of (possibly abstract) declarators. Inert until a type-name is
+  // actually reached, so non-type parens are unaffected. Cousin of
+  // allow_abstract_operand_; flips back to false at the same value-expression
+  // boundaries (array bounds, default-init). Defaults false so a bare type-id
+  // at statement level still bails to the caller for decl-vs-expr resolution.
+  bool maybe_declarator_group_ = false;
+
   AstBuilderTestAPI() = default;
 
   void initialize(Lexer *lexer, ErrorHandler *herr) {

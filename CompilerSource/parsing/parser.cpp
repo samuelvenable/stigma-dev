@@ -394,10 +394,22 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     std::vector<std::unique_ptr<AST::InitDeclarator>> decls, bool already_parsed_first = false) {
   while (true) {
     if (!already_parsed_first) {
-      auto declarator_expr = TryParseDeclarator(&ft, decl_type);
-      Token name = ft.decl.name;
+      // Parse the declarator through the unified expression parser (types-as-
+      // trees): prefix `* &` and the tighter-binding postfix `[] ()` build the
+      // declarator-expression-tree directly, no legacy Declarator/components/
+      // to_expression bridge. The name is recovered structurally from the tree
+      // spine. allow_abstract_operand_ is set only when this production permits
+      // an unnamed declarator (parameter / type-id contexts).
+      AST::PNode declarator_expr;
+      {
+        ScopedFlag allow_abstract(allow_abstract_operand_,
+                                  decl_type != AST::DeclaratorType::NON_ABSTRACT);
+        declarator_expr = ParseExpression(Precedence::kUnaryPrefix);
+      }
+      const Token *namep = find_declarator_name(declarator_expr.get());
+      Token name = namep ? *namep : Token{};
       decls.emplace_back(std::make_unique<AST::InitDeclarator>(
-          std::move(name), std::move(ft), std::move(declarator_expr),
+          name, std::move(ft), std::move(declarator_expr),
           next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
       declarations[decls.back()->name.content] = decls.back()->declarator.get();
     }
@@ -1148,6 +1160,43 @@ std::unique_ptr<AST::DeclaratorClause> ParseTypeIdClause() {
   return std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
 }
 
+// A parenthesized group is a C-style-cast target iff its single element is an
+// abstract type-id clause (a declarator with no name in its spine). A named
+// declarator (`int x`) or a comma-list (a tuple) is not a cast; those flow on
+// as a Parenthetical for the semantic phase / the outer `=>`,`=` dispatch.
+bool clause_is_abstract_type_id(AST::Node *node) {
+  if (!node || node->type != AST::NodeType::DECLARATOR_CLAUSE) return false;
+  auto *clause = node->As<AST::DeclaratorClause>();
+  return clause->declarators.size() == 1 &&
+         find_declarator_name(clause->declarators[0]->declarator_expr.get()) == nullptr;
+}
+
+// All operand-position `(...)` groups funnel through here: grouping, C-style
+// cast, tuple/tie, and lambda-parameter lists. The contents parse as one
+// comma-list under maybe_declarator_group_, so a type-name element becomes a
+// (possibly abstract) declarator clause and ParseExpression itself ties the
+// commas -- the uniform tuple. Role is deferred to the semantic phase, with one
+// parse-time carve-out: a lone abstract type-id is the only shape that must
+// consume a trailing operand here (the C-style cast), since nothing downstream
+// would. (The postfix `(` -- call args / function-declarator params -- will
+// delegate here once Family A is retired; see #33/#34.)
+std::unique_ptr<AST::Node> ParseParenthetical() {
+  auto paren = token;
+  token = lexer->ReadToken();
+  std::unique_ptr<AST::Node> body;
+  {
+    ScopedFlag group(maybe_declarator_group_, true);
+    body = ParseExpression(Precedence::kAll);
+  }
+  require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
+  if (clause_is_abstract_type_id(body.get())) {
+    auto expr = ParseExpression(Precedence::kUnaryPrefix);
+    return std::make_unique<AST::CastExpression>(
+        AST::CastExpression::Kind::C_STYLE, paren, std::move(body), std::move(expr));
+  }
+  return std::make_unique<AST::Parenthetical>(std::move(body));
+}
+
 void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs) {
   switch (token.type) {
     case TT_TYPEDEF: {
@@ -1699,21 +1748,8 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       return nullptr;
     }
 
-    case TT_BEGINPARENTH: {
-      auto paren = token;
-      token = lexer->ReadToken();
-      if (next_is_type_specifier()) {
-        auto type_node = ParseTypeIdClause();
-        require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
-        auto expr = ParseExpression(Precedence::kUnaryPrefix);
-        return std::make_unique<AST::CastExpression>(
-            AST::CastExpression::Kind::C_STYLE, paren, std::move(type_node), std::move(expr));
-      } else {
-        auto exp = ParseExpression(Precedence::kAll);
-        require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
-        return std::make_unique<AST::Parenthetical>(std::move(exp));
-      }
-    }
+    case TT_BEGINPARENTH:
+      return ParseParenthetical();
 
     case TT_BEGINBRACKET: {
       token = lexer->ReadToken();
@@ -1847,6 +1883,16 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_TYPE_NAME:
     case TT_GLOBAL:
     case TT_LOCAL: {
+      // Inside a maybe-declarator group (parenthesized list), a type-name is
+      // promoted to a full type-id clause (specifiers + declarator) so the
+      // surrounding ParseExpression keeps going and ties the comma-list -- the
+      // uniform tuple. This fires before the functional-cast heuristic below,
+      // which would otherwise demand a `(`/`{` and reject a bare `(int)` / a
+      // declarator. A bare identifier (not a type) falls through to normal
+      // handling so `(int x, y, float z)`'s `y` stays an expression leaf.
+      if (maybe_declarator_group_ && (token.type == TT_TYPE_NAME || next_is_user_defined_type())) {
+        return ParseTypeIdClause();
+      }
       if (next_maybe_functional_cast()) {
         FullType type;
         auto declspecs = std::make_unique<AST::DeclSpecList>();
@@ -2419,25 +2465,35 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       auto callee = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
       auto call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
 
-      // [stmt.ambig]: "if it can be a declaration, it is." A single argument
-      // whose declarator-spine bottoms out in a name (`T(*p)`, `int(*(*a)[10])`)
-      // makes this a declaration; the parser commits to that here -- the one
-      // place between ParseStatement and the declaration parsers that knows a
-      // leading type-specifier is present (a bare `a = b` has no specifier, so
-      // it never reaches this branch and is never mis-promoted). An abstract
-      // argument (a literal, or a tree rooted at `+` etc. -- `int(*(*a)[10]+b)`)
-      // is not a named declarator, so it stays the call-shaped expression and
-      // any trailing `=` is an ordinary assignment, resolved by the semantic
-      // phase as a temporary-object assignment.
+      // [stmt.ambig]: "if it can be a declaration, it is."
+      // Convert a cast like `int(identifier)` to a declaration.
+      // Notably, that cast must have exactly one argument:
+      // `int(a,b)` is not declaring both `a` and `b`.
       if (call->arguments.size() == 1) {
-        if (const Token *name = find_declarator_name(call->arguments[0].get())) {
+        if (const Token *namep = find_declarator_name(call->arguments[0].get())) {
+          Token name = *namep;
           auto specifiers = dynamic_unique_pointer_cast<AST::TypeSpecifierSeq>(std::move(call->function));
-          auto declarator_expr = std::move(call->arguments[0]);
+          // The first parenthesized group was consumed as the call's argument
+          // list, so its content is the *inner* of a parenthesized declarator.
+          // Whether those parens are meaningful grouping depends on what follows
+          // the group: a trailing declarator postfix (`int(*p)[10]`,
+          // `int(*p)(int)`) binds to the whole group, so re-wrap it as a grouping
+          // Parenthetical and continue the postfix loop (kFuncCall continues only
+          // `[]`/`()` and stops at any binary op or `=`). With nothing trailing
+          // (`int(*(*a)[10])`) the parens are redundant grouping around the entire
+          // declarator -- strip them and take the bare argument as the declarator.
+          AST::PNode declarator_expr;
+          if (token.type == TT_BEGINBRACKET || token.type == TT_BEGINPARENTH) {
+            auto paren = std::make_unique<AST::Parenthetical>(std::move(call->arguments[0]));
+            declarator_expr = ParseExpression(Precedence::kFuncCall, std::move(paren));
+          } else {
+            declarator_expr = std::move(call->arguments[0]);
+          }
           FullType ft(callee_def);
-          ft.decl.name = *name;
+          ft.decl.name = name;
           std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
           declarators.push_back(std::make_unique<AST::InitDeclarator>(
-              *name, std::move(ft), std::move(declarator_expr),
+              name, std::move(ft), std::move(declarator_expr),
               next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
           auto clause = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
           return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));

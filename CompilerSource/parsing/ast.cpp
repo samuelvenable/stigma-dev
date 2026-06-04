@@ -22,6 +22,7 @@
 
 #include <string>
 #include <memory>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -104,6 +105,78 @@ jdi::full_type AST::TypeSpecifierSeq::to_jdi_fulltype() {
   return type_info.to_jdi_fulltype();
 }
 
+// Combine the shared spec-seq with the i-th declarator's expression-tree into
+// the JDI-bridge full_type. The complete-full_type constructor; the recursive
+// ref_stack piece-builder it wraps is walk_declarator_expr.
+jdi::full_type AST::DeclaratorClause::to_jdi_fulltype(std::size_t i) {
+  jdi::full_type base = specifiers ? specifiers->to_jdi_fulltype() : jdi::full_type{};
+  jdi::ref_stack rt;
+  if (i < declarators.size())
+    walk_declarator_expr(declarators[i]->declarator_expr.get(), rt);
+  return jdi::full_type{base.def, rt, static_cast<int>(base.flags)};
+}
+
+// A named/simple/abstract param (`int x`, `int *p`, `int`) is a
+// DeclarationStatement: split the base spec-seq from the declarator tree via the
+// clause and swap the recomposed full_type into the parameter slot. We fill only
+// the full_type portion (default-arg/variadic left empty -- parity with legacy
+// to_jdi_refstack).
+bool AST::DeclarationStatement::to_jdi_refstack_parameter(jdi::ref_stack::parameter &out) {
+  if (!clause || !clause->specifiers || clause->declarators.empty()) return false;
+  jdi::full_type ft = clause->to_jdi_fulltype(0);
+  out.swap_in(ft);
+  return true;
+}
+
+// Descend a (possibly nested) declarator-expression to the leaf TypeSpecifierSeq
+// that carries its base type. Used for the abstract/nested param shape that has
+// no DeclarationStatement wrapper.
+static AST::TypeSpecifierSeq *find_leaf_type_spec(AST::Node *expr) {
+  for (;;) {
+    if (!expr) return nullptr;
+    switch (expr->type) {
+      case AST::NodeType::TYPE_SPECIFIER_SEQ: return expr->As<AST::TypeSpecifierSeq>();
+      case AST::NodeType::UNARY_PREFIX_EXPRESSION:
+        expr = expr->As<AST::UnaryPrefixExpression>()->operand.get();
+        break;
+      case AST::NodeType::BINARY_EXPRESSION:
+        expr = expr->As<AST::BinaryExpression>()->left.get();
+        break;
+      case AST::NodeType::FUNCTION_CALL:
+        expr = expr->As<AST::FunctionCallExpression>()->function.get();
+        break;
+      case AST::NodeType::PARENTHETICAL:
+        expr = expr->As<AST::Parenthetical>()->expression.get();
+        break;
+      default:
+        return nullptr;
+    }
+  }
+}
+
+// Bridge one function-declarator parameter (an entry in the call-shaped
+// `arguments`) into a ref_stack::parameter. Params arrive heterogeneously:
+//   * a named/simple/abstract param is a DeclarationStatement -- handled
+//     polymorphically by to_jdi_refstack_parameter;
+//   * an abstract/nested param (`int (*)[10]`) is left as the call-shaped
+//     expression itself, embedding its base type as a leaf TypeSpecifierSeq -- no
+//     clause node to home the virtual on, so it falls through to find_leaf_type_spec.
+// Returns false for any other arg shape (a bare value expression isn't a
+// parameter-declaration), aborting the surrounding walk: not a function declarator.
+static bool arg_to_parameter(AST::Node *arg, jdi::ref_stack::parameter &out) {
+  if (!arg) return false;
+  if (arg->to_jdi_refstack_parameter(out)) return true;
+  if (AST::TypeSpecifierSeq *spec = find_leaf_type_spec(arg)) {
+    jdi::ref_stack rt;
+    if (!walk_declarator_expr(arg, rt)) return false;
+    jdi::full_type base = spec->to_jdi_fulltype();
+    jdi::full_type ft{base.def, rt, static_cast<int>(base.flags)};
+    out.swap_in(ft);
+    return true;
+  }
+  return false;
+}
+
 // AST→JDI bridge: walk a declarator-expression-tree into a jdi::ref_stack.
 // Inverse of Declarator::to_expression. Replaces Declarator::to_jdi_refstack
 // for the AST-side path; called by callers that have a TypeSpecifierSeq + InitDeclarator
@@ -113,17 +186,31 @@ bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result) {
   switch (expr->type) {
     case AST::NodeType::IDENTIFIER:
     case AST::NodeType::LITERAL:
+    // A TypeSpecifierSeq is the leaf of an abstract/nested function-param tree
+    // (`int (*)[10]`): the base type sits here, the declarator modifiers wrap
+    // it. Terminates the walk the same as a name leaf -- the spec contributes
+    // no ref_stack node, only the base type (read separately via find_leaf_type_spec).
+    case AST::NodeType::TYPE_SPECIFIER_SEQ:
       return true;
     case AST::NodeType::UNARY_PREFIX_EXPRESSION: {
       auto &u = *expr->As<AST::UnaryPrefixExpression>();
       if (!walk_declarator_expr(u.operand.get(), result)) return false;
+      // The walk is post-order (leaf->root), i.e. name-outward, so every
+      // modifier must attach at the *bottom* of the stack to land in canonical
+      // order (see ref_stack's documented example). push_array/push_func already
+      // append at the bottom; jdi::ref_stack::push (pointer/reference) attaches
+      // at the *top* instead, which would cluster all pointers ahead of all
+      // arrays and collapse `int (*p)[N]` into `int *p[N]`. Route pointers
+      // through prepend_c so they bottom-attach like the postfix modifiers.
+      jdi::ref_stack one;
       if (u.operation.type == TT_STAR) {
-        result.push(jdi::ref_stack::RT_POINTERTO);
+        one.push(jdi::ref_stack::RT_POINTERTO);
       } else if (u.operation.type == TT_AMPERSAND) {
-        result.push(jdi::ref_stack::RT_REFERENCE);
+        one.push(jdi::ref_stack::RT_REFERENCE);
       } else {
         return false;
       }
+      result.prepend_c(one);
       return true;
     }
     case AST::NodeType::BINARY_EXPRESSION: {
@@ -143,28 +230,78 @@ bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result) {
     case AST::NodeType::FUNCTION_CALL: {
       auto &c = *expr->As<AST::FunctionCallExpression>();
       if (!walk_declarator_expr(c.function.get(), result)) return false;
-      // Function-declarator parameters now live in `arguments`, but
-      // heterogeneously: a simple named param (`int x`) is a DeclarationStatement,
-      // while abstract/nested params (`int (*)[10]`, `int (*x)(int x)`) stay
-      // expression trees that embed their own type-spec (the leaf TypeSpecifierSeq)
-      // -- the parser keeps the ambiguous call shape and defers commit. Bridging
-      // each shape into a jdi parameter full_type is semantic-phase work; emit an
-      // empty parameter list here until that lands.
+      // Function-declarator parameters live in `arguments`, heterogeneously (see
+      // arg_to_parameter): bridge each into a ref_stack::parameter and push the
+      // list, mirroring Declarator::to_jdi_refstack's per-parameter build.
       jdi::ref_stack::parameter_ct params;
+      for (auto &arg : c.arguments) {
+        jdi::ref_stack::parameter p;
+        if (!arg_to_parameter(arg.get(), p)) return false;
+        params.throw_on(p);
+      }
       result.push_func(params);
       return true;
     }
     case AST::NodeType::PARENTHETICAL: {
+      // Grouping parens carry no ref_stack node of their own; the tree already
+      // encodes the grouping. Walk through transparently into the same stack so
+      // the name-outward bottom-attach ordering is preserved (a separate nested
+      // stack + append_c would re-cluster, reintroducing the ordering bug).
       auto &p = *expr->As<AST::Parenthetical>();
-      jdi::ref_stack nested;
-      if (!walk_declarator_expr(p.expression.get(), nested)) return false;
-      result.append_c(nested);
-      return true;
+      return walk_declarator_expr(p.expression.get(), result);
     }
     default:
       return false;
   }
 }
+
+bool AST::DebugPrinter::emit(AST::Node &node, const std::string &detail) {
+  out << std::string(depth * 2, ' ') << AST::NodeToString(node.type);
+  if (!detail.empty()) out << ' ' << detail;
+  out << '\n';
+  depth++;
+  node.RecursiveSubVisit(*this);
+  depth--;
+  return false;  // children already walked; suppress caller's auto-recursion
+}
+
+std::string AST::DebugPrinter::Dump(AST::Node &node) {
+  std::ostringstream oss;
+  DebugPrinter printer(oss);
+  node.accept(printer);
+  return oss.str();
+}
+
+bool AST::DebugPrinter::DefaultVisit(AST::Node &node) { return emit(node, ""); }
+
+bool AST::DebugPrinter::VisitUnaryPrefixExpression(AST::UnaryPrefixExpression &node) {
+  return emit(node, "'" + node.operation.token + "'");
+}
+
+bool AST::DebugPrinter::VisitUnaryPostfixExpression(AST::UnaryPostfixExpression &node) {
+  return emit(node, "'" + node.operation.token + "'");
+}
+
+bool AST::DebugPrinter::VisitBinaryExpression(AST::BinaryExpression &node) {
+  return emit(node, "'" + node.operation.token + "'");
+}
+
+bool AST::DebugPrinter::VisitFunctionCallExpression(AST::FunctionCallExpression &node) {
+  return emit(node, "args=" + std::to_string(node.arguments.size()));
+}
+
+bool AST::DebugPrinter::VisitLiteral(AST::Literal &node) {
+  std::string detail;
+  if (auto *s = std::get_if<std::string>(&node.value.value)) detail = "'" + *s + "'";
+  else if (auto *i = std::get_if<long long>(&node.value.value)) detail = std::to_string(*i);
+  else if (auto *d = std::get_if<long double>(&node.value.value)) detail = std::to_string((double)*d);
+  return emit(node, detail);
+}
+
+bool AST::DebugPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
+  return emit(node, "'" + std::string(node.name.content) + "'");
+}
+
 void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Leaf: specs are Tokens, not AST nodes.
 }

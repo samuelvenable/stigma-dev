@@ -297,6 +297,19 @@ bool contains_flag(FullType *ft, std::size_t decflag) { return (ft->flags & decf
 
 bool def_type_is(FullType *ft, std::size_t dectype) { return ft && ft->def && (ft->def->flags & dectype) == dectype; }
 
+// Flatten a jdi::ref_stack (begin->end, i.e. name-outward) into comparable
+// (ref_type, array-size/param-count) pairs for the bridge-layer declarator
+// assertions.
+static std::vector<std::pair<int, size_t>> serialize_refstack(jdi::ref_stack &s) {
+  std::vector<std::pair<int, size_t>> out;
+  for (auto it = s.begin(); it != s.end(); ++it) {
+    size_t extra = 0;
+    if (it->type == jdi::ref_stack::RT_ARRAYBOUND) extra = it->arraysize();
+    else if (it->type == jdi::ref_stack::RT_FUNCTION) extra = it->paramcount();
+    out.emplace_back(static_cast<int>(it->type), extra);
+  }
+  return out;
+}
 TEST(ParserTest, TypeSpecifierAndDeclarator) {
   ParserTester test = ParserTester::CreateWithSetUp("const unsigned int ****(***)[10]");
   auto clause = test->ParseTypeIdClause();
@@ -351,139 +364,122 @@ TEST(ParserTest, Declarator_2_NoSemicolon) {
   EXPECT_EQ(test3.lexer.ReadToken().type, TT_ENDOFCODE);
 }
 
+// Structural (AST-tree) assertion for the nested declarator
+// `int *(*(*a)[10][12])[15]`. Pairs with Declarator_4, which asserts the same
+// declarator at the JDI-bridge (ref_stack) layer.
+static void assert_declarator_3_tree(AST::Node *root) {
+  ASSERT_EQ(root->type, AST::NodeType::DECLARATION);
+  auto *decls = root->As<AST::DeclarationStatement>();
+  ASSERT_EQ(decls->clause->declarators.size(), 1u);
+  auto &id = *decls->clause->declarators[0];
+  ASSERT_EQ(id.init, nullptr);
+  ASSERT_EQ(id.name.content, "a");
+  ASSERT_NE(id.declarator_expr, nullptr);
+  ASSERT_EQ(AST::DebugPrinter::Dump(*id.declarator_expr),
+            "UNARY_PREFIX_EXPRESSION '*'\n"
+            "  BINARY_EXPRESSION '['\n"
+            "    PARENTHETICAL\n"
+            "      UNARY_PREFIX_EXPRESSION '*'\n"
+            "        BINARY_EXPRESSION '['\n"
+            "          BINARY_EXPRESSION '['\n"
+            "            PARENTHETICAL\n"
+            "              UNARY_PREFIX_EXPRESSION '*'\n"
+            "                IDENTIFIER 'a'\n"
+            "            LITERAL '10'\n"
+            "          LITERAL '12'\n"
+            "    LITERAL '15'\n");
+}
+
+// Bridge-layer (jdi::ref_stack) assertion for the same declarator. The expected
+// sequence is the canonical name-outward order documented in references.h for
+// this exact declarator: P, A[10], A[12], P, A[15], P.
+static void assert_declarator_4_refstack(AST::Node *root) {
+  ASSERT_EQ(root->type, AST::NodeType::DECLARATION);
+  auto *decls = root->As<AST::DeclarationStatement>();
+  ASSERT_EQ(decls->clause->declarators.size(), 1u);
+  auto &id = *decls->clause->declarators[0];
+  ASSERT_EQ(id.init, nullptr);
+  ASSERT_EQ(id.name.content, "a");
+  jdi::ref_stack rs;
+  ASSERT_TRUE(enigma::parsing::walk_declarator_expr(id.declarator_expr.get(), rs));
+  const std::vector<std::pair<int, size_t>> expected = {
+      {jdi::ref_stack::RT_POINTERTO, 0}, {jdi::ref_stack::RT_ARRAYBOUND, 10},
+      {jdi::ref_stack::RT_ARRAYBOUND, 12}, {jdi::ref_stack::RT_POINTERTO, 0},
+      {jdi::ref_stack::RT_ARRAYBOUND, 15}, {jdi::ref_stack::RT_POINTERTO, 0},
+  };
+  ASSERT_EQ(serialize_refstack(rs), expected);
+}
+
+// Shared assertion for `int *x = nullptr, y, (*z)(int x, int) = &y;` (with and
+// without the trailing semicolon). Re-ported off the legacy Declarator/components
+// bridge onto both surviving declarator layers: the AST declarator-expression-tree
+// (DebugPrinter, for the nested decl[2]) and the JDI bridge (walk_declarator_expr).
+static void assert_declarations_tree(AST::Node *root) {
+  ASSERT_EQ(root->type, AST::NodeType::DECLARATION);
+  auto *decls = root->As<AST::DeclarationStatement>();
+  if (decls->clause->specifiers->def)
+    EXPECT_EQ(decls->clause->specifiers->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+
+  ASSERT_EQ(decls->clause->declarators.size(), 3u);
+
+  // decl[0]: `*x = nullptr` -> name x, has initializer, ref_stack [P].
+  {
+    auto &id = *decls->clause->declarators[0];
+    EXPECT_EQ(id.name.content, "x");
+    EXPECT_NE(id.init, nullptr);
+    jdi::ref_stack rs;
+    ASSERT_TRUE(enigma::parsing::walk_declarator_expr(id.declarator_expr.get(), rs));
+    const std::vector<std::pair<int, size_t>> expected = {
+        {jdi::ref_stack::RT_POINTERTO, 0}};
+    EXPECT_EQ(serialize_refstack(rs), expected);
+  }
+
+  // decl[1]: `y` -> name y, no initializer, empty ref_stack.
+  {
+    auto &id = *decls->clause->declarators[1];
+    EXPECT_EQ(id.name.content, "y");
+    EXPECT_EQ(id.init, nullptr);
+    jdi::ref_stack rs;
+    ASSERT_TRUE(enigma::parsing::walk_declarator_expr(id.declarator_expr.get(), rs));
+    EXPECT_TRUE(serialize_refstack(rs).empty());
+  }
+
+  // decl[2]: `(*z)(int x, int) = &y` -> name z, has initializer, ref_stack
+  // [P, FUNCTION(2)]; tree is a function-call on the parenthesised `*z`.
+  {
+    auto &id = *decls->clause->declarators[2];
+    EXPECT_EQ(id.name.content, "z");
+    EXPECT_NE(id.init, nullptr);
+    jdi::ref_stack rs;
+    ASSERT_TRUE(enigma::parsing::walk_declarator_expr(id.declarator_expr.get(), rs));
+    const std::vector<std::pair<int, size_t>> expected = {
+        {jdi::ref_stack::RT_POINTERTO, 0}, {jdi::ref_stack::RT_FUNCTION, 2}};
+    EXPECT_EQ(serialize_refstack(rs), expected);
+  }
+}
+
 TEST(ParserTest, Declarator_3) {
   ParserTester test = ParserTester::CreateWithCpp("int *(*(*a)[10][12])[15];");
   auto node = test->TryParseStatement();
-  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
-  auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->clause->declarators.size(), 1);
-
-  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
-  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
-  ASSERT_EQ(decl1.name.content, "a");
-  ASSERT_EQ(decl1.components.size(), 2);
-
-  ASSERT_EQ(decl1.components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &ptr = decl1.components[0].as<PointerNode>();
-  ASSERT_EQ(ptr.is_const, false);
-  ASSERT_EQ(ptr.is_volatile, false);
-  ASSERT_EQ(ptr.class_def, nullptr);
-
-  ASSERT_EQ(decl1.components[1].kind, DeclaratorNode::Kind::NESTED);
-  ASSERT_TRUE(decl1.components[1].as<NestedNode>().is<std::unique_ptr<Declarator>>());
-  auto *nested = decl1.components[1].as<NestedNode>().as<std::unique_ptr<Declarator>>().get();
-  ASSERT_EQ(nested->components.size(), 3);
-
-  ASSERT_EQ(nested->components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &nested_ptr = nested->components[0].as<PointerNode>();
-  ASSERT_EQ(nested_ptr.is_const, false);
-  ASSERT_EQ(nested_ptr.is_volatile, false);
-  ASSERT_EQ(nested_ptr.class_def, nullptr);
-
-  ASSERT_EQ(nested->components[1].kind, DeclaratorNode::Kind::NESTED);
-  ASSERT_TRUE(nested->components[1].as<NestedNode>().is<std::unique_ptr<Declarator>>());
-  auto *nested_nested = nested->components[1].as<NestedNode>().as<std::unique_ptr<Declarator>>().get();
-  ASSERT_EQ(nested_nested->components.size(), 3);
-  ASSERT_EQ(nested_nested->components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &nested_nested_ptr = nested_nested->components[0].as<PointerNode>();
-  ASSERT_EQ(nested_nested_ptr.is_const, false);
-  ASSERT_EQ(nested_nested_ptr.is_volatile, false);
-  ASSERT_EQ(nested_nested_ptr.class_def, nullptr);
-  ASSERT_EQ(nested_nested->components[1].kind, DeclaratorNode::Kind::ARRAY_BOUND);
-  ASSERT_EQ(nested_nested->components[2].kind, DeclaratorNode::Kind::ARRAY_BOUND);
-
-  ASSERT_EQ(nested->components[2].kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  assert_declarator_3_tree(node.get());
 }
 
-//
 TEST(ParserTest, Declarator_3_NoSemicolon) {
   ParserTester test = ParserTester::CreateWithCpp("int *(*(*a)[10][12])[15]");
   auto node = test->TryParseStatement();
-  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
-  auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->clause->declarators.size(), 1);
-
-  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
-  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
-  ASSERT_EQ(decl1.name.content, "a");
-  ASSERT_EQ(decl1.components.size(), 2);
-
-  ASSERT_EQ(decl1.components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &ptr = decl1.components[0].as<PointerNode>();
-  ASSERT_EQ(ptr.is_const, false);
-  ASSERT_EQ(ptr.is_volatile, false);
-  ASSERT_EQ(ptr.class_def, nullptr);
-
-  ASSERT_EQ(decl1.components[1].kind, DeclaratorNode::Kind::NESTED);
-  ASSERT_TRUE(decl1.components[1].as<NestedNode>().is<std::unique_ptr<Declarator>>());
-  auto *nested = decl1.components[1].as<NestedNode>().as<std::unique_ptr<Declarator>>().get();
-  ASSERT_EQ(nested->components.size(), 3);
-
-  ASSERT_EQ(nested->components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &nested_ptr = nested->components[0].as<PointerNode>();
-  ASSERT_EQ(nested_ptr.is_const, false);
-  ASSERT_EQ(nested_ptr.is_volatile, false);
-  ASSERT_EQ(nested_ptr.class_def, nullptr);
-
-  ASSERT_EQ(nested->components[1].kind, DeclaratorNode::Kind::NESTED);
-  ASSERT_TRUE(nested->components[1].as<NestedNode>().is<std::unique_ptr<Declarator>>());
-  auto *nested_nested = nested->components[1].as<NestedNode>().as<std::unique_ptr<Declarator>>().get();
-  ASSERT_EQ(nested_nested->components.size(), 3);
-  ASSERT_EQ(nested_nested->components[0].kind, DeclaratorNode::Kind::POINTER_TO);
-  auto &nested_nested_ptr = nested_nested->components[0].as<PointerNode>();
-  ASSERT_EQ(nested_nested_ptr.is_const, false);
-  ASSERT_EQ(nested_nested_ptr.is_volatile, false);
-  ASSERT_EQ(nested_nested_ptr.class_def, nullptr);
-  ASSERT_EQ(nested_nested->components[1].kind, DeclaratorNode::Kind::ARRAY_BOUND);
-  ASSERT_EQ(nested_nested->components[2].kind, DeclaratorNode::Kind::ARRAY_BOUND);
-
-  ASSERT_EQ(nested->components[2].kind, DeclaratorNode::Kind::ARRAY_BOUND);
+  assert_declarator_3_tree(node.get());
 }
 
 TEST(ParserTest, Declarator_4) {
   ParserTester test = ParserTester::CreateWithCpp("int *(*(*a)[10][12])[15];");
   auto node = test->TryParseStatement();
-  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
-  auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->clause->declarators.size(), 1);
-
-  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
-  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
-  ASSERT_EQ(decl1.name.content, "a");
-  ASSERT_EQ(decl1.components.size(), 2);
-
-  // jdi::ref_stack stack;
-  //   decl1.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
+  assert_declarator_4_refstack(node.get());
 }
 
 TEST(ParserTest, Declarator_4_NoSemicolon) {
   ParserTester test = ParserTester::CreateWithCpp("int *(*(*a)[10][12])[15]");
   auto node = test->TryParseStatement();
-  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
-  auto *decls = node->As<AST::DeclarationStatement>();
-  ASSERT_EQ(decls->clause->declarators.size(), 1);
-
-  ASSERT_EQ(decls->clause->declarators[0]->init, nullptr);
-  auto &decl1 = decls->clause->declarators[0]->declarator->decl;
-  ASSERT_EQ(decl1.name.content, "a");
-  ASSERT_EQ(decl1.components.size(), 2);
-
-  // jdi::ref_stack stack;
-  //   decl1.to_jdi_refstack(stack);
-  // auto first = stack.begin();
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_ARRAYBOUND);
-  // ASSERT_EQ(first++->type, jdi::ref_stack::RT_POINTERTO);
+  assert_declarator_4_refstack(node.get());
 }
 
   // TODO: Fix typeflag lambda
@@ -511,22 +507,7 @@ TEST(ParserTest, Declarations) {
   EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
   EXPECT_EQ(test.lexer.ReadToken().type, TT_ENDOFCODE);
 
-  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
-  auto *decls = node->As<AST::DeclarationStatement>();
-  if (decls->clause->specifiers->def) EXPECT_EQ(decls->clause->specifiers->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-
-  EXPECT_EQ(decls->clause->declarators.size(), 3);
-  EXPECT_NE(decls->clause->declarators[0]->init, nullptr);
-  if (decls->clause->declarators[0]->declarator->def) EXPECT_EQ(decls->clause->declarators[0]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->clause->declarators[0]->declarator->decl.components.begin()->kind, DeclaratorNode::Kind::POINTER_TO);
-
-  EXPECT_EQ(decls->clause->declarators[1]->init, nullptr);
-  if (decls->clause->declarators[1]->declarator->def) EXPECT_EQ(decls->clause->declarators[1]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->clause->declarators[1]->declarator->decl.components.size(), 0);
-
-  EXPECT_NE(decls->clause->declarators[2]->init, nullptr);
-  if (decls->clause->declarators[2]->declarator->def) EXPECT_EQ(decls->clause->declarators[2]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->clause->declarators[2]->declarator->decl.components.size(), 1);
+  assert_declarations_tree(node.get());
 }
 
 TEST(ParserTest, Declarations_NoSemicolon) {
@@ -536,22 +517,7 @@ TEST(ParserTest, Declarations_NoSemicolon) {
   EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
   EXPECT_EQ(test.lexer.ReadToken().type, TT_ENDOFCODE);
 
-  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
-  auto *decls = node->As<AST::DeclarationStatement>();
-  if (decls->clause->specifiers->def) EXPECT_EQ(decls->clause->specifiers->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-
-  EXPECT_EQ(decls->clause->declarators.size(), 3);
-  EXPECT_NE(decls->clause->declarators[0]->init, nullptr);
-  if (decls->clause->declarators[0]->declarator->def) EXPECT_EQ(decls->clause->declarators[0]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->clause->declarators[0]->declarator->decl.components.begin()->kind, DeclaratorNode::Kind::POINTER_TO);
-
-  EXPECT_EQ(decls->clause->declarators[1]->init, nullptr);
-  if (decls->clause->declarators[1]->declarator->def) EXPECT_EQ(decls->clause->declarators[1]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->clause->declarators[1]->declarator->decl.components.size(), 0);
-
-  EXPECT_NE(decls->clause->declarators[2]->init, nullptr);
-  if (decls->clause->declarators[2]->declarator->def) EXPECT_EQ(decls->clause->declarators[2]->declarator->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-  EXPECT_EQ(decls->clause->declarators[2]->declarator->decl.components.size(), 1);
+  assert_declarations_tree(node.get());
 }
 
 // New-expression placement args (the parenthesised `(expr...)` between
@@ -1626,7 +1592,9 @@ TEST(ParserTest, TemporaryInitialization_2) {
 
   // Bridge-layer coverage of the type-modifier chain (replaces the old
   // parsing::Declarator asserts): synthesize the jdi::ref_stack from the
-  // declarator-expression-tree and verify `*` of nested(`*` of `[10]`).
+  // declarator-expression-tree. `*(*a)[10]` => `a` is pointer-to-array[10]-of-
+  // pointer, so the canonical name-outward order is P, A[10], P (matching
+  // references.h and Declarator_4), NOT the pointers-clustered P, P, A[10].
   jdi::ref_stack refs;
   ASSERT_TRUE(enigma::parsing::walk_declarator_expr(decl1->declarator_expr.get(), refs));
   ASSERT_EQ(refs.size(), 3u);
@@ -1635,11 +1603,11 @@ TEST(ParserTest, TemporaryInitialization_2) {
   ASSERT_EQ(ref_it->type, jdi::ref_stack::RT_POINTERTO);
   ++ref_it;
   ASSERT_TRUE(ref_it);
-  ASSERT_EQ(ref_it->type, jdi::ref_stack::RT_POINTERTO);
-  ++ref_it;
-  ASSERT_TRUE(ref_it);
   ASSERT_EQ(ref_it->type, jdi::ref_stack::RT_ARRAYBOUND);
   ASSERT_EQ(ref_it->arraysize(), 10u);
+  ++ref_it;
+  ASSERT_TRUE(ref_it);
+  ASSERT_EQ(ref_it->type, jdi::ref_stack::RT_POINTERTO);
 
   ASSERT_NE(decl1->init, nullptr);
   ASSERT_EQ(decl1->init->type, AST::NodeType::INITIALIZER);
@@ -3712,4 +3680,105 @@ if (global.joydetected && global.openablejoy && !gamepad_is_connected(global.gam
   ASSERT_NE(node, nullptr) << "Parser should successfully parse nested if statements with complex boolean expressions";
   ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+}
+
+// --- ParseParenthetical: typed tie / tuple / arrow support -----------------
+// A parenthesized list of typed declarators parses as a Parenthetical over a
+// comma-tree of DeclaratorClause nodes -- the uniform "tuple" shape the
+// semantic phase later reinterprets (tie, lambda params, etc.). A lone abstract
+// type-id stays a C-style cast; a bare name in the list survives as an
+// expression leaf (a future type-inference candidate). Driven by
+// ParseParenthetical + maybe_declarator_group_ in parser.cpp.
+
+// Asserts `node` is a DeclaratorClause with one declarator whose spine bottoms
+// out in `name` (a named declarator); the type isn't checked here.
+static void assert_clause_named(AST::Node *node, std::string_view name) {
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATOR_CLAUSE);
+  auto *clause = node->As<AST::DeclaratorClause>();
+  ASSERT_EQ(clause->declarators.size(), 1);
+  auto *declexpr = clause->declarators[0]->declarator_expr.get();
+  ASSERT_NE(declexpr, nullptr);
+  ASSERT_EQ(declexpr->type, AST::NodeType::IDENTIFIER);
+  ASSERT_EQ(declexpr->As<AST::IdentifierAccess>()->name.content, name);
+}
+
+TEST(ParserTest, TypedTuple_TwoDeclarators) {
+  ParserTester test = ParserTester::CreateWithSetUp("(int x, int y)");
+  auto node = test->TryParseStatement();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+
+  ASSERT_EQ(node->type, AST::NodeType::PARENTHETICAL);
+  auto *inner = node->As<AST::Parenthetical>()->expression.get();
+  ASSERT_EQ(inner->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *comma = inner->As<AST::BinaryExpression>();
+  ASSERT_EQ(comma->operation.type, TT_COMMA);
+  assert_clause_named(comma->left.get(), "x");
+  assert_clause_named(comma->right.get(), "y");
+}
+
+// `y` has no type-specifier: it must survive as a bare identifier leaf in the
+// tuple (a type-inference candidate later), NOT trip the bare-type-id bail that
+// would truncate the comma-tree.
+TEST(ParserTest, TypedTuple_InferredMiddleMember) {
+  ParserTester test = ParserTester::CreateWithSetUp("(int x, y, float z)");
+  auto node = test->TryParseStatement();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+
+  ASSERT_EQ(node->type, AST::NodeType::PARENTHETICAL);
+  auto *inner = node->As<AST::Parenthetical>()->expression.get();
+  // Left-associative comma: ((int x , y) , float z)
+  ASSERT_EQ(inner->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *outer = inner->As<AST::BinaryExpression>();
+  ASSERT_EQ(outer->operation.type, TT_COMMA);
+  assert_clause_named(outer->right.get(), "z");
+
+  ASSERT_EQ(outer->left->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *left = outer->left->As<AST::BinaryExpression>();
+  ASSERT_EQ(left->operation.type, TT_COMMA);
+  assert_clause_named(left->left.get(), "x");
+  EXPECT_THAT(left->right, IsIdentifier("y"));
+}
+
+TEST(ParserTest, TypedArrow_SingleParam) {
+  ParserTester test = ParserTester::CreateWithSetUp("(int x) => x");
+  auto node = test->TryParseStatement();
+
+  ASSERT_EQ(node->type, AST::NodeType::LAMBDA_EXPRESSION);
+  auto *lambda = node->As<AST::LambdaExpression>();
+  ASSERT_EQ(lambda->parameters->type, AST::NodeType::PARENTHETICAL);
+  assert_clause_named(lambda->parameters->As<AST::Parenthetical>()->expression.get(), "x");
+}
+
+TEST(ParserTest, TypedArrow_MultiParam) {
+  ParserTester test = ParserTester::CreateWithSetUp("(int x, int y) => x + y");
+  auto node = test->TryParseStatement();
+
+  ASSERT_EQ(node->type, AST::NodeType::LAMBDA_EXPRESSION);
+  auto *lambda = node->As<AST::LambdaExpression>();
+  ASSERT_EQ(lambda->parameters->type, AST::NodeType::PARENTHETICAL);
+  auto *comma = lambda->parameters->As<AST::Parenthetical>()->expression.get();
+  ASSERT_EQ(comma->type, AST::NodeType::BINARY_EXPRESSION);
+  ASSERT_EQ(comma->As<AST::BinaryExpression>()->operation.type, TT_COMMA);
+  assert_clause_named(comma->As<AST::BinaryExpression>()->left.get(), "x");
+  assert_clause_named(comma->As<AST::BinaryExpression>()->right.get(), "y");
+  EXPECT_THAT(lambda->body, IsBinaryOperation(TT_PLUS, IsIdentifier("x"), IsIdentifier("y")));
+}
+
+// Guard: routing all `(...)` through ParseParenthetical preserves the C-style
+// cast -- a lone abstract type-id followed by an operand.
+TEST(ParserTest, ParentheticalCStyleCastPreserved) {
+  ParserTester test = ParserTester::CreateWithSetUp("(int)x");
+  auto node = test->TryParseStatement();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+  EXPECT_THAT(node.get(), IsCast(AST::CastExpression::Kind::C_STYLE, AST::NodeType::IDENTIFIER,
+                                 jdi::builtin_type__int));
+}
+
+// Guard: the untyped parenthesized comma-list is unchanged by ParseParenthetical.
+TEST(ParserTest, ParentheticalUntypedTupleUnchanged) {
+  ParserTester test = ParserTester::CreateWithSetUp("(x, y)");
+  auto node = test->TryParseStatement();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+  EXPECT_THAT(node.get(), IsParenthetical(IsBinaryOperation(TT_COMMA, IsIdentifier("x"), IsIdentifier("y"))));
 }

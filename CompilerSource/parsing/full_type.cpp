@@ -23,8 +23,11 @@ FullType::FullType(jdi::definition *def, Declarator decl, std::size_t flags):
 FullType::FullType(jdi::definition *def): FullType(def, {}, 0) {}
 
 jdi::full_type FullType::to_jdi_fulltype() {
-  jdi::ref_stack rt;
-  decl.to_jdi_refstack(rt);
-  return {def, rt, static_cast<int>(flags)};
+  // Spec-base only: { def, no refs, flags }. The declarator ref_stack is built
+  // separately from the AST declarator-expression-tree via walk_declarator_expr
+  // (see DeclaratorClause::to_jdi_fulltype). Every live caller of this routine
+  // holds a spec-only FullType, so there is no declarator chain to fold in here;
+  // this no longer touches the legacy `decl` components.
+  return {def, static_cast<int>(flags)};
 }
 }
