@@ -51,9 +51,9 @@ std::string filename_join(std::string prefix, std::string suffix) {
 }
 
 std::string filename_absolute(std::string fname, bool must_exist) {
-  std::result;
+  std::string result;
   std::error_code ec;
-  if (must_exists) {
+  if (must_exist) {
     result = std::filesystem::canonical(fname, ec).u8string();
   } else {
     result = std::filesystem::weakly_canonical(fname, ec).u8string();
