@@ -60,7 +60,6 @@ class AST {
   };
 
   struct Node;
-  struct DeclaratorClause;
   class Visitor;
   typedef std::unique_ptr<Node> PNode;
 
@@ -383,12 +382,12 @@ class AST {
   };
 
   struct IdentifierAccess : TypedNode<NodeType::IDENTIFIER> {
-    // We can access identifiers declared either in C++ or EDL. For an EDL name
-    // the `type` holds a back-reference to the `DeclaratorClause` that declared
-    // it (a borrowed AST pointer, alive for the parse); for a C++ name it holds
-    // the resolved jdi::definition. The semantic phase reads through this.
-    enum class Kind { EDL, CPP } kind;
-    std::variant<DeclaratorClause*, jdi::definition*> type;
+    // A bare name. If it resolved to a C++ symbol during the parse, `def` is the
+    // jdi::definition; otherwise (an EDL-declared local, or an as-yet-unresolved
+    // name) `def` is null and the semantic phase binds it. The pretty-printer
+    // reads non-null `def` as "emit the name verbatim" rather than wrapping it
+    // in an EDL variable accessor.
+    jdi::definition *def = nullptr;
     // When this IdentifierAccess is the leaf of a declarator chain, `name.content`
     // may be empty — that encodes an *abstract* declarator (no name, e.g. the
     // type in `(int*)x` or an unnamed function parameter). Consumers that read
@@ -398,9 +397,8 @@ class AST {
 
     BASIC_NODE_ROUTINES(IdentifierAccess);
 
-    IdentifierAccess(DeclaratorClause *type, Token name): kind{Kind::EDL}, type{type}, name{name} {}
-    IdentifierAccess(jdi::definition *type, Token name): kind{Kind::CPP}, type{type}, name{name} {}
-    IdentifierAccess(Token name): kind{Kind::CPP}, type{}, name{name} {}
+    IdentifierAccess(jdi::definition *def, Token name): def{def}, name{name} {}
+    IdentifierAccess(Token name): name{name} {}
   };
 
   struct Literal : TypedNode<NodeType::LITERAL> {

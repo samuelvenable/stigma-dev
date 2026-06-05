@@ -557,7 +557,7 @@ std::unique_ptr<AST::Node> TryParseIdExpression() {
     herr->Error(token) << "Unable to parse id-expression";
     return nullptr;
   } else if (map_contains(declarations, decl.name.content)) {
-    return std::make_unique<AST::IdentifierAccess>(declarations[decl.name.content], decl.name);
+    return std::make_unique<AST::IdentifierAccess>(decl.name);
   } else if (def != nullptr) {
     return std::make_unique<AST::IdentifierAccess>(def, decl.name);
   } else {
@@ -2485,16 +2485,7 @@ class SyntaxChecker : public AST::Visitor {
   bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) {
     if (node.function->type == AST::NodeType::IDENTIFIER) {
       auto func = node.function->As<AST::IdentifierAccess>();
-      jdi::definition *def = nullptr;
-      if (std::holds_alternative<jdi::definition *>(func->type)) {
-        def = std::get<jdi::definition *>(func->type);
-        if (!def){
-          Token tok;
-          tok.content = func->name.content;
-          tok.type = TT_IDENTIFIER;
-          herr->Error(tok) << "Internal error: name `" << func->name.content << "` is not associated with a function";
-        }
-      }
+      jdi::definition *def = func->def;
       if (!def) {
         node.RecursiveSubVisit(*this);
         return false;

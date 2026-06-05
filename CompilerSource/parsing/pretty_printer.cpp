@@ -75,7 +75,7 @@ bool AST::CppPrettyPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
       print("enigma::glaccess(int(self))->" + name);
     } else if (language_fe->global_exists(name)) {
       print(name);
-    } else if (std::holds_alternative<jdi::definition *>(node.type) && std::get<jdi::definition *>(node.type)) {
+    } else if (node.def) {
       print(name);
     } else if (name.substr(0, 8) == "argument") {
       print(name);
@@ -267,8 +267,7 @@ bool AST::CppPrettyPrinter::VisitFunctionCallExpression(AST::FunctionCallExpress
   int variadic_index = 0;
   if (node.function->type == AST::NodeType::IDENTIFIER && language_fe) {
     auto fn = node.function->As<AST::IdentifierAccess>();
-    jdi::definition *def = nullptr;
-    if (std::holds_alternative<jdi::definition *>(fn->type)) def = std::get<jdi::definition *>(fn->type);
+    jdi::definition *def = fn->def;
     if (def && language_fe->is_variadic_function(def)) {
       is_variadic = true;
       variadic_index = language_fe->function_variadic_after((jdi::definition_function *)def);

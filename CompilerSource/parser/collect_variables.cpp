@@ -159,7 +159,7 @@ class DeclGatheringVisitor : public AST::Visitor {
     if (node->type == AST::NodeType::IDENTIFIER) {
       std::string name = node->As<AST::IdentifierAccess>()->name.content;
       if (parsed_scope->declarations.find(name) != parsed_scope->declarations.end()) {
-        node->As<AST::IdentifierAccess>()->type = parsed_scope->declarations[name];
+        node->As<AST::IdentifierAccess>()->def = parsed_scope->declarations[name];
         return "";
       } else if (script_names.find(name) != script_names.end()) {
         if (node->type == AST::NodeType::FUNCTION_CALL) {
