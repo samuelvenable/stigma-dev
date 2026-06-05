@@ -196,37 +196,6 @@ bool next_is_type_specifier() {
   return is_type_specifier(token.type);
 }
 
-// TRANSITIONAL: these helpers exist for the duration of the parser refactor.
-// Their callers (in TryParseDeclarator, TryParseNoPtrDeclarator, TryParseNewExpression)
-// disambiguate type-context pointer/reference declarators from expressions on the fly,
-// which is the very thing the refactor is replacing with a unified expression tree.
-// Slated for removal in phase 2 (see project memory: project-newenigma2026).
-bool maybe_nested_name(const Token &tok) {
-  switch (tok.type) {
-    case TT_SCOPEACCESS:
-    case TT_DECLTYPE:
-      return true;
-    case TT_IDENTIFIER: {
-      auto *def = frontend->look_up(tok.content);
-      return def != nullptr && (def->flags & (jdi::DEF_CLASS | jdi::DEF_SCOPE));
-    }
-    default:
-      return false;
-  }
-}
-
-bool next_maybe_nested_name() {
-  return maybe_nested_name(token);
-}
-
-bool maybe_ptr_decl_operator(const Token &tok) {
-  return tok.type == TT_STAR || is_ref_qualifier(tok.type) || maybe_nested_name(tok);
-}
-
-bool next_maybe_ptr_decl_operator() {
-  return maybe_ptr_decl_operator(token);
-}
-
 bool is_template_type(const Token &tok) {
   if (auto def = frontend->look_up(tok.content); def != nullptr) {
     return def->flags & jdi::DEF_TEMPLATE;
@@ -451,33 +420,6 @@ std::unique_ptr<AST::Node> TryParseConstantExpression() {
   return ParseExpression(Precedence::kTernary);
 }
 
-std::unique_ptr<AST::Node> TryParseArrayBoundsExpression(Declarator *decl, bool outside_nested) {
-  require_token(TT_BEGINBRACKET, "Expected '[' before array bounds expression");
-  std::unique_ptr<AST::Node> expr = nullptr;
-  if (token.type != TT_ENDBRACKET) {
-    expr = TryParseConstantExpression();
-  }
-  require_token(TT_ENDBRACKET, "Expected ']' after array bounds expression");
-
-  // TODO: Check that expression is constant, then evaluate it
-  // for handling new expressions we need to support also non-constant expressions, like `new int[x]`
-  std::size_t arr_size = 0;
-  if (expr) {
-    if (expr->type == AST::NodeType::LITERAL) {
-      auto *lit = expr->As<AST::Literal>();
-      try {
-        arr_size = std::stoi(std::get<string>(lit->value.value));
-      } catch (const std::exception& e) {
-        herr->Error(token) << "Array size must be a numeric literal";
-      }
-    } else {
-      herr->Error(token) << "Array size must be a constant expression";
-    }
-  }
-  decl->add_array_bound(arr_size, outside_nested);
-  return nullptr;
-}
-
 jdi::definition *TryParseNoexceptSpecifier() {
   herr->Error(token) << "Unimplemented: noexcept";
 
@@ -489,70 +431,6 @@ jdi::definition *TryParseNoexceptSpecifier() {
   }
 
   return nullptr;
-}
-
-void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool did_consume_paren) {
-  if (!did_consume_paren) {
-    require_token(TT_BEGINPARENTH, "Expected '(' before function parameters");
-  }
-
-  FunctionParameterNode params;
-  params.outside_nested = outside_nested;
-  params.parameters = FunctionParameterNode::ParameterList{};
-  params.kind = FunctionParameterNode::Kind::DECLARATOR;
-  if (token.type != TT_ENDPARENTH) {
-    while (token.type != TT_ENDPARENTH) {
-      // Parameter type lives at the FullType (JDI-bridge) layer, below the
-      // AST. Decl-specs are folded into FullType::flags by the spec-seq
-      // parser; the parallel DeclSpecList we feed it is a throwaway here
-      // (Token-fidelity isn't needed at this layer). Task #15 redesigns
-      // these spec-parsing functions to return the list rather than take
-      // an out-param, at which point this throwaway disappears.
-      FunctionParameterNode::Parameter param;
-      FullType type;
-      AST::DeclSpecList unused_specs;
-      TryParseDeclSpecifierSeq(&type, &unused_specs);
-      TryParseDeclarator(&type, AST::DeclaratorType::MAYBE_ABSTRACT);
-      param.type = std::make_unique<FullType>(std::move(type));
-      if (token.type == TT_EQUALS) {
-        token = lexer->ReadToken();
-        auto init = TryParseExprOrBracedInitList(true, false);
-        param.default_value = reinterpret_cast<void *>(init.release());
-      }
-      params.as<FunctionParameterNode::ParameterList>().emplace_back(std::move(param));
-
-      if (token.type == TT_COMMA) {
-        token = lexer->ReadToken();
-        if (token.type == TT_ELLIPSES) {
-          token = lexer->ReadToken();
-          if (token.type != TT_ENDPARENTH) {
-            herr->Error(token) << "Extra junk after ellipses in function parameter";
-          }
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    if (token.type == TT_ELLIPSES) {
-      herr->Error(token) << "Unimplemented: varargs";
-      token = lexer->ReadToken();
-    }
-  }
-
-  decl->add_function_params(std::move(params));
-  require_token(TT_ENDPARENTH, "Expected ')' after function parameters");
-
-  if (next_is_cv_qualifier()) {
-    token = lexer->ReadToken();
-  }
-  if (next_is_ref_qualifier()) {
-    token = lexer->ReadToken();
-  }
-  if (token.type == TT_NOEXCEPT) {
-    TryParseNoexceptSpecifier();
-  }
 }
 
 jdi::definition *TryParseTypeName() {
@@ -1036,74 +914,6 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList
   return global_local;
 }
 
-void TryParsePtrOperator(FullType *type) {
-  if (token.type == TT_STAR) {
-    bool is_const = false;
-    bool is_volatile = false;
-    token = lexer->ReadToken();
-    while (next_is_cv_qualifier()) {
-      if (token.content == "const") {
-        if (is_const) {
-          herr->Warning(token) << "Duplicate 'const' flag in pointer";
-        }
-        is_const = true;
-      } else if (token.content == "volatile") {
-        if (is_volatile) {
-          herr->Warning(token) << "Duplicate 'volatile' flag in pointer";
-        }
-        is_volatile = true;
-      }
-      token = lexer->ReadToken();
-    }
-    type->decl.add_pointer(nullptr, is_const, is_volatile);
-  } else if (next_is_ref_qualifier()) {
-    if (token.type == TT_AND) {
-      type->decl.add_reference(DeclaratorNode::Kind::RVAL_REFERENCE);
-    } else {
-      type->decl.add_reference(DeclaratorNode::Kind::REFERENCE);
-    }
-    token = lexer->ReadToken();
-  }
-}
-
-void TryParseMaybeNestedPtrOperator(FullType *type) {
-  if (next_maybe_nested_name()) {
-    jdi::definition *def = nullptr;
-    if (token.type == TT_IDENTIFIER) {
-      def = frontend->look_up(token.content);
-      token = lexer->ReadToken();
-    } else if (token.type == TT_DECLTYPE) {
-      def = TryParseDecltype();
-    }
-
-    def = TryParseNestedNameSpecifier(def);
-    if (token.type == TT_STAR) {
-      bool is_const = false;
-      bool is_volatile = false;
-      token = lexer->ReadToken();
-      while (next_is_cv_qualifier()) {
-        if (token.content == "const") {
-          if (is_const) {
-            herr->Warning(token) << "Duplicate 'const' flag in pointer";
-          }
-          is_const = true;
-        } else if (token.content == "volatile") {
-          if (is_volatile) {
-            herr->Warning(token) << "Duplicate 'volatile' flag in pointer";
-          }
-          is_volatile = true;
-        }
-        token = lexer->ReadToken();
-      }
-      if (!(def->flags & jdi::DEF_CLASS)) {
-        herr->Error(token) << "Member pointer to non-class type: '" << def->name << "'";
-      } else {
-        type->decl.add_pointer(reinterpret_cast<jdi::definition_class *>(def), is_const, is_volatile);
-      }
-    }
-  }
-}
-
 // Build the TypeSpecifierSeq for a `<type-id>` grammar production. The parser
 // unconditionally records the decl-spec chain (declspecs) and the resolved
 // base type (def). type_info (FullType cache) is populated from the same
@@ -1200,8 +1010,16 @@ std::unique_ptr<AST::Node> ParseParenthetical() {
 void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs) {
   switch (token.type) {
     case TT_TYPEDEF: {
-      TryParseTypeSpecifierSeq(type, specs);
-      TryParseDeclarator(type, AST::DeclaratorType::NON_ABSTRACT);
+      // `typedef` is a decl-specifier; the following type-specifier-seq and
+      // declarator are parsed by the unified path, exactly as for any other
+      // declaration. Registering the declared name as a type alias is a
+      // semantic-phase concern.
+      // TODO: there is no jdi typeflag for typedef (no DEF_TYPEDEF / decflag),
+      // so the typedef-ness is currently only preserved as a token in
+      // specs->specs, not as a semantic flag. Add a real marker so the semantic
+      // phase can register the declared name as a type alias.
+      specs->specs.push_back(token);
+      token = lexer->ReadToken();
       break;
     }
 
@@ -1246,77 +1064,6 @@ std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList
       TryParseDeclSpecifier(type, specs);
   }
   return global_local;
-}
-
-// TRANSITIONAL — see comment near maybe_nested_name above.
-void TryParsePtrDeclarator(FullType *type, AST::DeclaratorType is_abstract) {
-  while (next_maybe_ptr_decl_operator()) {
-    if (next_maybe_nested_name()) {
-      TryParseMaybeNestedPtrOperator(type);
-    } else {
-      TryParsePtrOperator(type);
-    }
-  }
-  TryParseNoPtrDeclarator(type, is_abstract);
-}
-
-void TryParseNoPtrDeclarator(FullType *type, AST::DeclaratorType is_abstract) {
-  if (token.type == TT_BEGINPARENTH) {
-    token = lexer->ReadToken();
-    FullType inner;
-    TryParsePtrDeclarator(&inner, is_abstract);
-    require_token(TT_ENDPARENTH, "Expected ')' after declarator");
-    if (!inner.decl.name.content.empty()) {
-      type->decl.name = inner.decl.name;
-    }
-
-    while (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACKET) {
-      if (token.type == TT_BEGINPARENTH) {
-        TryParseParametersAndQualifiers(&inner.decl, true, false);
-      } else {
-        TryParseArrayBoundsExpression(&inner.decl, true);
-      }
-    }
-
-    type->decl.add_nested(std::make_unique<Declarator>(std::move(inner.decl)));
-  } else if (is_abstract == AST::DeclaratorType::NON_ABSTRACT) {
-    if (token.type == TT_ELLIPSES) {
-      token = lexer->ReadToken();
-    }
-    TryParseIdExpression(&type->decl);
-  } else if (is_abstract == AST::DeclaratorType::MAYBE_ABSTRACT && next_can_begin_id_expression()) {
-    TryParseIdExpression(&type->decl);
-  }
-
-  while (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACKET) {
-    if (token.type == TT_BEGINPARENTH) {
-      TryParseParametersAndQualifiers(&type->decl, false, false);
-    } else {
-      TryParseArrayBoundsExpression(&type->decl, false);
-    }
-  }
-}
-
-// Returns the AST-layer declarator-expression-tree (PNode) once the parser
-// learns to emit it; nullptr from emission paths that haven't been migrated
-// yet. The FullType `type->decl` is still populated as the JDI-bridge form
-// (for now, this is the primary path; PNode emission grows incrementally).
-AST::PNode TryParseDeclarator(FullType *type, AST::DeclaratorType is_abstract = AST::DeclaratorType::NON_ABSTRACT) {
-  if (next_maybe_ptr_decl_operator()) {
-    TryParsePtrDeclarator(type, is_abstract);
-  } else {
-    TryParseNoPtrDeclarator(type, is_abstract);
-    if (token.type == TT_ARROW) {
-      token = lexer->ReadToken();
-      TryParseTypeID();
-    }
-  }
-  // Step 4-C: synthesize the declarator-expression-tree from the freshly
-  // populated FullType. Bridges to the AST-layer representation so consumers
-  // can migrate off `ft.decl` without waiting for native-PNode emission.
-  // Abstract declarators (function params, cast targets) get a null PNode
-  // here; those callers don't consume declarator_expr.
-  return std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression()));
 }
 
 AST::PNode TryParseExprOrBracedInitList(bool is_init_clause, bool in_init_list) {

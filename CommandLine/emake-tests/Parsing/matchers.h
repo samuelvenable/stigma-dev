@@ -24,6 +24,23 @@ using namespace ::testing;
 
 extern std::string ExpectedMsg;
 
+// Crawl a declarator-expression-tree into its JDI-bridge ref_stack and report
+// whether it carries no `* & [] ()` modifiers -- i.e. a plain/abstract base
+// type. Shared replacement for the old Declarator::components.size()==0 /
+// has_nested_declarator bridge assertions.
+inline bool declarator_is_unqualified(AST::Node *declarator_expr) {
+  jdi::ref_stack rs;
+  return walk_declarator_expr(declarator_expr, rs) && rs.empty();
+}
+
+// Same check over every declarator in a clause (e.g. a cast/type-id whose
+// abstract declarator should be modifier-free).
+inline bool clause_is_unqualified(AST::DeclaratorClause *clause) {
+  for (auto &id : clause->declarators)
+    if (!declarator_is_unqualified(id->declarator_expr.get())) return false;
+  return true;
+}
+
 MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   if (arg->type != AST::NodeType::DECLARATION) {
     ExpectedMsg = "From IsDeclaration Matcher: NodeType = DECLARATION\n";
@@ -70,11 +87,8 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
     b3 = b3 && init_decl.declarator->flags == 0;
     b3 = b3 && init_decl.name.content == decls[i];
     // These matcher uses are all plain-name declarators (`int x, y;`): the
-    // declarator-expression-tree carries no pointer/array/function modifiers, so
-    // the JDI-bridge ref_stack is empty.
-    jdi::ref_stack rs;
-    bool no_modifiers = walk_declarator_expr(init_decl.declarator_expr.get(), rs) && rs.empty();
-    b3 = b3 && no_modifiers;
+    // declarator-expression-tree carries no pointer/array/function modifiers.
+    b3 = b3 && declarator_is_unqualified(init_decl.declarator_expr.get());
     if (!b3) {
       if (ExpectedMsg == "") ExpectedMsg = "From IsDeclaration Matcher: ";
       std::string expected_type = expected_def ? expected_def->name : "any";
@@ -88,7 +102,8 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
                        << " nullptr, def = " << got_type << ", flags = "
                        << to_string(init_decl.declarator->flags)
                        << ", name.content = " << init_decl.name.content
-                       << ", ref_stack.empty() = " << to_string(rs.empty()) << "\n";
+                       << ", unqualified = " << to_string(declarator_is_unqualified(init_decl.declarator_expr.get()))
+                       << "\n";
     }
   }
 
@@ -138,13 +153,8 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
             (parsed_def && expected_def && parsed_def->name == expected_def->name);
   // Abstract-declarator check, ported off the deleted ft.decl.components bridge:
   // these casts are all simple-type (`(int)x`, `static_cast<int>(...)`), so the
-  // clause carries no pointer/array/function modifiers -- every declarator-
-  // expression-tree (if any) walks to an empty JDI-bridge ref_stack.
-  bool b3 = true;
-  for (auto &id : clause->declarators) {
-    jdi::ref_stack rs;
-    if (!walk_declarator_expr(id->declarator_expr.get(), rs) || !rs.empty()) { b3 = false; break; }
-  }
+  // clause carries no pointer/array/function modifiers.
+  bool b3 = clause_is_unqualified(clause);
 
   bool b2 = ft.flags == 0, b4 = ft.decl.name.content == "",
        b6 = cast->kind == cast_kind, b7 = expr->type == expr_type;
