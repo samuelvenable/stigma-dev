@@ -77,6 +77,7 @@ namespace ngs::fs {
   std::string directory_get_music_path();
   std::string directory_get_pictures_path();
   std::string directory_get_videos_path();
+  std::string directory_get_public_path();
   std::string executable_get_directory();
   std::string executable_get_filename();
   std::string executable_get_pathname();
