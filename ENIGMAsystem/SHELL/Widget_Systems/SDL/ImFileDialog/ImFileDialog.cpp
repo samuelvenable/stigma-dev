@@ -723,9 +723,9 @@ namespace ifd {
       ngs::fs::file_text_close(fd);
     }
     #if defined(_WIN32)
-    int fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}\\.config\\${IMGUI_CONFIG_FOLDER}\\${IMGUI_CONFIG_ZOOM}");
+    fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}\\.config\\${IMGUI_CONFIG_FOLDER}\\${IMGUI_CONFIG_ZOOM}");
     #else
-    int fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}/.config/${IMGUI_CONFIG_FOLDER}/${IMGUI_CONFIG_ZOOM}");
+    fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}/.config/${IMGUI_CONFIG_FOLDER}/${IMGUI_CONFIG_ZOOM}");
     #endif
     if (fd != -1) {
       ngs::fs::file_text_write_string(fd, std::to_string(m_zoom));
