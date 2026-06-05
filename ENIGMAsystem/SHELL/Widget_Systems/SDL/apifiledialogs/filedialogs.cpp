@@ -385,10 +385,10 @@ namespace {
     #endif
     if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER").empty())
       ngs::fs::environment_set_variable("IMGUI_CONFIG_FOLDER", "filedialogs");
-    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FILE").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_FILE", "filedialogs.txt");
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FAVS").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_FAVS", "filedialogs-favs.txt");
     if (ngs::fs::environment_get_variable("IMGUI_CONFIG_INI").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_INI", "filedialogs.ini");
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_INI", "filedialogs-conf.ini");
     #if defined(_WIN32)
     string config_path = ngs::fs::environment_expand_variables("${IMGUI_CONFIG_HOME}\\.config\\${IMGUI_CONFIG_FOLDER}");
     if (!config_path.empty()) {
