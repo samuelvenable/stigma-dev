@@ -483,9 +483,9 @@ namespace ifd {
     // Quick Access
     ghc::filesystem::path homePath = ngs::fs::environment_get_variable("USERPROFILE");
     if (ngs::fs::environment_get_variable("IMGUI_CONFIG_HOME").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_HOME", "filedialogs");
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_HOME", homePath.string());
     if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_FOLDER", homePath.string());
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_FOLDER", "filedialogs");
     ghc::filesystem::path configPath = ngs::fs::environment_expand_variables("${IMGUI_CONFIG_HOME}\\.config\\${IMGUI_CONFIG_FOLDER}");
     if (!ngs::fs::directory_exists(configPath.string()))
       ngs::fs::directory_create(configPath.string());
@@ -546,9 +546,9 @@ namespace ifd {
     // Quick Access
     ghc::filesystem::path homePath = ngs::fs::environment_get_variable("HOME");
     if (ngs::fs::environment_get_variable("IMGUI_CONFIG_HOME").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_HOME", "filedialogs");
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_HOME", homePath.string());
     if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FOLDER").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_FOLDER", homePath.string());
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_FOLDER", "filedialogs");
     ghc::filesystem::path configPath = ngs::fs::environment_expand_variables("${IMGUI_CONFIG_HOME}/.config/${IMGUI_CONFIG_FOLDER}");
     if (!ngs::fs::directory_exists(configPath.string()))
       ngs::fs::directory_create(configPath.string());
