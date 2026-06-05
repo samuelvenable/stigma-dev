@@ -30,7 +30,7 @@
 
 #include <SDL.h>
 
-namespace ngs::imgui {
+namespace ngs::im {
 
   void ifd_load_fonts();
   std::string show_message(std::string message);
@@ -47,7 +47,7 @@ namespace ngs::imgui {
   std::string get_directory(std::string dname);
   std::string get_directory_alt(std::string capt, std::string root);
 
-} // namespace ngs::imgui
+} // namespace ngs::im
 
 #ifdef _WIN32
 #define EXPORTED_FUNCTION extern "C" __declspec(dllexport)
