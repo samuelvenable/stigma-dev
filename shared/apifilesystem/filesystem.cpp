@@ -306,7 +306,7 @@ namespace ngs::fs {
       error_code ec;
       dname = environment_expand_variables(dname);
       ghc::filesystem::path p = ghc::filesystem::path(dname);
-      p = ghc::filesystem::weakly_canonical(p, ec);
+      p = ghc::filesystem::absolute(p, ec);
       if (ec.value() != 0) return "";
       dname = p.string();
       #if (defined(_WIN32) || defined(_WIN64))
