@@ -80,7 +80,7 @@ std::string string_receive() {
   std::string str;
   #if defined(_WIN32)
   std::string pipeName = std::string("\\\\.\\pipe\\IMGUI_DIALOG_PIPE_") + 
-  ngs::fs::environment_get_variable("IMGUI_DIALOG_PPID");
+  ngs::fs::environment_get_variable("IMGUI_DIALOG_PID");
   HANDLE hPipe = CreateFileA(pipeName.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
   if (hPipe == INVALID_HANDLE_VALUE) {
     return "";
@@ -96,7 +96,7 @@ std::string string_receive() {
   int fd = 0;
   struct stat st;
   std::string pipeName = std::string("/tmp/IMGUI_DIALOG_PIPE_") + 
-  ngs::fs::environment_get_variable("IMGUI_DIALOG_PPID");
+  ngs::fs::environment_get_variable("IMGUI_DIALOG_PID");
   if (stat(pipeName.c_str(), &st) == 0 && S_ISFIFO(st.st_mode)) {
     if (mkfifo(pipeName.c_str(), 0666) != 0) {
       if (errno != EEXIST) {
