@@ -66,6 +66,10 @@ namespace enigma_user {
   std::string directory_get_videos_path() {
     return filesystem::directory_get_videos_path();
   }
+
+  std::string directory_get_public_path() {
+    return filesystem::directory_get_public_path();
+  }
  
   std::string executable_get_directory() {
     return filesystem::executable_get_directory();
