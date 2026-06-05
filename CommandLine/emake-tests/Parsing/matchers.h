@@ -74,9 +74,14 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
 
   bool b3 = true;
   auto *expected_def = static_cast<jdi::definition*>(decl_type);
+  // Base type + cv/sign/length flags live on the shared spec-seq now, not a
+  // per-declarator FullType: `specifiers->def` is the resolved base type and
+  // `declspecs->flags` is the same bitmask the deleted `declarator->flags`
+  // carried. The per-name declarator modifiers are on `declarator_expr`.
+  auto *spec = decl->clause->specifiers.get();
+  auto *parsed_def = spec->def;
   for (size_t i = 0; i < decls.size(); i++) {
     auto &init_decl = *decl->clause->declarators[i];
-    auto *parsed_def = init_decl.declarator->def;
     b3 = b3 && init_decl.init != nullptr;
     // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
     // Otherwise, compare pointers OR compare by name for builtin types
@@ -84,7 +89,7 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
                         (parsed_def == expected_def) ||
                         (parsed_def && expected_def && parsed_def->name == expected_def->name);
     b3 = b3 && type_matches;
-    b3 = b3 && init_decl.declarator->flags == 0;
+    b3 = b3 && (!spec->declspecs || spec->declspecs->flags == 0);
     b3 = b3 && init_decl.name.content == decls[i];
     // These matcher uses are all plain-name declarators (`int x, y;`): the
     // declarator-expression-tree carries no pointer/array/function modifiers.
@@ -100,7 +105,7 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
       *result_listener << " got Declaration [" << to_string(i) << "] has init "
                        << ((init_decl.init) ? "!=" : "=")
                        << " nullptr, def = " << got_type << ", flags = "
-                       << to_string(init_decl.declarator->flags)
+                       << to_string(spec->declspecs ? spec->declspecs->flags : 0)
                        << ", name.content = " << init_decl.name.content
                        << ", unqualified = " << to_string(declarator_is_unqualified(init_decl.declarator_expr.get()))
                        << "\n";

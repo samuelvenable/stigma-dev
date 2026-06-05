@@ -60,6 +60,7 @@ class AST {
   };
 
   struct Node;
+  struct DeclaratorClause;
   class Visitor;
   typedef std::unique_ptr<Node> PNode;
 
@@ -382,20 +383,22 @@ class AST {
   };
 
   struct IdentifierAccess : TypedNode<NodeType::IDENTIFIER> {
-    // We can access identifiers declared either in C++ or EDL
+    // We can access identifiers declared either in C++ or EDL. For an EDL name
+    // the `type` holds a back-reference to the `DeclaratorClause` that declared
+    // it (a borrowed AST pointer, alive for the parse); for a C++ name it holds
+    // the resolved jdi::definition. The semantic phase reads through this.
     enum class Kind { EDL, CPP } kind;
-    std::variant<FullType*, jdi::definition*> type;
-    // When this IdentifierAccess is the leaf of a declarator chain (on
-    // DeclarationStatement::Declaration::declarator), `name.content` may be
-    // empty — that encodes an *abstract* declarator (no name, e.g. the type
-    // in `(int*)x` or an unnamed function parameter). Consumers that read
+    std::variant<DeclaratorClause*, jdi::definition*> type;
+    // When this IdentifierAccess is the leaf of a declarator chain, `name.content`
+    // may be empty — that encodes an *abstract* declarator (no name, e.g. the
+    // type in `(int*)x` or an unnamed function parameter). Consumers that read
     // the name should tolerate empty content; the existing convention in
     // parser.cpp:678 etc. already does.
     Token name;
 
     BASIC_NODE_ROUTINES(IdentifierAccess);
 
-    IdentifierAccess(FullType *type, Token name): kind{Kind::EDL}, type{type}, name{name} {}
+    IdentifierAccess(DeclaratorClause *type, Token name): kind{Kind::EDL}, type{type}, name{name} {}
     IdentifierAccess(jdi::definition *type, Token name): kind{Kind::CPP}, type{type}, name{name} {}
     IdentifierAccess(Token name): kind{Kind::CPP}, type{}, name{name} {}
   };
@@ -578,24 +581,19 @@ class AST {
   // `name` is the declared identifier (source of truth — written directly by
   // the parser). `declarator_expr` is the AST-layer declarator-as-expression-
   // tree describing the type-modifier chain (pointers, refs, array bounds,
-  // function-params). `declarator` is the legacy FullType (JDI-bridge) form;
-  // post-4D it's still populated for backwards-compatibility while consumers
-  // migrate, and is removed in 4-E along with the rest of the Declarator path.
+  // function-params). The base type lives on the owning DeclaratorClause's
+  // `specifiers`; the JDI-bridge full_type is recomposed on demand via
+  // DeclaratorClause::to_jdi_fulltype.
   struct InitDeclarator : TypedNode<NodeType::INIT_DECLARATOR> {
     Token name;
-    std::unique_ptr<FullType> declarator;
     PNode declarator_expr;
     InitializerNode init;
 
     BASIC_NODE_ROUTINES(InitDeclarator);
 
     InitDeclarator() noexcept = default;
-    InitDeclarator(Token name, FullType declarator, InitializerNode init):
+    InitDeclarator(Token name, PNode declarator_expr_, InitializerNode init):
       name{std::move(name)},
-      declarator{std::make_unique<FullType>(std::move(declarator))}, init{std::move(init)} {}
-    InitDeclarator(Token name, FullType declarator, PNode declarator_expr_, InitializerNode init):
-      name{std::move(name)},
-      declarator{std::make_unique<FullType>(std::move(declarator))},
       declarator_expr{std::move(declarator_expr_)}, init{std::move(init)} {}
   };
 

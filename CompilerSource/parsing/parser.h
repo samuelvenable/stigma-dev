@@ -25,13 +25,13 @@ class AstBuilderTestAPI {
   Token token;
 
   /**
- * @brief Store a mapping from variable name to the @c FullType of its definition
+ * @brief Store a mapping from variable name to the @c DeclaratorClause that declares it
  *
  * This is designed around the assumption that EDL does not yet support namespaces, so there is no need to consider
  * stacks here. If EDL were to support namespaces, this would have to be changed to a <tt> std::stack<...> </tt> and the
  * namespace or nested scope parser would have to push a new map onto the stack.
  */
-  std::unordered_map<std::string, FullType *> declarations;
+  std::unordered_map<std::string, AST::DeclaratorClause *> declarations;
 
   // When true, TryParseOperand yields an empty-name placeholder leaf instead
   // of erroring on a missing operand -- i.e. we are inside a type-id /

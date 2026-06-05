@@ -378,9 +378,8 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
       const Token *namep = find_declarator_name(declarator_expr.get());
       Token name = namep ? *namep : Token{};
       decls.emplace_back(std::make_unique<AST::InitDeclarator>(
-          name, std::move(ft), std::move(declarator_expr),
+          name, std::move(declarator_expr),
           next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
-      declarations[decls.back()->name.content] = decls.back()->declarator.get();
     }
     if (token.type == TT_COMMA && parse_unbounded) {
       token = lexer->ReadToken();
@@ -391,6 +390,12 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
 
   auto type_node = std::make_unique<AST::TypeSpecifierSeq>(ft.def, nullptr, std::move(declspecs));
   auto clause = std::make_unique<AST::DeclaratorClause>(std::move(type_node), std::move(decls));
+  // Record each declared name's owning clause so later id-expressions can
+  // resolve it (the base type lives on clause->specifiers; the per-name
+  // declarator modifiers on its InitDeclarator). Borrowed pointer, valid for
+  // the parse -- the clause is heap-stable across its move into the statement.
+  for (auto &id : clause->declarators)
+    declarations[id->name.content] = clause.get();
   return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
 }
 
@@ -498,7 +503,7 @@ jdi::definition *TryParseIdExpression(Declarator *decl) {
         } else if (token.type == TT_SCOPEACCESS) {
           return TryParseNestedNameSpecifier(def, decl, decl != nullptr);
         } else if (map_contains(declarations, name.content)) {
-          return declarations[name.content]->def;
+          return declarations[name.content]->specifiers->def;
         } else if (def == nullptr) {
           herr->Error(token) << "No such name exists in global scope";
         }
@@ -2208,7 +2213,6 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       // When the semantic phase resolves this construct to a declaration it
       // must split the top-level comma into per-declarator nodes; when it
       // resolves to an expression the comma-expression stands.
-      jdi::definition *callee_def = type.def;
       auto callee = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
       auto call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
 
@@ -2236,11 +2240,9 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
           } else {
             declarator_expr = std::move(call->arguments[0]);
           }
-          FullType ft(callee_def);
-          ft.decl.name = name;
           std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
           declarators.push_back(std::make_unique<AST::InitDeclarator>(
-              name, std::move(ft), std::move(declarator_expr),
+              name, std::move(declarator_expr),
               next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
           auto clause = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
           return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
