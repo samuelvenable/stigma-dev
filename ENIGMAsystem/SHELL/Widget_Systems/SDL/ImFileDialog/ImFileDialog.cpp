@@ -479,6 +479,8 @@ namespace ifd {
     quickAccess->Read = true;
     m_treeCache.push_back(quickAccess);
 
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_ZOOM").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_ZOOM", "filedialogs-zoom.txt");
     #ifdef _WIN32
     // Quick Access
     ghc::filesystem::path homePath = ngs::fs::environment_get_variable("USERPROFILE");
@@ -491,9 +493,9 @@ namespace ifd {
       ngs::fs::directory_create(configPath.string());
     int attr = GetFileAttributesW(configPath.wstring().c_str());
     if ((attr & FILE_ATTRIBUTE_HIDDEN) == 0) SetFileAttributesW(configPath.wstring().c_str(), attr | FILE_ATTRIBUTE_HIDDEN);
-    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FILE").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_FILE", "filedialogs.txt");
-    if (!ngs::fs::file_exists(configPath.string() + "\\${IMGUI_CONFIG_FILE}")) {
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FAVS").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_FAVS", "filedialogs-favs.txt");
+    if (!ngs::fs::file_exists(configPath.string() + "\\${IMGUI_CONFIG_FAVS}")) {
       std::vector<std::string> favorites;
       favorites.push_back(homePath.string() + "\\");
       favorites.push_back(ngs::fs::directory_get_desktop_path());
@@ -502,7 +504,7 @@ namespace ifd {
       favorites.push_back(ngs::fs::directory_get_music_path());
       favorites.push_back(ngs::fs::directory_get_pictures_path());
       favorites.push_back(ngs::fs::directory_get_videos_path());
-      int desc = ngs::fs::file_text_open_write(configPath.string() + "\\${IMGUI_CONFIG_FILE}");
+      int desc = ngs::fs::file_text_open_write(configPath.string() + "\\${IMGUI_CONFIG_FAVS}");
       if (desc != -1) {
         for (std::size_t i = 0; i < favorites.size(); i++) {
           ngs::fs::file_text_write_string(desc, favorites[i]);
@@ -511,7 +513,7 @@ namespace ifd {
         ngs::fs::file_text_close(desc);
       }
     }
-    std::string conf = configPath.string() + "\\${IMGUI_CONFIG_FILE}";
+    std::string conf = configPath.string() + "\\${IMGUI_CONFIG_FAVS}";
     if (ngs::fs::file_exists(conf)) {
       int fd = ngs::fs::file_text_open_read(conf);
       if (fd != -1) {
@@ -552,9 +554,9 @@ namespace ifd {
     ghc::filesystem::path configPath = ngs::fs::environment_expand_variables("${IMGUI_CONFIG_HOME}/.config/${IMGUI_CONFIG_FOLDER}");
     if (!ngs::fs::directory_exists(configPath.string()))
       ngs::fs::directory_create(configPath.string());
-    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FILE").empty())
-      ngs::fs::environment_set_variable("IMGUI_CONFIG_FILE", "filedialogs.txt");
-    if (!ngs::fs::file_exists(configPath.string() + "/${IMGUI_CONFIG_FILE}")) {
+    if (ngs::fs::environment_get_variable("IMGUI_CONFIG_FAVS").empty())
+      ngs::fs::environment_set_variable("IMGUI_CONFIG_FAVS", "filedialogs-favs.txt");
+    if (!ngs::fs::file_exists(configPath.string() + "/${IMGUI_CONFIG_FAVS}")) {
       std::vector<std::string> favorites;
       favorites.push_back(homePath.string() + "/");
       favorites.push_back(ngs::fs::directory_get_desktop_path());
@@ -563,7 +565,7 @@ namespace ifd {
       favorites.push_back(ngs::fs::directory_get_music_path());
       favorites.push_back(ngs::fs::directory_get_pictures_path());
       favorites.push_back(ngs::fs::directory_get_videos_path());
-      int desc = ngs::fs::file_text_open_write(configPath.string() + "/${IMGUI_CONFIG_FILE}");
+      int desc = ngs::fs::file_text_open_write(configPath.string() + "/${IMGUI_CONFIG_FAVS}");
       if (desc != -1) {
         for (std::size_t i = 0; i < favorites.size(); i++) {
           ngs::fs::file_text_write_string(desc, favorites[i]);
@@ -572,7 +574,7 @@ namespace ifd {
         ngs::fs::file_text_close(desc);
       }
     }
-    std::string conf = configPath.string() + "/${IMGUI_CONFIG_FILE}";
+    std::string conf = configPath.string() + "/${IMGUI_CONFIG_FAVS}";
     if (ngs::fs::file_exists(conf)) {
       int fd = ngs::fs::file_text_open_read(conf);
       if (fd != -1) {
@@ -705,9 +707,9 @@ namespace ifd {
   void FileDialog::Close() {
     std::error_code ec;
     #if defined(_WIN32)
-    int fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}\\.config\\${IMGUI_CONFIG_FOLDER}\\${IMGUI_CONFIG_FILE}");
+    int fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}\\.config\\${IMGUI_CONFIG_FOLDER}\\${IMGUI_CONFIG_FAVS}");
     #else
-    int fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}/.config/${IMGUI_CONFIG_FOLDER}/${IMGUI_CONFIG_FILE}");
+    int fd = ngs::fs::file_text_open_write("${IMGUI_CONFIG_HOME}/.config/${IMGUI_CONFIG_FOLDER}/${IMGUI_CONFIG_FAVS}");
     #endif
     if (fd != -1) {
       for (auto& p : m_treeCache) {
