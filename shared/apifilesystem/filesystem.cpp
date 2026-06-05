@@ -306,16 +306,16 @@ namespace ngs::fs {
       error_code ec;
       dname = environment_expand_variables(dname);
       ghc::filesystem::path p = ghc::filesystem::path(dname);
-      p = ghc::filesystem::absolute(p, ec);
+      p = ghc::filesystem::weakly_canonical(p, ec);
       if (ec.value() != 0) return "";
       dname = p.string();
       #if (defined(_WIN32) || defined(_WIN64))
-      while ((dname.back() == '\\' || dname.back() == '/') && 
-        (p.root_name().string() + "\\" != dname && p.root_name().string() + "/" != dname)) {
+      while (!dname.empty() && ((dname.back() == '\\' || dname.back() == '/') && 
+        (p.root_name().string() + "\\" != dname && p.root_name().string() + "/" != dname))) {
         message_pump(); p = ghc::filesystem::path(dname); dname.pop_back();
       }
       #else
-      while (dname.back() == '/' && (!dname.empty() && dname[0] != '/' && dname.length() != 1)) {
+      while (!dname.empty() && dname.back() == '/' && string("/") != dname) {
         dname.pop_back();
       }
       #endif
@@ -325,9 +325,9 @@ namespace ngs::fs {
     string expand_with_trailing_slash(string dname) {
       dname = expand_without_trailing_slash(dname);
       #if (defined(_WIN32) || defined(_WIN64))
-      if (dname.back() != '\\') dname += "\\";
+      if (!dname.empty() && dname.back() != '\\') dname += "\\";
       #else
-      if (dname.back() != '/') dname += "/";
+      if (!dname.empty() && dname.back() != '/') dname += "/";
       #endif
       return dname;
     }
@@ -426,6 +426,7 @@ namespace ngs::fs {
         case  3: { fid = FOLDERID_Music;     break; }
         case  4: { fid = FOLDERID_Pictures;  break; }
         case  5: { fid = FOLDERID_Videos;    break; }
+        case  6: { fid = FOLDERID_Public;    break; }
         default: { fid = FOLDERID_Desktop;   break; }
       }
       if (SUCCEEDED(SHGetKnownFolderPath(fid, KF_FLAG_CREATE | KF_FLAG_DONT_UNEXPAND, nullptr, &ptr))) {
@@ -440,21 +441,27 @@ namespace ngs::fs {
       sysdir_search_path_directory_t fid;
       sysdir_search_path_enumeration_state state;
       switch (dtype) {
-        case  0: { fid = SYSDIR_DIRECTORY_DESKTOP;   break; }
-        case  1: { fid = SYSDIR_DIRECTORY_DOCUMENT;  break; }
-        case  2: { fid = SYSDIR_DIRECTORY_DOWNLOADS; break; }
-        case  3: { fid = SYSDIR_DIRECTORY_MUSIC;     break; }
-        case  4: { fid = SYSDIR_DIRECTORY_PICTURES;  break; }
-        case  5: { fid = SYSDIR_DIRECTORY_MOVIES;    break; }
-        default: { fid = SYSDIR_DIRECTORY_DESKTOP;   break; }
+        case  0: { fid = SYSDIR_DIRECTORY_DESKTOP;       break; }
+        case  1: { fid = SYSDIR_DIRECTORY_DOCUMENT;      break; }
+        case  2: { fid = SYSDIR_DIRECTORY_DOWNLOADS;     break; }
+        case  3: { fid = SYSDIR_DIRECTORY_MUSIC;         break; }
+        case  4: { fid = SYSDIR_DIRECTORY_PICTURES;      break; }
+        case  5: { fid = SYSDIR_DIRECTORY_MOVIES;        break; }
+        case  6: { fid = SYSDIR_DIRECTORY_SHARED_PUBLIC; break; }
+        default: { fid = SYSDIR_DIRECTORY_DESKTOP;       break; }
       }
       state = sysdir_start_search_path_enumeration(fid, SYSDIR_DOMAIN_MASK_USER);
       while ((state = sysdir_get_next_search_path_enumeration(state, buf))) {
         if (buf[0] == '~') {
-          result = buf; 
-          result.replace(0, 1, environment_get_variable("HOME"));
-          if (!result.empty() && result.back() != '/') {
-            result.push_back('/');
+          result = buf;
+          string home = environment_get_variable("HOME");
+          if (!home.empty()) {
+            result.replace(0, 1, home);
+            if (!result.empty() && result.back() != '/') {
+              result.push_back('/');
+            }
+          } else {
+            result.clear();
           }
           break;
         }
@@ -462,13 +469,14 @@ namespace ngs::fs {
       #elif !defined(__ANDROID__)
       string fid;
       switch (dtype) {
-        case  0: { fid = "XDG_DESKTOP_DIR=";   break; }
-        case  1: { fid = "XDG_DOCUMENTS_DIR="; break; }
-        case  2: { fid = "XDG_DOWNLOAD_DIR=";  break; }
-        case  3: { fid = "XDG_MUSIC_DIR=";     break; }
-        case  4: { fid = "XDG_PICTURES_DIR=";  break; }
-        case  5: { fid = "XDG_VIDEOS_DIR=";    break; }
-        default: { fid = "XDG_DESKTOP_DIR=";   break; }
+        case  0: { fid = "XDG_DESKTOP_DIR=";     break; }
+        case  1: { fid = "XDG_DOCUMENTS_DIR=";   break; }
+        case  2: { fid = "XDG_DOWNLOAD_DIR=";    break; }
+        case  3: { fid = "XDG_MUSIC_DIR=";       break; }
+        case  4: { fid = "XDG_PICTURES_DIR=";    break; }
+        case  5: { fid = "XDG_VIDEOS_DIR=";      break; }
+        case  6: { fid = "XDG_PUBLICSHARE_DIR="; break; }
+        default: { fid = "XDG_DESKTOP_DIR=";     break; }
       }
       string conf = environment_get_variable("HOME") + "/.config/user-dirs.dirs";
       if (file_exists(conf)) {
@@ -504,7 +512,7 @@ namespace ngs::fs {
         }
       }
       #endif
-      return result;
+      return expand_with_trailing_slash(result);
     }
 
   } // anonymous namespace
@@ -551,6 +559,10 @@ namespace ngs::fs {
 
   string directory_get_videos_path() {
     return directory_get_special_path(5);
+  }
+
+  string directory_get_public_path() {
+    return directory_get_special_path(6);
   }
 
   string executable_get_pathname() {
