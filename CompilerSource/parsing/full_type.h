@@ -17,24 +17,24 @@
 #ifndef ENIGMA_COMPILER_PARSING_FULL_TYPE_h
 #define ENIGMA_COMPILER_PARSING_FULL_TYPE_h
 
+#include <cstddef>
+
 #include <JDI/src/Storage/definition.h>
 
-#include "declarator.h"
-
 namespace enigma::parsing {
+// Parser-local scratch for a base type: a resolved JDI definition plus the
+// decl-spec flag bitmask (cv/sign/length, in JDI's encoding). The declarator
+// structure (pointers, arrays, params, nesting) is NOT here -- it lives in the
+// AST declarator-expression-tree and is bridged to JDI by walk_declarator_expr.
+// FullType is no longer stored on the AST: the spec-parsing out-param functions
+// fill one of these, and the owning TypeSpecifierSeq mirrors out its def+flags.
 struct FullType {
   jdi::definition *def = nullptr;
-  Declarator decl{};
   std::size_t flags = 0;
 
   FullType() noexcept = default;
   FullType(FullType &&) noexcept = default;
   FullType &operator=(FullType &&) noexcept = default;
-
-  FullType(jdi::definition *def, Declarator decl, std::size_t flags);
-  FullType(jdi::definition *def);
-
-  jdi::full_type to_jdi_fulltype();
 };
 }
 

@@ -467,12 +467,12 @@ bool next_can_begin_id_expression() {
 
 // Parses an `id-expression`, which can be a `qualified-id` or `unqualified-id`.
 // Also handles `declarator-id` when used in a declaration context.
-jdi::definition *TryParseIdExpression(Declarator *decl) {
+jdi::definition *TryParseIdExpression(Token *out_name) {
   switch (token.type) {
     case TT_SCOPEACCESS: {
       token = lexer->ReadToken();
       if (next_can_begin_id_expression() && token.type != TT_SCOPEACCESS) {
-        return TryParseIdExpression(decl);
+        return TryParseIdExpression(out_name);
       } else {
         herr->Error(token) << "Expected qualified-id after '::', got: '" << token.content << '\'';
         return nullptr;
@@ -482,7 +482,7 @@ jdi::definition *TryParseIdExpression(Declarator *decl) {
     case TT_DECLTYPE: {
       auto decltype_ = TryParseDecltype();
       if (token.type == TT_SCOPEACCESS) {
-        return TryParseNestedNameSpecifier(decltype_, decl, decl != nullptr);
+        return TryParseNestedNameSpecifier(decltype_, out_name, out_name != nullptr);
       } else {
         herr->Error(token) << "Expected qualified-id after decltype-expression, got: '" << token.content << '\'';
         return nullptr;
@@ -491,17 +491,16 @@ jdi::definition *TryParseIdExpression(Declarator *decl) {
 
     case TT_IDENTIFIER: {
       if (false/*next_is_user_defined_type()*/) {
-        return TryParsePrefixIdentifier(decl);
+        return TryParsePrefixIdentifier(out_name);
       } else {
         Token name = token;
         auto def = frontend->look_up(token.content);
         token = lexer->ReadToken();
-        const bool is_declarator = decl;
+        const bool is_declarator = out_name;
         if (is_declarator && token.type != TT_SCOPEACCESS) {
-          decl->name = name;  // If we're not accessing a scope then we're probably declaring a variable
-          decl->ndef = def;
+          *out_name = name;  // If we're not accessing a scope then we're probably declaring a variable
         } else if (token.type == TT_SCOPEACCESS) {
-          return TryParseNestedNameSpecifier(def, decl, decl != nullptr);
+          return TryParseNestedNameSpecifier(def, out_name, out_name != nullptr);
         } else if (map_contains(declarations, name.content)) {
           return declarations[name.content]->specifiers->def;
         } else if (def == nullptr) {
@@ -550,23 +549,23 @@ jdi::definition *TryParseIdExpression(Declarator *decl) {
 }
 
 std::unique_ptr<AST::Node> TryParseIdExpression() {
-  Declarator decl;
-  auto def = TryParseIdExpression(&decl);
-  
-  if (decl.name.content.empty()) {
+  Token name;
+  auto def = TryParseIdExpression(&name);
+
+  if (name.content.empty()) {
     herr->Error(token) << "Unable to parse id-expression";
     return nullptr;
-  } else if (map_contains(declarations, decl.name.content)) {
-    return std::make_unique<AST::IdentifierAccess>(decl.name);
+  } else if (map_contains(declarations, name.content)) {
+    return std::make_unique<AST::IdentifierAccess>(name);
   } else if (def != nullptr) {
-    return std::make_unique<AST::IdentifierAccess>(def, decl.name);
+    return std::make_unique<AST::IdentifierAccess>(def, name);
   } else {
     // Unresolved identifier. Per types-as-trees, the parser does not resolve
     // names: an identifier matching neither a JDI definition nor a locally
     // declared name is emitted as an unresolved IdentifierAccess (CPP kind,
     // empty type) for the semantic phase to bind. EDL further permits
     // implicitly-declared variables, so an unknown name is not a parse error.
-    return std::make_unique<AST::IdentifierAccess>(decl.name);
+    return std::make_unique<AST::IdentifierAccess>(name);
   }
 }
 
@@ -676,7 +675,7 @@ jdi::definition *TryParseTypenameSpecifier() {
 
 // Parses a type name, potentially followed by template arguments and/or a nested name specifier.
 // Corresponds roughly to the start of a `qualified-id` or just a `type-name`.
-jdi::definition *TryParsePrefixIdentifier(Declarator *decl = nullptr, bool is_declarator = false) {
+jdi::definition *TryParsePrefixIdentifier(Token *out_name = nullptr, bool is_declarator = false) {
   Token id = token;
   require_token(TT_IDENTIFIER, "Expected identifier");
   auto def = require_defined_type(id);
@@ -686,7 +685,7 @@ jdi::definition *TryParsePrefixIdentifier(Declarator *decl = nullptr, bool is_de
   }
 
   if (token.type == TT_SCOPEACCESS) {
-    return TryParseNestedNameSpecifier(def, decl, is_declarator);
+    return TryParseNestedNameSpecifier(def, out_name, is_declarator);
   }
 
   return def;
@@ -694,7 +693,7 @@ jdi::definition *TryParsePrefixIdentifier(Declarator *decl = nullptr, bool is_de
 
 // Parses a `nested-name-specifier` (starting with `::`) and the following `unqualified-id`.
 // Despite the name, it parses the rest of a qualified-id, not just the specifier.
-jdi::definition *TryParseNestedNameSpecifier(jdi::definition *scope, Declarator *decl = nullptr, bool is_declarator = false) {
+jdi::definition *TryParseNestedNameSpecifier(jdi::definition *scope, Token *out_name = nullptr, bool is_declarator = false) {
   if (token.type != TT_SCOPEACCESS) {
     herr->Error(token) << "Expected scope access '::' in nested name specifier, got: '" << token.content << '\'';
     return nullptr;
@@ -739,10 +738,10 @@ jdi::definition *TryParseNestedNameSpecifier(jdi::definition *scope, Declarator 
   }
 
   if (is_declarator) {
-    if (decl == nullptr) {
-      herr->Error(name) << "Internal error: nullptr Declarator passed to TryParseNestedNameSpecifier()";
+    if (out_name == nullptr) {
+      herr->Error(name) << "Internal error: nullptr name out-param passed to TryParseNestedNameSpecifier()";
     } else {
-      decl->name = name;
+      *out_name = name;
     }
   }
 
@@ -920,10 +919,9 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList
 }
 
 // Build the TypeSpecifierSeq for a `<type-id>` grammar production. The parser
-// unconditionally records the decl-spec chain (declspecs) and the resolved
-// base type (def). type_info (FullType cache) is populated from the same
-// parse — it's the JDI-bridge view of this same type, used by to_jdi_fulltype
-// and any downstream code that wants the declarator chain in flat form.
+// records the decl-spec chain (declspecs, which carries both the source-order
+// specifier tokens and the flag bitmask) and the resolved base type (def). The
+// TypeSpecifierSeq mirrors `def` + `flags` for its JDI bridge (to_jdi_fulltype).
 std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
   FullType type;
   auto declspecs = std::make_unique<AST::DeclSpecList>();
@@ -933,9 +931,7 @@ std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
 
   maybe_infer_int(type);
 
-  auto result = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
-  result->type_info = std::move(type);
-  return result;
+  return std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
 }
 
 // Parse a full type-id (type-specifier-seq + abstract-declarator) into a
@@ -2493,14 +2489,11 @@ class SyntaxChecker : public AST::Visitor {
       unsigned int min = 0;
       unsigned int max = 0;
       frontend->definition_parameter_bounds(def, min, max);
-      Token tok;
-      tok.content = func->name.content;
-      tok.type = TT_IDENTIFIER;
       if (max != unsigned(-1)) {
         if (node.arguments.size() < min) {
-          herr->Error(tok) << "Too few arguments to function call";
+          herr->Error(func->name) << "Too few arguments to function call";
         } else if (node.arguments.size() > max) {
-          herr->Error(tok) << "Too many arguments to function call";
+          herr->Error(func->name) << "Too many arguments to function call";
         }
       }
     }

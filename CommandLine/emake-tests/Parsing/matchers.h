@@ -41,6 +41,17 @@ inline bool clause_is_unqualified(AST::DeclaratorClause *clause) {
   return true;
 }
 
+// Whether every declarator in a clause is unnamed (abstract): the declarator-id
+// name is empty. Distinct from clause_is_unqualified (which checks the `* & [] ()`
+// modifiers): an abstract type-id is both unqualified AND unnamed. Replaces the
+// old `FullType::decl.name.content == ""` bridge assertion -- the name now lives
+// on each InitDeclarator, not on a Declarator embedded in the FullType.
+inline bool clause_is_unnamed(AST::DeclaratorClause *clause) {
+  for (auto &id : clause->declarators)
+    if (!id->name.content.empty()) return false;
+  return true;
+}
+
 MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   if (arg->type != AST::NodeType::DECLARATION) {
     ExpectedMsg = "From IsDeclaration Matcher: NodeType = DECLARATION\n";
@@ -137,10 +148,10 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
   }
 
   // cast->type is a PNode wrapping a DeclaratorClause; the cast's type is its
-  // `specifiers` (a TypeSpecifierSeq). type_info is the cached FullType
-  // (JDI-bridge form) populated by the parser. The clause's abstract declarator
-  // (the `*`/`&`/`[]` chain, empty for these simple-type cast tests) isn't
-  // checked here.
+  // `specifiers` (a TypeSpecifierSeq), whose `def`/`flags` are the resolved base
+  // type and cv/sign/length bitmask. The clause's abstract declarator (the
+  // `*`/`&`/`[]` chain) is checked for emptiness via clause_is_unqualified /
+  // clause_is_unnamed below, since these are simple-type cast tests.
   auto *clause = cast->type ? cast->type->template As<AST::DeclaratorClause>() : nullptr;
   auto *typeid_node = clause ? clause->specifiers.get() : nullptr;
   if (!typeid_node) {
@@ -149,19 +160,16 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
                      << (cast->type ? AST::NodeToString(cast->type->type) : std::string{"nullptr"}) << "\n";
     return false;
   }
-  auto &ft = typeid_node->type_info;
+  auto &ft = *typeid_node;
   // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
   // Otherwise, compare pointers OR compare by name for builtin types
   auto *parsed_def = ft.def;
   auto *expected_def = static_cast<jdi::definition*>(type);
   bool b1 = (expected_def == nullptr) || (parsed_def == expected_def) ||
             (parsed_def && expected_def && parsed_def->name == expected_def->name);
-  // Abstract-declarator check, ported off the deleted ft.decl.components bridge:
-  // these casts are all simple-type (`(int)x`, `static_cast<int>(...)`), so the
-  // clause carries no pointer/array/function modifiers.
-  bool b3 = clause_is_unqualified(clause);
-
-  bool b2 = ft.flags == 0, b4 = ft.decl.name.content == "",
+  // These casts are all simple-type (`(int)x`, `static_cast<int>(...)`): the
+  // abstract declarator carries no `* & [] ()` modifiers (b3) and no name (b4).
+  bool b2 = ft.flags == 0, b3 = clause_is_unqualified(clause), b4 = clause_is_unnamed(clause),
        b6 = cast->kind == cast_kind, b7 = expr->type == expr_type;
 
   bool res = b1 && b2 && b3 && b4 && b6 && b7;
@@ -178,8 +186,8 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
       *result_listener << "got a non-empty declarator ref_stack on the cast type-id\n";
     }
     if (!b4) {
-      ExpectedMsg += "ft.decl.name.content = \"\"\n";
-      *result_listener << "got ft.decl.name.content = " << ft.decl.name.content << "\n";
+      ExpectedMsg += "cast type-id is unnamed (abstract declarator)\n";
+      *result_listener << "got a named declarator on the cast type-id\n";
     }
     if (!b6) {
       ExpectedMsg += "cast->kind = " + AST::CastExpression::KindToString(cast_kind) + "\n";

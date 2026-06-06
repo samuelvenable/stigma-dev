@@ -247,7 +247,7 @@ class AST {
   // run of cv/sign/length specifiers (`unsigned long const …`). It is NOT a
   // full `type-id` — a type-id is `type-specifier-seq` + an (abstract-)declarator
   // (the `*` `&` `[]` `()` part). That declarator is modeled separately: today
-  // on `InitDeclarator` (declarator_expr) or smuggled through `type_info`, and
+  // on `InitDeclarator` (declarator_expr), and
   // in the unified design by a `DeclaratorClause` node pairing this seq with a
   // declarator tree. So a cast/sizeof/new target is a `DeclaratorClause` whose
   // specifier part is one of these; this node alone is just the spec run.
@@ -261,44 +261,42 @@ class AST {
   // "resolved final type" — a `def` pointing at a typedef still leaves that
   // typedef's own declarator chain to be walked.
   //
-  // `type_info` is the cached/synthesized FullType (the JDI-bridge layer's
-  // form of this same type). It's populated either at construction (when a
-  // caller already has a FullType in hand) or, post-4e, lazily by
-  // `to_jdi_fulltype()` walking declspecs + declarator-expr-tree. Not
-  // transitional — FullType stays as ENIGMA's intra-system bridge to JDI.
+  // `flags` is the decl-spec bitmask (cv/sign/length) in JDI's encoding, mirrored
+  // out alongside `def` so this node owns its full base-type description without a
+  // cached FullType. It is kept in sync with `declspecs->flags` by the parser
+  // (every flag write hits both); `declspecs` additionally retains the source-
+  // order specifier tokens for round-trip fidelity.
   struct TypeSpecifierSeq : TypedNode<NodeType::TYPE_SPECIFIER_SEQ> {
     jdi::definition *def = nullptr;
+    // Declared before `declspecs` so the primary ctor's mem-init reads the
+    // `specs` param's flags before it is moved into `declspecs`.
+    std::size_t flags = 0;
     PNode id_expression;
     std::unique_ptr<DeclSpecList> declspecs;
-    FullType type_info;
     enum class Scope { DEFAULT, GLOBAL, LOCAL } scope = Scope::DEFAULT;
 
     BASIC_NODE_ROUTINES(TypeSpecifierSeq);
 
     // Primary constructor: phase-2 callers use this. id_expression is
-    // optional (nullable); declspecs is optional (nullable). `type_info` is
-    // left empty; populate via lazy synthesis or a follow-up assignment.
+    // optional (nullable); declspecs is optional (nullable). `flags` is taken
+    // from the spec list when present.
     TypeSpecifierSeq(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs, Scope scope_ = Scope::DEFAULT):
-        def(def_), id_expression(std::move(id_exp)), declspecs(std::move(specs)), scope(scope_) {}
+        def(def_), flags(specs ? specs->flags : 0), id_expression(std::move(id_exp)), declspecs(std::move(specs)), scope(scope_) {}
 
-    // "Construct from already-built FullType" overloads — used by call sites
-    // that produce a FullType in the legacy spec-seq + declarator parse
-    // (still the path for things like new-expression bare type-ids until 4e
-    // gives us native declarator-expression-tree parsing). The FullType
-    // populates the type_info cache.
+    // "Destructure a transient FullType" overloads — used by the few call sites
+    // that build a spec-only FullType in the parser (e.g. the abstract C-style
+    // cast target) and hand it off without a separate declspecs. We keep only
+    // the base type's `def` + `flags`; FullType is not stored.
     TypeSpecifierSeq(PNode id_exp, FullType type_, Scope scope_):
-        def(type_.def), id_expression(std::move(id_exp)), type_info(std::move(type_)), scope(scope_) {}
+        def(type_.def), flags(type_.flags), id_expression(std::move(id_exp)), scope(scope_) {}
     TypeSpecifierSeq(PNode id_exp, FullType type_):
         TypeSpecifierSeq(std::move(id_exp), std::move(type_), Scope::DEFAULT) {}
     TypeSpecifierSeq(PNode id_exp): id_expression(std::move(id_exp)) {}
 
-    // JDI bridge. Used by sites that need to feed this spec-seq into the legacy
-    // JDI machinery (template-arg keys, function-parameter ref-stacks). Today it
-    // delegates to the transitional FullType in `type_info`; once the unified
-    // declarator build-out gives us a declarator tree on the owning clause
-    // (DeclaratorClause / InitDeclarator), this synthesizes the jdi::full_type
-    // from declspecs + that tree directly. Non-const because the underlying
-    // Declarator::to_jdi_refstack walk is non-const.
+    // JDI bridge. Feeds this spec-seq into the legacy JDI machinery (template-arg
+    // keys, function-parameter ref-stacks) as a declarator-less full_type. The
+    // declarator half is built separately from the AST declarator-expression-tree
+    // by the owning DeclaratorClause via walk_declarator_expr.
     jdi::full_type to_jdi_fulltype();
   };
 
