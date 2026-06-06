@@ -273,25 +273,21 @@ class AST {
     std::size_t flags = 0;
     PNode id_expression;
     std::unique_ptr<DeclSpecList> declspecs;
-    enum class Scope { DEFAULT, GLOBAL, LOCAL } scope = Scope::DEFAULT;
 
     BASIC_NODE_ROUTINES(TypeSpecifierSeq);
 
     // Primary constructor: phase-2 callers use this. id_expression is
     // optional (nullable); declspecs is optional (nullable). `flags` is taken
     // from the spec list when present.
-    TypeSpecifierSeq(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs, Scope scope_ = Scope::DEFAULT):
-        def(def_), flags(specs ? specs->flags : 0), id_expression(std::move(id_exp)), declspecs(std::move(specs)), scope(scope_) {}
+    TypeSpecifierSeq(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs):
+        def(def_), flags(specs ? specs->flags : 0), id_expression(std::move(id_exp)), declspecs(std::move(specs)) {}
 
-    // "Destructure a transient FullType" overloads — used by the few call sites
+    // "Destructure a transient FullType" overload — used by the few call sites
     // that build a spec-only FullType in the parser (e.g. the abstract C-style
     // cast target) and hand it off without a separate declspecs. We keep only
     // the base type's `def` + `flags`; FullType is not stored.
-    TypeSpecifierSeq(PNode id_exp, FullType type_, Scope scope_):
-        def(type_.def), flags(type_.flags), id_expression(std::move(id_exp)), scope(scope_) {}
     TypeSpecifierSeq(PNode id_exp, FullType type_):
-        TypeSpecifierSeq(std::move(id_exp), std::move(type_), Scope::DEFAULT) {}
-    TypeSpecifierSeq(PNode id_exp): id_expression(std::move(id_exp)) {}
+        def(type_.def), flags(type_.flags), id_expression(std::move(id_exp)) {}
 
     // JDI bridge. Feeds this spec-seq into the legacy JDI machinery (template-arg
     // keys, function-parameter ref-stacks) as a declarator-less full_type. The
