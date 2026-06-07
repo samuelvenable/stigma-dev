@@ -2,7 +2,7 @@
 
  MIT License
  
- Copyright © 2023-2025 Samuel Venable
+ Copyright © 2023-2026 Samuel Venable
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -63,12 +63,12 @@
 #include <mach/mach_host.h>
 #include <mach/mach_time.h>
 #include "shmem.hpp"
-#elif defined(__linux__)
+#elif (defined(__linux__) && !defined(__ANDROID__))
 #include <sys/sysinfo.h>
 #endif
-#if ((defined(__APPLE__) && defined(__MACH__)) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__sun))
+#if ((defined(__APPLE__) && defined(__MACH__)) || (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__) || (defined(__sun) && defined(__SVR4)))
 #include <sys/types.h>
-#if (defined(__FreeBSD__) || defined(__DragonFly__))
+#if ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
 #include <fcntl.h>
 #include <kvm.h>
 #elif (defined(__NetBSD__) || defined(__OpenBSD__))
@@ -77,8 +77,8 @@
 #include <uvm/uvm_extern.h>
 #endif
 #endif
-#if !defined(__sun)
-#if !defined(__linux__)
+#if (!defined(__sun) && !defined(__SVR4))
+#if (!defined(__linux__) && !defined(__ANDROID__))
 #include <sys/sysctl.h>
 #endif
 #include <sys/utsname.h>
@@ -88,7 +88,7 @@
 #endif
 #include <unistd.h>
 #endif
-#if (defined(__DragonFly__) || defined(__NetBSD__) || defined(__sun))
+#if (defined(__DragonFly__) || defined(__NetBSD__) || (defined(__sun) && defined(__SVR4)))
 #include <hwloc.h>
 #endif
 #if defined(_WIN32) && defined(_MSC_VER)
@@ -99,7 +99,7 @@
 #include "pci.ids.hpp"
 #include "system.hpp"
 
-namespace ngs::sys {
+namespace ngs::si {
 
 namespace {
 
@@ -337,7 +337,7 @@ std::vector<std::string> string_split(std::string str, char delimiter) {
   return vec;
 }
 
-#if defined(__linux__)
+#if (defined(__linux__) && !defined(__ANDROID__))
 long long read_meminfo(std::string key) {
   long long meminfo = -1;
   std::fstream doc;
@@ -472,7 +472,7 @@ std::string os_kernel_name() {
   if (kernelnameerror)
     return pointer_null();
   #if !defined(_WIN32)
-  #if !defined(__sun)
+  #if (!defined(__sun) && !defined(__SVR4))
   struct utsname name;
   if (!uname(&name))
     kernelname = name.sysname;
@@ -505,7 +505,7 @@ std::string os_device_name() {
   if (devicenameerror)
     return pointer_null();
   #if !defined(_WIN32)
-  #if !defined(__sun)
+  #if (!defined(__sun) && !defined(__SVR4))
   struct utsname name;
   if (!uname(&name))
     devicename = name.nodename;
@@ -544,7 +544,7 @@ std::string os_kernel_release() {
   if (kernelreleaseerror)
     return pointer_null();
   #if !defined(_WIN32)
-  #if !defined(__sun)
+  #if (!defined(__sun) && !defined(__SVR4))
   struct utsname name;
   if (!uname(&name))
     kernelrelease = name.release;
@@ -591,7 +591,7 @@ std::string os_kernel_version() {
   if (kernelversionerror)
     return pointer_null();
   #if !defined(_WIN32)
-  #if !defined(__sun)
+  #if (!defined(__sun) && !defined(__SVR4))
   #if !defined(__DragonFly__)
   struct utsname name;
   if (!uname(&name))
@@ -687,7 +687,7 @@ std::string os_product_name() {
     }
     productname = tmp1;
   }
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   std::string tmp = read_output("echo `lsb_release --id 2> /dev/null && lsb_release --release 2> /dev/null && lsb_release --codename 2> /dev/null`");
   if (!tmp.empty()) {
     tmp = std::regex_replace(tmp, std::regex("\r"), "");
@@ -700,7 +700,7 @@ std::string os_product_name() {
     /* if lsb_release is not installed use kernel + release: */
     productname = os_kernel_name() + " " + os_kernel_release();
   }
-  #elif !defined(__sun)
+  #elif (!defined(__sun) && !defined(__SVR4))
   productname = os_kernel_name() + " " + os_kernel_release();
   #else
   productname = read_output("awk 'NR==1{print $1,$2,$3}' /etc/release");
@@ -717,7 +717,7 @@ std::string os_architecture() {
   if (architectureerror)
     return pointer_null();
   #if !defined(_WIN32)
-  #if !defined(__sun)
+  #if (!defined(__sun) && !defined(__SVR4))
   /* utsname.machine equals the achitecture of the 
   current executable - not the current platform */
   #if (defined(__APPLE__) && defined(__MACH__))
@@ -851,7 +851,7 @@ std::string os_is_virtual() {
   #elif (defined(__APPLE__) && defined(__MACH__))
   isvirtual = "NO";
   return isvirtual;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   std::string tmp = read_output("echo `systemd-detect-virt 2> /dev/null`");
   std::transform(tmp.begin(), tmp.end(), tmp.begin(), ::toupper);
   if (tmp.empty()) {
@@ -887,9 +887,9 @@ std::string memory_totalram(bool human_readable) {
   std::size_t sz = sizeof(long long);
   if (!sysctl(mib, 2, &buf, &sz, nullptr, 0))
     totalram = buf;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   totalram = read_meminfo("MemTotal");
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
   long page_s = sysconf(_SC_PAGESIZE);
   unsigned long long tram = 0;
   std::size_t sz = sizeof(tram);
@@ -915,7 +915,7 @@ std::string memory_totalram(bool human_readable) {
   std::size_t sz = sizeof(buf);
   if (!sysctl(mib, 2, &buf, &sz, nullptr, 0))
     totalram = buf.npages * sysconf(_SC_PAGESIZE);
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   totalram = (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE));
   #endif
   if (!totalram)
@@ -941,9 +941,9 @@ std::string memory_freeram(bool human_readable) {
     if ((((vmstat.free_count - vmstat.speculative_count) + vmstat.external_page_count) * (long long)page_s))
       freeram = (long long)(((vmstat.free_count - vmstat.speculative_count) + vmstat.external_page_count) * (long long)page_s);
   }
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   freeram = read_meminfo("MemFree");
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
   long page_s = sysconf(_SC_PAGESIZE);
   unsigned long long fram = 0;
   std::size_t sz = sizeof(fram);
@@ -967,7 +967,7 @@ std::string memory_freeram(bool human_readable) {
   std::size_t sz = sizeof(buf);
   if (!sysctl(mib, 2, &buf, &sz, nullptr, 0))
     freeram = buf.free * sysconf(_SC_PAGESIZE);
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   freeram = (sysconf(_SC_AVPHYS_PAGES) * sysconf(_SC_PAGESIZE));
   #endif
   if (freeram != -1)
@@ -1001,9 +1001,9 @@ std::string memory_totalswap(bool human_readable) {
   std::size_t sz = sizeof(info);
   if (!sysctlbyname("vm.swapusage", &info, &sz, nullptr, 0))
     totalswap = info.xsu_total;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   totalswap = read_meminfo("SwapTotal");
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
   kvm_t *kvmh = nullptr;
   long page_s = sysconf(_SC_PAGESIZE);
   kvmh = kvm_open(nullptr, "/dev/null", "/dev/null", O_RDONLY, nullptr);
@@ -1033,7 +1033,7 @@ std::string memory_totalswap(bool human_readable) {
     }
     totalswap = total * DEV_BSIZE;
   }
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   int i = 0, n = 0;
   long long total = 0;
   long page_s = sysconf(_SC_PAGESIZE);
@@ -1082,9 +1082,9 @@ std::string memory_freeswap(bool human_readable) {
   std::size_t sz = sizeof(info);
   if (!sysctlbyname("vm.swapusage", &info, &sz, nullptr, 0))
     freeswap = info.xsu_avail;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   freeswap = read_meminfo("SwapFree");
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
   kvm_t *kvmh = nullptr;
   long page_s = sysconf(_SC_PAGESIZE);
   kvmh = kvm_open(nullptr, "/dev/null", "/dev/null", O_RDONLY, nullptr);
@@ -1114,7 +1114,7 @@ std::string memory_freeswap(bool human_readable) {
     }
     freeswap = avail * DEV_BSIZE;
   }
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   int i = 0, n = 0;
   long long avail = 0;
   long page_s = sysconf(_SC_PAGESIZE);
@@ -1166,14 +1166,14 @@ std::string memory_usedswap(bool human_readable) {
   std::size_t sz = sizeof(info);
   if (!sysctlbyname("vm.swapusage", &info, &sz, nullptr, 0))
     usedswap = info.xsu_used;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   std::string strtotal = memory_totalswap(false);
   std::string stravail = memory_freeswap(false);
   long long total = ((strtotal != pointer_null()) ? strtoull(strtotal.c_str(), nullptr, 10) : -1);
   long long avail = ((stravail != pointer_null()) ? strtoull(stravail.c_str(), nullptr, 10) : -1);
   if (total != -1 && avail != -1)
     usedswap = total - avail;
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
   kvm_t *kvmh = nullptr;
   long page_s = sysconf(_SC_PAGESIZE);
   kvmh = kvm_open(nullptr, "/dev/null", "/dev/null", O_RDONLY, nullptr);
@@ -1203,7 +1203,7 @@ std::string memory_usedswap(bool human_readable) {
     }
     usedswap = used * DEV_BSIZE;
   }
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   int i = 0, n = 0;
   long long used = 0;
   long page_s = sysconf(_SC_PAGESIZE);
@@ -1265,7 +1265,7 @@ std::string gpu_manufacturer() {
     return pointer_null();
   }
   #endif
-  #if defined(__sun)
+  #if (defined(__sun) && defined(__SVR4))
   unsigned identifier = 0;
   std::string vendor = read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}'| awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $1}'");
   if (!vendor.empty()) {
@@ -1321,8 +1321,11 @@ std::string gpu_renderer() {
   auto narrow = [](std::wstring wstr) {
     if (wstr.empty()) return std::string("");
     int nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), nullptr, 0, nullptr, nullptr);
-    std::vector<char> buf(nbytes);
-    return std::string { buf.data(), (std::size_t)WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), buf.data(), nbytes, nullptr, nullptr) };
+    if (!nbytes) return std::string("");
+    std::vector<char> buf((size_t)nbytes);
+    nbytes = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), buf.data(), nbytes, nullptr, nullptr);
+    if (!nbytes) return std::string("");
+    return std::string { buf.data(), (size_t)nbytes };
   };
   IDXGIFactory *pFactory = nullptr;
   if (CreateDXGIFactory(__uuidof(IDXGIFactory), (void **)&pFactory) == S_OK) {
@@ -1348,7 +1351,7 @@ std::string gpu_renderer() {
     return pointer_null();
   }
   #endif
-  #if defined(__sun)
+  #if (defined(__sun) && defined(__SVR4))
   unsigned identifier = 0;
   std::string model = read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}' | awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $2}'");
   if (!model.empty()) {
@@ -1449,9 +1452,9 @@ std::string cpu_vendor() {
   std::size_t sz = sizeof(buf);
   if (!sysctlbyname("machdep.cpu.vendor", &buf, &sz, nullptr, 0))
     cpuvendor = buf;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   cpuvendor = read_output("lscpu | grep 'Vendor ID:' | uniq | cut -d' ' -f3- | awk 'NR==1{$1=$1;print}'");
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__))
   #if (defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86))
   /* free / dragonfly bsd have no api for getting the cpu vendor; 
   use x86-specific inline assembly. If the current platform isn't 
@@ -1499,7 +1502,7 @@ std::string cpu_vendor() {
   cpuvendor = read_output("cat /proc/cpuinfo | grep 'vendor_id' | awk 'NR==1{print $3}'");
   #elif defined(__OpenBSD__)
   cpuvendor = read_output("sysctl -n machdep.cpuvendor");
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   cpuvendor = read_output("psrinfo -v -p | awk 'NR==2{print substr($2, 2)}'");
   #endif
   std::string tmp1 = cpu_processor();
@@ -1534,9 +1537,9 @@ std::string cpu_processor() {
   std::size_t sz = sizeof(buf);
   if (!sysctlbyname("machdep.cpu.brand_string", &buf, &sz, nullptr, 0))
     cpubrand = buf;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   cpubrand = read_output("lscpu | grep 'Model name:' | uniq | cut -d' ' -f3- | awk 'NR==1{$1=$1;print}'");
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
   int mib[2];
   char buf[1024];
   mib[0] = CTL_HW;
@@ -1544,7 +1547,7 @@ std::string cpu_processor() {
   std::size_t sz = sizeof(buf);
   if (!sysctl(mib, 2, buf, &sz, nullptr, 0))
     cpubrand = buf;
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   cpubrand = read_output("psrinfo -v -p | awk 'NR==3{print}' | awk 'NR==1{$1=$1;print}''");
   #endif
   while (!cpubrand.empty() && cpubrand.back() == ' ')
@@ -1575,19 +1578,19 @@ std::string cpu_core_count() {
   std::size_t sz = sizeof(int);
   if (!sysctlbyname("machdep.cpu.core_count", &buf, &sz, nullptr, 0))
     numcores = buf;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   numcores = (int)(strtol(read_output("echo `lscpu | awk '/^Socket\\(s\\)/{ print $2 }'`").c_str(), nullptr, 10) * 
     strtol(read_output("echo `lscpu | awk '/^Core\\(s\\) per socket/{ print $4 }'`").c_str(), nullptr, 10));
   if (!numcores) {
     int threads_per_core = (int)strtol(read_output("echo `lscpu | grep 'Thread(s) per core:' | uniq | cut -d' ' -f4- | awk 'NR==1{$1=$1;print}'`").c_str(), nullptr, 10);
     numcores = (int)(((cpu_processor_count() != std::string("(null)")) ? (int)strtol(cpu_processor_count().c_str(), nullptr, 10) : 0) / ((threads_per_core) ? threads_per_core : 1));
   }
-  #elif defined(__FreeBSD__)
+  #elif (defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
   int buf = -1;
   std::size_t sz = sizeof(int);
   if (!sysctlbyname("kern.smp.cores", &buf, &sz, nullptr, 0))
     numcores = buf;
-  #elif (defined(__DragonFly__) || defined(__NetBSD__) || defined(__sun))
+  #elif (defined(__DragonFly__) || defined(__NetBSD__) || (defined(__sun) && defined(__SVR4)))
   hwloc_topology_t topology = nullptr;
   if (!hwloc_topology_init(&topology)) {
     if (!hwloc_topology_load(topology)) {
@@ -1620,9 +1623,9 @@ std::string cpu_processor_count() {
   std::size_t sz = sizeof(int);
   if (!sysctlbyname("machdep.cpu.thread_count", &buf, &sz, nullptr, 0))
     numcpus = buf;
-  #elif defined(__linux__)
+  #elif (defined(__linux__) && !defined(__ANDROID__))
   numcpus = (int)strtol(read_output("lscpu | grep 'CPU(s):' | uniq | cut -d' ' -f4- | awk 'NR==1{$1=$1;print}'").c_str(), nullptr, 10);
-  #elif (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
+  #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
   int mib[2];
   mib[0] = CTL_HW;
   mib[1] = HW_NCPU;
@@ -1630,7 +1633,7 @@ std::string cpu_processor_count() {
   std::size_t sz = sizeof(int);
   if (!sysctl(mib, 2, &buf, &sz, nullptr, 0))
     numcpus = buf;
-  #elif defined(__sun)
+  #elif (defined(__sun) && defined(__SVR4))
   numcpus = (int)strtol(read_output("psrinfo | wc -l | awk '{print $1}'").c_str(), nullptr, 10);
   #endif
   if (!numcpus)
@@ -1641,4 +1644,4 @@ std::string cpu_processor_count() {
   return pointer_null();
 }
 
-} // namespace ngs::sys
+} // namespace ngs::si
