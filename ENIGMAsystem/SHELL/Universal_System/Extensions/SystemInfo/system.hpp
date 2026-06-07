@@ -2,7 +2,7 @@
 
  MIT License
  
- Copyright © 2023-2025 Samuel Venable
+ Copyright © 2023-2026 Samuel Venable
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,7 @@
 #pragma once
 #include <string>
 
-namespace ngs::sys {
+namespace ngs::si {
 
 std::string os_kernel_name();
 std::string os_device_name();
@@ -50,4 +50,4 @@ std::string cpu_processor();
 std::string cpu_processor_count();
 std::string cpu_core_count();
 
-} // namespace ngs::sys
+} // namespace ngs::si
