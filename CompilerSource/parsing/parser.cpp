@@ -358,7 +358,7 @@ bool next_maybe_functional_cast() {
 
 std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     AST::DeclarationStatement::StorageClass sc, FullType &ft,
-    std::unique_ptr<AST::DeclSpecList> declspecs,
+    std::unique_ptr<AST::DeclSpecList> declspecs, AST::PNode id_expression,
     AST::DeclaratorType decl_type, bool parse_unbounded,
     std::vector<std::unique_ptr<AST::InitDeclarator>> decls, bool already_parsed_first = false) {
   while (true) {
@@ -388,7 +388,7 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     }
   }
 
-  auto type_node = std::make_unique<AST::TypeSpecifierSeq>(ft.def, nullptr, std::move(declspecs));
+  auto type_node = std::make_unique<AST::TypeSpecifierSeq>(ft.def, std::move(id_expression), std::move(declspecs));
   auto clause = std::make_unique<AST::DeclaratorClause>(std::move(type_node), std::move(decls));
   // Record each declared name's owning clause so later id-expressions can
   // resolve it (the base type lives on clause->specifiers; the per-name
@@ -948,7 +948,8 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
   return id_expression;
 }
 
-std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList *specs) {
+std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList *specs,
+                                               AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
   while (next_is_type_specifier() || token.content == "global" || token.content == "local") {
     if (token.content == "global") {
@@ -957,8 +958,8 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList
     } else if (token.content == "local") {
       global_local.second = true;
       token = lexer->ReadToken();
-    } else {
-      TryParseTypeSpecifier(type, specs);
+    } else if (AST::PNode base = TryParseTypeSpecifier(type, specs)) {
+      out_id_expression = std::move(base);
     }
   }
   return global_local;
@@ -1057,7 +1058,7 @@ std::unique_ptr<AST::Node> ParseParenthetical() {
   return std::make_unique<AST::Parenthetical>(std::move(body));
 }
 
-void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs) {
+void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs, AST::PNode &out_id_expression) {
   switch (token.type) {
     case TT_TYPEDEF: {
       // `typedef` is a decl-specifier; the following type-specifier-seq and
@@ -1095,13 +1096,15 @@ void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs) {
 
     default:
       if (next_is_type_specifier()) {
-        TryParseTypeSpecifier(type, specs);
+        if (AST::PNode base = TryParseTypeSpecifier(type, specs))
+          out_id_expression = std::move(base);
         break;
       }
   }
 }
 
-std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList *specs) {
+std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList *specs,
+                                               AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
   while (next_is_decl_specifier() || token.content == "global" || token.content == "local") {
     if (token.content == "global") {
@@ -1111,7 +1114,7 @@ std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList
       global_local.second = true;
       token = lexer->ReadToken();
     } else
-      TryParseDeclSpecifier(type, specs);
+      TryParseDeclSpecifier(type, specs, out_id_expression);
   }
   return global_local;
 }
@@ -1247,7 +1250,8 @@ std::unique_ptr<AST::Node> TryParseDeclarations(
   if (next_is_decl_specifier() || is_global || is_local) {
     FullType type;
     auto declspecs = std::make_unique<AST::DeclSpecList>();
-    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(&type, declspecs.get());
+    AST::PNode id_expression;
+    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(&type, declspecs.get(), id_expression);
     if (global_local.first && global_local.second) {
       herr->Error(token) << "Cannot have both 'global' and 'local' in the same declaration";
       return nullptr;
@@ -1262,7 +1266,7 @@ std::unique_ptr<AST::Node> TryParseDeclarations(
     auto sc = is_global || global_local.first   ? AST::DeclarationStatement::StorageClass::GLOBAL
               : is_local || global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                                 : AST::DeclarationStatement::StorageClass::TEMPORARY;
-    return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, {});
+    return parse_declarations(sc, type, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
   }
   return nullptr;
 }
@@ -1693,19 +1697,19 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       if (next_maybe_functional_cast()) {
         FullType type;
         auto declspecs = std::make_unique<AST::DeclSpecList>();
-        TryParseTypeSpecifier(&type, declspecs.get());
+        AST::PNode id_expression = TryParseTypeSpecifier(&type, declspecs.get());
         if (token.type == TT_BEGINPARENTH) {
           token = lexer->ReadToken();
           std::vector<AST::PNode> args;
           args.push_back(ParseExpression(Precedence::kAll));
           require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after functional cast");
           return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
-                                                    std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs)),
+                                                    std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs)),
                                                     std::move(args));
         } else if (token.type == TT_BEGINBRACE) {
           auto init = TryParseInitializer(false);
           require_token(TT_ENDBRACE, "Expected closing brace ('}') after temporary object initializer");
-          init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
+          init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs));
           return init;
         } else {
           herr->Error(token) << "Expected opening parenthesis ('(') or brace ('{') after functional-cast type";
@@ -2226,12 +2230,12 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
   if (next_maybe_functional_cast()) {
     FullType type;
     auto declspecs = std::make_unique<AST::DeclSpecList>();
-    TryParseTypeSpecifier(&type, declspecs.get());
+    AST::PNode id_expression = TryParseTypeSpecifier(&type, declspecs.get());
     if (next_is_type_specifier() ||
         // Make sure we don't accidentally consume a c-style cast when its required
         (!(maybe_c_style_cast && token.type == TT_ENDPARENTH) &&
          (token.type != TT_BEGINBRACE && token.type != TT_BEGINPARENTH))) {
-      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(&type, declspecs.get());
+      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(&type, declspecs.get(), id_expression);
       if (global_local.first && global_local.second) {
         herr->Error(token) << "Cannot have both `global` and `local` storage class specifiers";
       }
@@ -2239,10 +2243,10 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
            : global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                  : sc;
       maybe_assign_def(&type);
-      return parse_declarations(sc, type, std::move(declspecs), decl_type, parse_unbounded, {});
+      return parse_declarations(sc, type, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
     } else if (token.type == TT_BEGINBRACE) {
       auto init = TryParseBraceInitializer();
-      init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
+      init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs));
       return init;
     } else if (token.type == TT_BEGINPARENTH) {
       // `Foo( ... )`: parse as a call-shaped expression with a TypeSpecifierSeq callee.
@@ -2258,7 +2262,7 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       // When the semantic phase resolves this construct to a declaration it
       // must split the top-level comma into per-declarator nodes; when it
       // resolves to an expression the comma-expression stands.
-      auto callee = std::make_unique<AST::TypeSpecifierSeq>(type.def, nullptr, std::move(declspecs));
+      auto callee = std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs));
       auto call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
 
       // [stmt.ambig]: "if it can be a declaration, it is."
@@ -2300,7 +2304,7 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       // declarator, so wrap it in a DeclaratorClause with a single abstract
       // (declarator-less) init-declarator -- keeping cast->type uniformly a
       // DeclaratorClause, same as the operand-level C-style and named casts.
-      auto specifiers = std::make_unique<AST::TypeSpecifierSeq>(nullptr, std::move(type));
+      auto specifiers = std::make_unique<AST::TypeSpecifierSeq>(std::move(id_expression), std::move(type));
       std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
       declarators.push_back(std::make_unique<AST::InitDeclarator>());
       auto type_node = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));

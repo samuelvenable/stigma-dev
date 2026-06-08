@@ -356,6 +356,23 @@ TEST(ParserTest, TypeIdClauseCarriesIdExpression) {
   EXPECT_EQ(clause->specifiers->id_expression->Definition(), clause->specifiers->def);
 }
 
+// The declaration path now carries id_expression too: `int x;` reaches
+// parse_declarations via the decl-specifier accumulator, which threads the base
+// type's id-expression onto the statement's spec-seq (same Definition()==def
+// invariant). Guards the additive populate-everywhere step ahead of retiring def.
+TEST(ParserTest, DeclarationCarriesIdExpression) {
+  ParserTester test = ParserTester::CreateWithSetUp("int x;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::IDENTIFIER);
+  EXPECT_EQ(seq->id_expression->As<AST::IdentifierAccess>()->name.content, "int");
+  EXPECT_EQ(seq->id_expression->Definition(), seq->def);
+}
+
 // DISABLED: a qualified-id type name (`A::B`) records a ScopeAccess chain on
 // id_expression -- trailing segment name on the ScopeAccess, scope id-expression
 // as its lhs, whole-id def on the root. Blocked: the harness resolves no scoped
