@@ -311,6 +311,18 @@ bool AST::DebugPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
   return emit(node, "'" + std::string(node.name.content) + "'");
 }
 
+bool AST::DebugPrinter::VisitScopeAccess(AST::ScopeAccess &node) {
+  return emit(node, "'" + std::string(node.name.content) + "'");
+}
+
+bool AST::DebugPrinter::VisitTemplateId(AST::TemplateId &node) {
+  return emit(node, "args=" + std::to_string(node.args.size()));
+}
+
+bool AST::DebugPrinter::VisitDecltype(AST::Decltype &node) {
+  return emit(node, "");
+}
+
 void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Leaf: specs are Tokens, not AST nodes.
 }
@@ -334,6 +346,15 @@ void AST::Array::RecursiveSubVisit(Visitor &visitor) {
 }
 void AST::IdentifierAccess::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Varname token that appeared in code; it's a leaf.
+}
+void AST::ScopeAccess::RecursiveSubVisit(Visitor &visitor) {
+  RV(visitor, lhs);  // `name` is a Token, not a node.
+}
+void AST::TemplateId::RecursiveSubVisit(Visitor &visitor) {
+  RV(visitor, name, args);
+}
+void AST::Decltype::RecursiveSubVisit(Visitor &visitor) {
+  RV(visitor, operand);
 }
 void AST::Literal::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Literal in the middle of code; also a leaf.
@@ -430,7 +451,9 @@ const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
     DECLARATION,
     INIT_DECLARATOR,
     INITIALIZER,
-    DECLARATOR_CLAUSE);
+    DECLARATOR_CLAUSE,
+    TEMPLATE_ID,
+    DECLTYPE);
 
 const std::vector<std::string> AST::DeclarationStatement::StorageNames =
     ENUM_NAME_VECTOR(StorageClass, TEMPORARY, LOCAL, GLOBAL);

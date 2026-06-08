@@ -331,6 +331,76 @@ TEST(ParserTest, TypeSpecifierAndDeclarator) {
   EXPECT_EQ(test.lexer.ReadToken().type, TT_ENDOFCODE);
 }
 
+// Types-as-trees: the base type's id-expression now lives on the spec-seq
+// (id_expression), beside the legacy `def` mirror. For a builtin it is an
+// IdentifierAccess whose Definition() equals that mirror -- the behaviour-neutral
+// invariant this additive step preserves (holds whether or not `def` resolved).
+TEST(ParserTest, TypeIdBuiltinIdExpression) {
+  ParserTester test = ParserTester::CreateWithSetUp("int");
+  auto seq = test->TryParseTypeID();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::IDENTIFIER);
+  EXPECT_EQ(seq->id_expression->As<AST::IdentifierAccess>()->name.content, "int");
+  EXPECT_EQ(seq->id_expression->Definition(), seq->def);
+}
+
+// The id-expression reaches a DeclaratorClause's spec-seq for free: ParseTypeIdClause
+// builds it through TryParseTypeID.
+TEST(ParserTest, TypeIdClauseCarriesIdExpression) {
+  ParserTester test = ParserTester::CreateWithSetUp("const int");
+  auto clause = test->ParseTypeIdClause();
+  ASSERT_NE(clause->specifiers, nullptr);
+  ASSERT_NE(clause->specifiers->id_expression, nullptr);
+  EXPECT_EQ(clause->specifiers->id_expression->type, AST::NodeType::IDENTIFIER);
+  EXPECT_EQ(clause->specifiers->id_expression->Definition(), clause->specifiers->def);
+}
+
+// DISABLED: a qualified-id type name (`A::B`) records a ScopeAccess chain on
+// id_expression -- trailing segment name on the ScopeAccess, scope id-expression
+// as its lhs, whole-id def on the root. Blocked: the harness resolves no scoped
+// types (no headers), so `A` trips require_defined_type before a tree is built.
+// Flip green once a resolvable scope exists (jdi2 headers).
+TEST(ParserTest, DISABLED_TypeIdScopeAccessShape) {
+  ParserTester test = ParserTester::CreateWithSetUp("A::B");
+  auto seq = test->TryParseTypeID();
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::SCOPE_ACCESS);
+  auto *sa = seq->id_expression->As<AST::ScopeAccess>();
+  EXPECT_EQ(sa->name.content, "B");
+  ASSERT_NE(sa->lhs, nullptr);
+  EXPECT_EQ(sa->lhs->type, AST::NodeType::IDENTIFIER);
+  EXPECT_EQ(seq->id_expression->Definition(), seq->def);
+}
+
+// DISABLED: a template-id type name (`T<int>`) records a TemplateId on
+// id_expression -- name is the template's id-expression, args hold the parsed
+// type-id trees. Blocked: no resolvable template type in the harness.
+TEST(ParserTest, DISABLED_TypeIdTemplateIdShape) {
+  ParserTester test = ParserTester::CreateWithSetUp("T<int>");
+  auto seq = test->TryParseTypeID();
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::TEMPLATE_ID);
+  auto *ti = seq->id_expression->As<AST::TemplateId>();
+  ASSERT_NE(ti->name, nullptr);
+  EXPECT_EQ(ti->args.size(), 1u);
+}
+
+// DISABLED: `decltype(x)::y` records a ScopeAccess whose lhs is a Decltype node
+// holding the operand expression. Blocked: standalone `decltype(x)` errors
+// ("Could not parse decltype specifier") and the qualified form needs `y` to
+// resolve in decltype's (semantic-phase) scope, which the harness cannot do.
+TEST(ParserTest, DISABLED_TypeIdDecltypeShape) {
+  ParserTester test = ParserTester::CreateWithSetUp("decltype(x)::y");
+  auto seq = test->TryParseTypeID();
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::SCOPE_ACCESS);
+  auto *sa = seq->id_expression->As<AST::ScopeAccess>();
+  ASSERT_NE(sa->lhs, nullptr);
+  EXPECT_EQ(sa->lhs->type, AST::NodeType::DECLTYPE);
+  ASSERT_NE(sa->lhs->As<AST::Decltype>()->operand, nullptr);
+}
+
 /*
 TEST(ParserTest, Declarator_1) {
   FullType ft2;

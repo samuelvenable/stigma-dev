@@ -88,6 +88,31 @@ bool AST::CppPrettyPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
   return true;
 }
 
+bool AST::CppPrettyPrinter::VisitScopeAccess(AST::ScopeAccess &node) {
+  if (node.lhs) VISIT_AND_CHECK(node.lhs);
+  print("::");
+  print(node.name.content);
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitTemplateId(AST::TemplateId &node) {
+  VISIT_AND_CHECK(node.name);
+  print("<");
+  for (std::size_t i = 0; i < node.args.size(); i++) {
+    if (i) print(", ");
+    VISIT_AND_CHECK(node.args[i]);
+  }
+  print(">");
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitDecltype(AST::Decltype &node) {
+  print("decltype(");
+  VISIT_AND_CHECK(node.operand);
+  print(")");
+  return true;
+}
+
 bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
   std::string value = std::get<std::string>(node.value.value);
   if (node.value.type != TT_CHARLIT && node.value.type != TT_STRINGLIT) {

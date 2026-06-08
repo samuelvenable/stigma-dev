@@ -56,7 +56,7 @@ class AST {
     IDENTIFIER, SCOPE_ACCESS, LITERAL, FUNCTION_CALL,
     IF, FOR, WHILE, DO, WITH, REPEAT, SWITCH, CASE, DEFAULT,
     BREAK, CONTINUE, RETURN, DECLARATION, INIT_DECLARATOR, INITIALIZER,
-    DECLARATOR_CLAUSE
+    DECLARATOR_CLAUSE, TEMPLATE_ID, DECLTYPE
   };
 
   struct Node;
@@ -87,6 +87,11 @@ class AST {
     // "not a parameter-declaration"; overridden by the node shapes the parser
     // leaves parameters in (today: DeclarationStatement).
     virtual bool to_jdi_refstack_parameter(jdi::ref_stack::parameter &out) { (void)out; return false; }
+
+    // The JDI definition this node denotes. The id-expression node kinds
+    // (IdentifierAccess / ScopeAccess / TemplateId) carry a `def` member and
+    // override this to expose it; every other node names nothing and returns null.
+    virtual jdi::definition *Definition() const { return nullptr; }
 
     Node(NodeType t = NodeType::ERROR): type(t) {}
     virtual ~Node() = default;
@@ -393,6 +398,58 @@ class AST {
 
     IdentifierAccess(jdi::definition *def, Token name): def{def}, name{name} {}
     IdentifierAccess(Token name): name{name} {}
+
+    jdi::definition *Definition() const override { return def; }
+  };
+
+  // A qualified-id: `lhs :: name`. EDL also accepts `.` and `->` here as sugar for
+  // `::`; one node covers all three and the semantic phase picks the operator from
+  // what `lhs` resolves to. `lhs` is the scope (another id-expression), null for a
+  // global-scope `::name`. A template specialization on the final segment
+  // (`a::b<int>`) is modeled by wrapping this node in a TemplateId.
+  //
+  // `def` is the definition the whole qualified-id denotes (`name` resolved in
+  // `lhs`'s scope), null when unresolved.
+  struct ScopeAccess : TypedNode<NodeType::SCOPE_ACCESS> {
+    PNode lhs;   // scope id-expression; null = global scope (`::name`)
+    Token name;  // trailing unqualified-id
+    jdi::definition *def = nullptr;
+
+    BASIC_NODE_ROUTINES(ScopeAccess);
+
+    ScopeAccess(PNode lhs_, Token name_, jdi::definition *def_ = nullptr):
+        lhs(std::move(lhs_)), name(std::move(name_)), def(def_) {}
+
+    jdi::definition *Definition() const override { return def; }
+  };
+
+  // A template-id: `name < args... >`. `name` is the template-name id-expression.
+  // Each arg is a type-id tree (a DeclaratorClause) or a constant-expression; the
+  // parser leaves them unclassified for the semantic phase. `def` is the resolved
+  // specialization, null if not yet instantiated.
+  struct TemplateId : TypedNode<NodeType::TEMPLATE_ID> {
+    PNode name;
+    std::vector<PNode> args;
+    jdi::definition *def = nullptr;
+
+    BASIC_NODE_ROUTINES(TemplateId);
+
+    TemplateId(PNode name_, std::vector<PNode> args_, jdi::definition *def_ = nullptr):
+        name(std::move(name_)), args(std::move(args_)), def(def_) {}
+
+    jdi::definition *Definition() const override { return def; }
+  };
+
+  // A `decltype(operand)` specifier. `operand` is the parsed expression whose type
+  // this names. The type it denotes is computed by the semantic phase, so there is
+  // no `def` here yet (Definition() stays null). May appear standalone as a type or
+  // as the `lhs` of a ScopeAccess (`decltype(x)::y`).
+  struct Decltype : TypedNode<NodeType::DECLTYPE> {
+    PNode operand;
+
+    BASIC_NODE_ROUTINES(Decltype);
+
+    explicit Decltype(PNode operand_): operand(std::move(operand_)) {}
   };
 
   struct Literal : TypedNode<NodeType::LITERAL> {
@@ -659,6 +716,9 @@ class AST {
     virtual bool VisitParenthetical(Parenthetical &node){ return DefaultVisit(node); }
     virtual bool VisitArray(Array &node){ return DefaultVisit(node); }
     virtual bool VisitIdentifierAccess(IdentifierAccess &node){ return DefaultVisit(node); }
+    virtual bool VisitScopeAccess(ScopeAccess &node){ return DefaultVisit(node); }
+    virtual bool VisitTemplateId(TemplateId &node){ return DefaultVisit(node); }
+    virtual bool VisitDecltype(Decltype &node){ return DefaultVisit(node); }
     virtual bool VisitLiteral(Literal &node){ return DefaultVisit(node); }
     virtual bool VisitIfStatement(IfStatement &node){ return DefaultVisit(node); }
     virtual bool VisitForLoop(ForLoop &node){ return DefaultVisit(node); }
@@ -712,6 +772,9 @@ class AST {
     bool VisitParenthetical(Parenthetical &node);
     bool VisitArray(Array &node);
     bool VisitIdentifierAccess(IdentifierAccess &node);
+    bool VisitScopeAccess(ScopeAccess &node);
+    bool VisitTemplateId(TemplateId &node);
+    bool VisitDecltype(Decltype &node);
     bool VisitLiteral(Literal &node);
     bool VisitIfStatement(IfStatement &node);
     bool VisitForLoop(ForLoop &node);
@@ -753,6 +816,9 @@ class AST {
     bool VisitFunctionCallExpression(FunctionCallExpression &node) override;
     bool VisitLiteral(Literal &node) override;
     bool VisitIdentifierAccess(IdentifierAccess &node) override;
+    bool VisitScopeAccess(ScopeAccess &node) override;
+    bool VisitTemplateId(TemplateId &node) override;
+    bool VisitDecltype(Decltype &node) override;
   };
 
   // Used to adapt to current single-error syntax checking interface.
