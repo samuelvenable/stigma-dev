@@ -798,7 +798,7 @@ bool matches_token_type(jdi::definition *def, const Token &tok) {
   }
 }
 
-void TryParseElaboratedName(FullType *type) {
+AST::PNode TryParseElaboratedName(FullType *type) {
   Token tok = token;
 
   token = lexer->ReadToken();
@@ -816,16 +816,17 @@ void TryParseElaboratedName(FullType *type) {
     }
   }
 
-  jdi::definition *def = id_expression_def(scope_tree);
   if (token.type == TT_SCOPEACCESS) {
-    def = id_expression_def(TryParseNestedNameSpecifier(std::move(scope_tree)));
+    scope_tree = TryParseNestedNameSpecifier(std::move(scope_tree));
   }
 
+  jdi::definition *def = id_expression_def(scope_tree);
   if (def != nullptr && matches_token_type(def, tok)) {
     type->def = def;
   } else {
     herr->Error(name) << "Given specifier does not refer to a declared enum";
   }
+  return scope_tree;
 }
 
 static bool contains_decflag_bitmask(std::size_t combined, std::string_view name) {
@@ -938,7 +939,7 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
         }
         token = lexer->ReadToken();
       } else if (next_is_class_key() || token.type == TT_ENUM) {
-        TryParseElaboratedName(type);
+        id_expression = TryParseElaboratedName(type);
       } else {
         herr->Error(token) << "Given token does not specify a valid type specifier";
       }
