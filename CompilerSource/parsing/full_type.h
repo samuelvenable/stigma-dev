@@ -27,7 +27,8 @@ namespace enigma::parsing {
 // structure (pointers, arrays, params, nesting) is NOT here -- it lives in the
 // AST declarator-expression-tree and is bridged to JDI by walk_declarator_expr.
 // FullType is no longer stored on the AST: the spec-parsing out-param functions
-// fill one of these, and the owning TypeSpecifierSeq mirrors out its def+flags.
+// fill one of these. The owning TypeSpecifierSeq keeps only `flags`; the base
+// type's definition lives in the id-expression tree (read via Definition()).
 struct FullType {
   jdi::definition *def = nullptr;
   std::size_t flags = 0;

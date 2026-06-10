@@ -188,11 +188,12 @@ TEST(ParserTest, SizeofType) {
   ASSERT_TRUE((value.flags & jdi::builtin_flag__volatile->mask) == jdi::builtin_flag__volatile->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__unsigned->mask) == jdi::builtin_flag__unsigned->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__long_long->mask) == jdi::builtin_flag__long_long->value);
-  // Note: CreateWithSetUp uses lang_CPP which doesn't parse headers, so value.def is null
-  // This is expected behavior for this test setup
-  if (value.def) {
-    ASSERT_EQ(value.def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-    ASSERT_EQ(value.def->name, "int");
+  // No spelled `int`: the spec-seq's base type is the implicit-int leaf, so
+  // Definition() resolves to builtin_type__int (guarded in case builtins are
+  // unloaded in this harness, leaving it null).
+  if (value.Definition()) {
+    ASSERT_EQ(value.Definition()->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+    ASSERT_EQ(value.Definition()->name, "int");
   }
   ASSERT_EQ(clause->declarators.size(), 1);
   auto *decl_expr = clause->declarators[0]->declarator_expr.get();
@@ -281,9 +282,9 @@ TEST(ParserTest, AlignofType) {
   ASSERT_TRUE((value.flags & jdi::builtin_flag__volatile->mask) == jdi::builtin_flag__volatile->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__unsigned->mask) == jdi::builtin_flag__unsigned->value);
   ASSERT_TRUE((value.flags & jdi::builtin_flag__long_long->mask) == jdi::builtin_flag__long_long->value);
-  if (value.def) {
-    ASSERT_EQ(value.def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
-    ASSERT_EQ(value.def->name, "int");
+  if (value.Definition()) {
+    ASSERT_EQ(value.Definition()->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+    ASSERT_EQ(value.Definition()->name, "int");
   }
   ASSERT_EQ(clause->declarators.size(), 1);
   auto *decl_expr = clause->declarators[0]->declarator_expr.get();
@@ -295,7 +296,7 @@ TEST(ParserTest, AlignofType) {
 
 bool contains_flag(AST::TypeSpecifierSeq *ts, std::size_t decflag) { return (ts->flags & decflag) == decflag; }
 
-bool def_type_is(AST::TypeSpecifierSeq *ts, std::size_t dectype) { return ts && ts->def && (ts->def->flags & dectype) == dectype; }
+bool def_type_is(AST::TypeSpecifierSeq *ts, std::size_t dectype) { return ts && ts->Definition() && (ts->Definition()->flags & dectype) == dectype; }
 
 // Flatten a jdi::ref_stack (begin->end, i.e. name-outward) into comparable
 // (ref_type, array-size/param-count) pairs for the bridge-layer declarator
@@ -331,10 +332,9 @@ TEST(ParserTest, TypeSpecifierAndDeclarator) {
   EXPECT_EQ(test.lexer.ReadToken().type, TT_ENDOFCODE);
 }
 
-// Types-as-trees: the base type's id-expression now lives on the spec-seq
-// (id_expression), beside the legacy `def` mirror. For a builtin it is an
-// IdentifierAccess whose Definition() equals that mirror -- the behaviour-neutral
-// invariant this additive step preserves (holds whether or not `def` resolved).
+// Types-as-trees: the base type is the spec-seq's id-expression tree. For a
+// builtin it is an IdentifierAccess, and the spec-seq's Definition() is a pure
+// read that delegates to that tree root -- the contract this test guards.
 TEST(ParserTest, TypeIdBuiltinIdExpression) {
   ParserTester test = ParserTester::CreateWithSetUp("int");
   auto seq = test->TryParseTypeID();
@@ -342,7 +342,7 @@ TEST(ParserTest, TypeIdBuiltinIdExpression) {
   ASSERT_NE(seq->id_expression, nullptr);
   ASSERT_EQ(seq->id_expression->type, AST::NodeType::IDENTIFIER);
   EXPECT_EQ(seq->id_expression->As<AST::IdentifierAccess>()->name.content, "int");
-  EXPECT_EQ(seq->id_expression->Definition(), seq->def);
+  EXPECT_EQ(seq->Definition(), seq->id_expression->Definition());
 }
 
 // The id-expression reaches a DeclaratorClause's spec-seq for free: ParseTypeIdClause
@@ -353,13 +353,13 @@ TEST(ParserTest, TypeIdClauseCarriesIdExpression) {
   ASSERT_NE(clause->specifiers, nullptr);
   ASSERT_NE(clause->specifiers->id_expression, nullptr);
   EXPECT_EQ(clause->specifiers->id_expression->type, AST::NodeType::IDENTIFIER);
-  EXPECT_EQ(clause->specifiers->id_expression->Definition(), clause->specifiers->def);
+  EXPECT_EQ(clause->specifiers->Definition(), clause->specifiers->id_expression->Definition());
 }
 
-// The declaration path now carries id_expression too: `int x;` reaches
+// The declaration path carries id_expression too: `int x;` reaches
 // parse_declarations via the decl-specifier accumulator, which threads the base
-// type's id-expression onto the statement's spec-seq (same Definition()==def
-// invariant). Guards the additive populate-everywhere step ahead of retiring def.
+// type's id-expression onto the statement's spec-seq, whose Definition() then
+// delegates to that tree root.
 TEST(ParserTest, DeclarationCarriesIdExpression) {
   ParserTester test = ParserTester::CreateWithSetUp("int x;");
   auto node = test->TryParseStatement();
@@ -370,7 +370,47 @@ TEST(ParserTest, DeclarationCarriesIdExpression) {
   ASSERT_NE(seq->id_expression, nullptr);
   ASSERT_EQ(seq->id_expression->type, AST::NodeType::IDENTIFIER);
   EXPECT_EQ(seq->id_expression->As<AST::IdentifierAccess>()->name.content, "int");
-  EXPECT_EQ(seq->id_expression->Definition(), seq->def);
+  EXPECT_EQ(seq->Definition(), seq->id_expression->Definition());
+}
+
+// A length/sign specifier with no type-name (`unsigned`) denotes `int`. The
+// parser materializes that as an ImplicitInt leaf in the id-expression slot once
+// the spec-seq closes -- an eager tree node (mirroring JDI read_type), not a
+// recomputed-on-read flag. Definition() then resolves to builtin_type__int by
+// reading that leaf, with no special-casing in the accessor.
+TEST(ParserTest, TypeIdImplicitIntFromSign) {
+  ParserTester test = ParserTester::CreateWithSetUp("unsigned");
+  auto seq = test->TryParseTypeID();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  EXPECT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_INT);
+  EXPECT_EQ(seq->Definition(), jdi::builtin_type__int);
+}
+
+// Same eager ImplicitInt materialization when a length specifier trails a sign
+// one (`unsigned long`): still no type-name, still `int`.
+TEST(ParserTest, TypeIdImplicitIntFromLength) {
+  ParserTester test = ParserTester::CreateWithSetUp("unsigned long");
+  auto seq = test->TryParseTypeID();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  EXPECT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_INT);
+  EXPECT_EQ(seq->Definition(), jdi::builtin_type__int);
+}
+
+// The declaration path materializes ImplicitInt too: `unsigned x;` threads an
+// implicit-int id-expression onto the statement's spec-seq, so Definition()
+// reads builtin_type__int without the user ever writing `int`.
+TEST(ParserTest, DeclarationImplicitInt) {
+  ParserTester test = ParserTester::CreateWithSetUp("unsigned x;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  EXPECT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_INT);
+  EXPECT_EQ(seq->Definition(), jdi::builtin_type__int);
 }
 
 // DISABLED: a qualified-id type name (`A::B`) records a ScopeAccess chain on
@@ -387,7 +427,7 @@ TEST(ParserTest, DISABLED_TypeIdScopeAccessShape) {
   EXPECT_EQ(sa->name.content, "B");
   ASSERT_NE(sa->lhs, nullptr);
   EXPECT_EQ(sa->lhs->type, AST::NodeType::IDENTIFIER);
-  EXPECT_EQ(seq->id_expression->Definition(), seq->def);
+  EXPECT_EQ(seq->Definition(), seq->id_expression->Definition());
 }
 
 // DISABLED: a template-id type name (`T<int>`) records a TemplateId on
@@ -504,8 +544,9 @@ static void assert_declarator_4_refstack(AST::Node *root) {
 static void assert_declarations_tree(AST::Node *root) {
   ASSERT_EQ(root->type, AST::NodeType::DECLARATION);
   auto *decls = root->As<AST::DeclarationStatement>();
-  if (decls->clause->specifiers->def)
-    EXPECT_EQ(decls->clause->specifiers->def->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  if (decls->clause->specifiers->Definition()) {
+    EXPECT_EQ(decls->clause->specifiers->Definition()->flags & jdi::DEF_TYPENAME, jdi::DEF_TYPENAME);
+  }
 
   ASSERT_EQ(decls->clause->declarators.size(), 3u);
 
@@ -675,7 +716,7 @@ TEST(ParserTest, NewExpression_1) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
   EXPECT_THAT(new_declarator_root(new_exp),
               IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
@@ -696,7 +737,7 @@ TEST(ParserTest, NewExpression_1_NoSemicolon) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
   EXPECT_THAT(new_declarator_root(new_exp),
               IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
@@ -715,7 +756,7 @@ TEST(ParserTest, NewExpression_2) {
   ASSERT_TRUE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int[][15]` -> Subscript(Subscript(<abstract>, <empty>), 15): two nested
   // subscripts, the outer being the second `[15]`.
   EXPECT_THAT(new_declarator_root(new_exp),
@@ -737,7 +778,7 @@ TEST(ParserTest, NewExpression_2_NoSemiconlon) {
   ASSERT_TRUE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int[][15]` -> Subscript(Subscript(<abstract>, <empty>), 15): two nested
   // subscripts, the outer being the second `[15]`.
   EXPECT_THAT(new_declarator_root(new_exp),
@@ -760,7 +801,7 @@ TEST(ParserTest, NewExpression_3) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
   // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
   EXPECT_THAT(new_declarator_root(new_exp),
@@ -786,7 +827,7 @@ TEST(ParserTest, NewExpression_3_NoSemicolon) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
   // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
   EXPECT_THAT(new_declarator_root(new_exp),
@@ -811,7 +852,7 @@ TEST(ParserTest, NewExpression_4) {
   ASSERT_FALSE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
   // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
   EXPECT_THAT(new_declarator_root(new_exp),
@@ -834,7 +875,7 @@ TEST(ParserTest, NewExpression_4_NoSemicolon) {
   ASSERT_FALSE(new_exp->is_array);
 
   ASSERT_TRUE(new_exp->placement_args.empty());
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int *(**)[10]` -> *( ( **<abstract> )[10] ): pointer to array[10] of
   // pointer-to-pointer. Outermost derivation is the leading `*`, so not array-new.
   EXPECT_THAT(new_declarator_root(new_exp),
@@ -857,7 +898,7 @@ TEST(ParserTest, NewExpression_5) {
   ASSERT_FALSE(new_->is_array);
 
   ASSERT_TRUE(new_->placement_args.empty());
-  ASSERT_EQ(new_->type->specifiers->def, jdi::builtin_type__int);
+  ASSERT_EQ(new_->type->specifiers->Definition(), jdi::builtin_type__int);
   // Bare `int`: the abstract declarator is just the empty-name leaf.
   EXPECT_THAT(new_declarator_root(new_), IsIdentifier(""));
 }
@@ -873,7 +914,7 @@ TEST(ParserTest, NewExpression_5_NoSemicolon) {
   ASSERT_FALSE(new_->is_array);
 
   ASSERT_TRUE(new_->placement_args.empty());
-  ASSERT_EQ(new_->type->specifiers->def, jdi::builtin_type__int);
+  ASSERT_EQ(new_->type->specifiers->Definition(), jdi::builtin_type__int);
   // Bare `int`: the abstract declarator is just the empty-name leaf.
   EXPECT_THAT(new_declarator_root(new_), IsIdentifier(""));
 }
@@ -891,7 +932,7 @@ TEST(ParserTest, Designated_Initializer) {
 
   check_placement(new_);
 
-  EXPECT_EQ(new_->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
   EXPECT_THAT(new_declarator_root(new_),
               IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
@@ -1228,7 +1269,7 @@ TEST(ParserTest, SwitchStatement_5) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
   EXPECT_THAT(new_declarator_root(new_exp),
               IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
@@ -1259,7 +1300,7 @@ TEST(ParserTest, SwitchStatement_5_NoSemicolon) {
 
   check_placement(new_exp);
 
-  EXPECT_EQ(new_exp->type->specifiers->def, jdi::builtin_type__int);
+  EXPECT_EQ(new_exp->type->specifiers->Definition(), jdi::builtin_type__int);
   // `int[]` -> Subscript(<abstract>, <empty bound; also an abstract leaf>).
   EXPECT_THAT(new_declarator_root(new_exp),
               IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier(""), IsIdentifier("")));
@@ -1610,7 +1651,7 @@ TEST(ParserTest, TemporaryInitialization_1) {
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
   // ASSERT_EQ(cast->kind, AST::CastExpression::Kind::FUNCTIONAL);  // FUNCTIONAL removed
-  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->Definition(), jdi::builtin_type__int);
   ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->flags, 0);
   EXPECT_TRUE(clause_is_unqualified(cast->type->As<AST::DeclaratorClause>()));
 
@@ -1653,7 +1694,7 @@ TEST(ParserTest, TemporaryInitialization_2) {
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   auto *decl = node->As<AST::DeclarationStatement>();
   ASSERT_EQ(decl->clause->declarators.size(), 1);
-  ASSERT_EQ(decl->clause->specifiers->def, jdi::builtin_type__int);
+  ASSERT_EQ(decl->clause->specifiers->Definition(), jdi::builtin_type__int);
   auto *decl1 = decl->clause->declarators[0].get();
   ASSERT_EQ(decl1->name.content, "a");
 
@@ -1715,7 +1756,7 @@ TEST(ParserTest, TemporaryInitialization_3) {
   ASSERT_EQ(node->type, AST::NodeType::FUNCTION_CALL);
   auto *call = node->As<AST::FunctionCallExpression>();
   ASSERT_EQ(call->function->type, AST::NodeType::TYPE_SPECIFIER_SEQ);
-  ASSERT_EQ(call->function->As<AST::TypeSpecifierSeq>()->def, jdi::builtin_type__int);
+  ASSERT_EQ(call->function->As<AST::TypeSpecifierSeq>()->Definition(), jdi::builtin_type__int);
   ASSERT_EQ(call->arguments.size(), 1);
 
   ASSERT_EQ(call->arguments[0]->type, AST::NodeType::BINARY_EXPRESSION);
@@ -1756,7 +1797,7 @@ TEST(ParserTest, TemporaryInitialization_4) {
 
   ASSERT_EQ(node->type, AST::NodeType::CAST);
   auto *cast = node->As<AST::CastExpression>();
-  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->def, jdi::builtin_type__int);
+  ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->Definition(), jdi::builtin_type__int);
   ASSERT_EQ(cast->type->As<AST::DeclaratorClause>()->specifiers->flags, 0);
   EXPECT_TRUE(clause_is_unqualified(cast->type->As<AST::DeclaratorClause>()));
 

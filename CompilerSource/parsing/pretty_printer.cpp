@@ -113,6 +113,14 @@ bool AST::CppPrettyPrinter::VisitDecltype(AST::Decltype &node) {
   return true;
 }
 
+bool AST::CppPrettyPrinter::VisitImplicitInt(AST::ImplicitInt &node) {
+  // Implicit `int` has no source spelling; the user didn't write `int`, so the
+  // printer emits nothing. (VisitTypeSpecifierSeq skips it; this is defensive
+  // for any direct visit.)
+  (void)node;
+  return true;
+}
+
 bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
   std::string value = std::get<std::string>(node.value.value);
   if (node.value.type != TT_CHARLIT && node.value.type != TT_STRINGLIT) {
@@ -413,9 +421,11 @@ bool AST::CppPrettyPrinter::VisitTypeSpecifierSeq(AST::TypeSpecifierSeq &node) {
     if (!node.declspecs->accept(*this)) return false;
     print(" ");
   }
-  if (node.def) {
-    print(node.def->name);
-  } else if (node.id_expression) {
+  // The base type is the id-expression tree (type-name leaf, qualified-id,
+  // template-id, ...); printing it preserves qualification/template-args the
+  // bare definition name would drop. Implicit `int` is an ImplicitInt leaf that
+  // renders nothing -- the user didn't write `int`, so neither do we.
+  if (node.id_expression) {
     VISIT_AND_CHECK(node.id_expression);
   }
   return true;

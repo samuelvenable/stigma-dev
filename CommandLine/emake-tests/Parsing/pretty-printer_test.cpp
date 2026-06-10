@@ -197,7 +197,7 @@ TEST(PrinterTest, test10) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "alignof(const volatile unsigned long long int*);";
+  code = "alignof(const volatile unsigned long long *);";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1412,7 +1412,7 @@ TEST(PrinterTest, test67) {
   AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "long long int foo;";
+  code = "long long foo;";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1429,7 +1429,7 @@ TEST(PrinterTest, test68) {
   AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "long int foo;";
+  code = "long foo;";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1446,7 +1446,7 @@ TEST(PrinterTest, test69) {
   AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "short int foo;";
+  code = "short foo;";
 
   ASSERT_TRUE(compare(code, printed));
 }

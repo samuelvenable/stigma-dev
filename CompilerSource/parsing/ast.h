@@ -56,7 +56,7 @@ class AST {
     IDENTIFIER, SCOPE_ACCESS, LITERAL, FUNCTION_CALL,
     IF, FOR, WHILE, DO, WITH, REPEAT, SWITCH, CASE, DEFAULT,
     BREAK, CONTINUE, RETURN, DECLARATION, INIT_DECLARATOR, INITIALIZER,
-    DECLARATOR_CLAUSE, TEMPLATE_ID, DECLTYPE
+    DECLARATOR_CLAUSE, TEMPLATE_ID, DECLTYPE, IMPLICIT_INT
   };
 
   struct Node;
@@ -257,22 +257,20 @@ class AST {
   // declarator tree. So a cast/sizeof/new target is a `DeclaratorClause` whose
   // specifier part is one of these; this node alone is just the spec run.
   //
-  // The base type is held as a resolved `def` (JDI definition) OR an unresolved
-  // `id_expression` awaiting semantic resolution; the semantic phase decides
-  // which applies, and both may be populated during a transitional pass. The
-  // "seq" is `declspecs` — a `DeclSpecList`, i.e. an ordered `std::vector<Token>`.
+  // The base type is held as the `id_expression` tree; its root carries the JDI
+  // definition the seq denotes, recovered on demand via Definition() (a pure tree
+  // read). The "seq" is `declspecs` — a `DeclSpecList`, i.e. an ordered
+  // `std::vector<Token>`.
   //
-  // Note: `def` is named for what it carries (a JDI definition pointer), not
-  // "resolved final type" — a `def` pointing at a typedef still leaves that
-  // typedef's own declarator chain to be walked.
-  //
-  // `flags` is the decl-spec bitmask (cv/sign/length) in JDI's encoding, mirrored
-  // out alongside `def` so this node owns its full base-type description without a
-  // cached FullType. It is kept in sync with `declspecs->flags` by the parser
-  // (every flag write hits both); `declspecs` additionally retains the source-
-  // order specifier tokens for round-trip fidelity.
+  // `flags` is the decl-spec bitmask (cv/sign/length) in JDI's encoding. The base
+  // type's definition is not stored: it is the id-expression tree's definition
+  // (Definition(), a pure tree read). Implicit int -- a length/sign specifier
+  // standing without a type-name -- is materialized by the parser as an
+  // ImplicitInt leaf in `id_expression`, so no flag-driven fallback is needed
+  // here. `flags` is kept in sync with `declspecs->flags` by the parser (every
+  // flag write hits both); `declspecs` additionally retains the source-order
+  // specifier tokens for round-trip fidelity.
   struct TypeSpecifierSeq : TypedNode<NodeType::TYPE_SPECIFIER_SEQ> {
-    jdi::definition *def = nullptr;
     // Declared before `declspecs` so the primary ctor's mem-init reads the
     // `specs` param's flags before it is moved into `declspecs`.
     std::size_t flags = 0;
@@ -281,18 +279,14 @@ class AST {
 
     BASIC_NODE_ROUTINES(TypeSpecifierSeq);
 
-    // Primary constructor: phase-2 callers use this. id_expression is
-    // optional (nullable); declspecs is optional (nullable). `flags` is taken
-    // from the spec list when present.
-    TypeSpecifierSeq(jdi::definition *def_, PNode id_exp, std::unique_ptr<DeclSpecList> specs):
-        def(def_), flags(specs ? specs->flags : 0), id_expression(std::move(id_exp)), declspecs(std::move(specs)) {}
+    // The base type this spec-seq denotes: the id-expression tree's definition
+    // (implicit int is an ImplicitInt leaf in that tree, so this stays a pure read).
+    jdi::definition *Definition() const override;
 
-    // "Destructure a transient FullType" overload — used by the few call sites
-    // that build a spec-only FullType in the parser (e.g. the abstract C-style
-    // cast target) and hand it off without a separate declspecs. We keep only
-    // the base type's `def` + `flags`; FullType is not stored.
-    TypeSpecifierSeq(PNode id_exp, FullType type_):
-        def(type_.def), flags(type_.flags), id_expression(std::move(id_exp)) {}
+    // id_expression is optional (nullable); declspecs is optional (nullable).
+    // `flags` is taken from the spec list when present.
+    TypeSpecifierSeq(PNode id_exp, std::unique_ptr<DeclSpecList> specs):
+        flags(specs ? specs->flags : 0), id_expression(std::move(id_exp)), declspecs(std::move(specs)) {}
 
     // JDI bridge. Feeds this spec-seq into the legacy JDI machinery (template-arg
     // keys, function-parameter ref-stacks) as a declarator-less full_type. The
@@ -450,6 +444,23 @@ class AST {
     BASIC_NODE_ROUTINES(Decltype);
 
     explicit Decltype(PNode operand_): operand(std::move(operand_)) {}
+  };
+
+  // The implicit `int` base type. A length/sign specifier (`unsigned`, `long`,
+  // `short`, `signed`) standing in a type-specifier-seq without a type-name
+  // names `int`; there is no source token for that `int`, so this token-free
+  // leaf carries the builtin definition directly. The parser materializes it
+  // once the spec-seq is fully consumed with no type-name (mirroring JDI's
+  // read_type), so a TypeSpecifierSeq's Definition() stays a pure read of its
+  // id-expression tree rather than a flag-driven fallback.
+  struct ImplicitInt : TypedNode<NodeType::IMPLICIT_INT> {
+    jdi::definition *def;
+
+    BASIC_NODE_ROUTINES(ImplicitInt);
+
+    explicit ImplicitInt(jdi::definition *def): def(def) {}
+
+    jdi::definition *Definition() const override { return def; }
   };
 
   struct Literal : TypedNode<NodeType::LITERAL> {
@@ -719,6 +730,7 @@ class AST {
     virtual bool VisitScopeAccess(ScopeAccess &node){ return DefaultVisit(node); }
     virtual bool VisitTemplateId(TemplateId &node){ return DefaultVisit(node); }
     virtual bool VisitDecltype(Decltype &node){ return DefaultVisit(node); }
+    virtual bool VisitImplicitInt(ImplicitInt &node){ return DefaultVisit(node); }
     virtual bool VisitLiteral(Literal &node){ return DefaultVisit(node); }
     virtual bool VisitIfStatement(IfStatement &node){ return DefaultVisit(node); }
     virtual bool VisitForLoop(ForLoop &node){ return DefaultVisit(node); }
@@ -775,6 +787,7 @@ class AST {
     bool VisitScopeAccess(ScopeAccess &node);
     bool VisitTemplateId(TemplateId &node);
     bool VisitDecltype(Decltype &node);
+    bool VisitImplicitInt(ImplicitInt &node);
     bool VisitLiteral(Literal &node);
     bool VisitIfStatement(IfStatement &node);
     bool VisitForLoop(ForLoop &node);
@@ -819,6 +832,7 @@ class AST {
     bool VisitScopeAccess(ScopeAccess &node) override;
     bool VisitTemplateId(TemplateId &node) override;
     bool VisitDecltype(Decltype &node) override;
+    bool VisitImplicitInt(ImplicitInt &node) override;
   };
 
   // Used to adapt to current single-error syntax checking interface.
@@ -886,7 +900,7 @@ class AST {
 
 // AST→JDI bridge: walk a declarator-expression-tree into a jdi::ref_stack.
 // Returns false on a malformed sub-tree (unsupported node type, missing array
-// size, etc.). Combine with a TypeSpecifierSeq's def/flags to produce a full jdi::full_type.
+// size, etc.). Combine with a TypeSpecifierSeq's Definition()/flags to produce a full jdi::full_type.
 bool walk_declarator_expr(AST::Node *expr, jdi::ref_stack &result);
 
 }  // namespace enigma::parsing

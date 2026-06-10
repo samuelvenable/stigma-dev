@@ -96,6 +96,10 @@ void AST::TernaryExpression::RecursiveSubVisit(Visitor &visitor) {
 void AST::TypeSpecifierSeq::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, id_expression, declspecs);
 }
+jdi::definition *AST::TypeSpecifierSeq::Definition() const {
+  return id_expression ? id_expression->Definition() : nullptr;
+}
+
 jdi::full_type AST::TypeSpecifierSeq::to_jdi_fulltype() {
   // Spec-base only: { def, no refs, flags }. The declarator ref_stack is built
   // separately from the AST declarator-expression-tree by the owning
@@ -107,7 +111,7 @@ jdi::full_type AST::TypeSpecifierSeq::to_jdi_fulltype() {
   // is intentionally omitted so the narrowing shows up as a build warning rather
   // than being silenced; reconcile these flag widths when integrating the
   // libclang-based JDI replacement (jdi2).
-  return {def, flags};
+  return {Definition(), flags};
 }
 
 // Combine the shared spec-seq with the i-th declarator's expression-tree into
@@ -323,6 +327,10 @@ bool AST::DebugPrinter::VisitDecltype(AST::Decltype &node) {
   return emit(node, "");
 }
 
+bool AST::DebugPrinter::VisitImplicitInt(AST::ImplicitInt &node) {
+  return emit(node, "int");
+}
+
 void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Leaf: specs are Tokens, not AST nodes.
 }
@@ -355,6 +363,9 @@ void AST::TemplateId::RecursiveSubVisit(Visitor &visitor) {
 }
 void AST::Decltype::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, operand);
+}
+void AST::ImplicitInt::RecursiveSubVisit(Visitor &visitor) {
+  (void) visitor;  // Token-free builtin-type leaf; nothing to recurse into.
 }
 void AST::Literal::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Literal in the middle of code; also a leaf.

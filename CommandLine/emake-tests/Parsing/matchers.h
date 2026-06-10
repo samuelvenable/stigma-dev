@@ -86,11 +86,12 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   bool b3 = true;
   auto *expected_def = static_cast<jdi::definition*>(decl_type);
   // Base type + cv/sign/length flags live on the shared spec-seq now, not a
-  // per-declarator FullType: `specifiers->def` is the resolved base type and
-  // `declspecs->flags` is the same bitmask the deleted `declarator->flags`
-  // carried. The per-name declarator modifiers are on `declarator_expr`.
+  // per-declarator FullType: `specifiers->Definition()` is the resolved base
+  // type (read from the id-expression tree) and `declspecs->flags` is the same
+  // bitmask the deleted `declarator->flags` carried. The per-name declarator
+  // modifiers are on `declarator_expr`.
   auto *spec = decl->clause->specifiers.get();
-  auto *parsed_def = spec->def;
+  auto *parsed_def = spec->Definition();
   for (size_t i = 0; i < decls.size(); i++) {
     auto &init_decl = *decl->clause->declarators[i];
     b3 = b3 && init_decl.init != nullptr;
@@ -148,8 +149,8 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
   }
 
   // cast->type is a PNode wrapping a DeclaratorClause; the cast's type is its
-  // `specifiers` (a TypeSpecifierSeq), whose `def`/`flags` are the resolved base
-  // type and cv/sign/length bitmask. The clause's abstract declarator (the
+  // `specifiers` (a TypeSpecifierSeq), whose `Definition()`/`flags` are the
+  // resolved base type and cv/sign/length bitmask. The clause's abstract declarator (the
   // `*`/`&`/`[]` chain) is checked for emptiness via clause_is_unqualified /
   // clause_is_unnamed below, since these are simple-type cast tests.
   auto *clause = cast->type ? cast->type->template As<AST::DeclaratorClause>() : nullptr;
@@ -163,7 +164,7 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
   auto &ft = *typeid_node;
   // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
   // Otherwise, compare pointers OR compare by name for builtin types
-  auto *parsed_def = ft.def;
+  auto *parsed_def = ft.Definition();
   auto *expected_def = static_cast<jdi::definition*>(type);
   bool b1 = (expected_def == nullptr) || (parsed_def == expected_def) ||
             (parsed_def && expected_def && parsed_def->name == expected_def->name);

@@ -357,7 +357,7 @@ bool next_maybe_functional_cast() {
 }
 
 std::unique_ptr<AST::DeclarationStatement> parse_declarations(
-    AST::DeclarationStatement::StorageClass sc, FullType &ft,
+    AST::DeclarationStatement::StorageClass sc,
     std::unique_ptr<AST::DeclSpecList> declspecs, AST::PNode id_expression,
     AST::DeclaratorType decl_type, bool parse_unbounded,
     std::vector<std::unique_ptr<AST::InitDeclarator>> decls, bool already_parsed_first = false) {
@@ -388,7 +388,7 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     }
   }
 
-  auto type_node = std::make_unique<AST::TypeSpecifierSeq>(ft.def, std::move(id_expression), std::move(declspecs));
+  auto type_node = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
   auto clause = std::make_unique<AST::DeclaratorClause>(std::move(type_node), std::move(decls));
   // Record each declared name's owning clause so later id-expressions can
   // resolve it (the base type lives on clause->specifiers; the per-name
@@ -399,16 +399,20 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
   return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
 }
 
-void maybe_infer_int(FullType &type) {
-  // This is a pretty hacky way to implicitly infer int, but it is the only way I can think of to prevent `int int x`
-  // from being legal
-  if (type.def == nullptr && (contains_decflag_bitmask(type.flags, "long")
-                              || contains_decflag_bitmask(type.flags, "short")
-                              || contains_decflag_bitmask(type.flags, "long long")
-                              || contains_decflag_bitmask(type.flags, "signed")
-                              || contains_decflag_bitmask(type.flags, "unsigned"))) {
-    type.def = jdi::builtin_type__int;
-  }
+// Build a TypeSpecifierSeq from a fully-consumed type-specifier run -- the one
+// place a parsed spec run becomes a node, so every construction site funnels
+// through here. `int` may be implied rather than spelled: a length/sign
+// specifier (`unsigned`, `long`, `short`, `signed`) standing without a type-name
+// names `int`. When no type-name landed in the id-expression tree, materialize
+// that `int` as a token-free ImplicitInt leaf (mirroring JDI's read_type, which
+// fixes builtin_type__int once the spec-seq closes with no type-name) so the
+// seq's Definition() stays a pure tree read. The implied-int test reads the spec
+// list's own flag bitmask, the canonical sign/length source.
+std::unique_ptr<AST::TypeSpecifierSeq> MakeTypeSpecifierSeq(
+    AST::PNode id_expression, std::unique_ptr<AST::DeclSpecList> declspecs) {
+  if (id_expression == nullptr && declspecs && flags_imply_implicit_int(declspecs->flags))
+    id_expression = std::make_unique<AST::ImplicitInt>(jdi::builtin_type__int);
+  return std::make_unique<AST::TypeSpecifierSeq>(std::move(id_expression), std::move(declspecs));
 }
 
 AstBuilder(Lexer *lexer, ErrorHandler *herr) {
@@ -513,7 +517,7 @@ jdi::definition *TryParseIdExpression(Token *out_name) {
           return id_expression_def(TryParseNestedNameSpecifier(
               std::make_unique<AST::IdentifierAccess>(def, name), out_name, out_name != nullptr));
         } else if (map_contains(declarations, name.content)) {
-          return declarations[name.content]->specifiers->def;
+          return declarations[name.content]->specifiers->Definition();
         } else if (def == nullptr) {
           herr->Error(token) << "No such name exists in global scope";
         }
@@ -602,7 +606,7 @@ void TryParseTemplateArgs(jdi::definition *def, std::vector<AST::PNode> *out_arg
     for (; token.type != TT_GREATER && token.type != TT_ENDOFCODE;) {
       if (template_def->params[args_given]->flags & jdi::DEF_TYPENAME) {
         auto type_node = TryParseTypeID();
-        if (type_node && type_node->def) {
+        if (type_node && type_node->Definition()) {
           jdi::full_type t = type_node->to_jdi_fulltype();
           argk[args_given].ft().swap(t);
         }
@@ -968,8 +972,8 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList
 
 // Build the TypeSpecifierSeq for a `<type-id>` grammar production. The parser
 // records the decl-spec chain (declspecs, which carries both the source-order
-// specifier tokens and the flag bitmask) and the resolved base type (def). The
-// TypeSpecifierSeq mirrors `def` + `flags` for its JDI bridge (to_jdi_fulltype).
+// specifier tokens and the flag bitmask) and the base type's id-expression tree;
+// the seq's Definition() reads the resolved type back from that tree root.
 std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
   FullType type;
   auto declspecs = std::make_unique<AST::DeclSpecList>();
@@ -980,9 +984,7 @@ std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
     }
   }
 
-  maybe_infer_int(type);
-
-  return std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs));
+  return MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
 }
 
 // Parse a full type-id (type-specifier-seq + abstract-declarator) into a
@@ -1235,14 +1237,6 @@ AST::InitializerNode TryParseInitializer(bool allow_paren_init = true) {
   }
 }
 
-void maybe_assign_def(FullType *type) {
-  if ((contains_decflag_bitmask(type->flags, "long long") || contains_decflag_bitmask(type->flags, "long") ||
-       contains_decflag_bitmask(type->flags, "short")) &&
-      type->def == nullptr) {
-    maybe_assign_full_type(type, get_builtin("int"), token);
-  }
-}
-
 std::unique_ptr<AST::Node> TryParseDeclarations(
     bool parse_unbounded,
     AST::DeclaratorType decl_type = AST::DeclaratorType::NON_ABSTRACT) {
@@ -1257,9 +1251,11 @@ std::unique_ptr<AST::Node> TryParseDeclarations(
       herr->Error(token) << "Cannot have both 'global' and 'local' in the same declaration";
       return nullptr;
     }
-    maybe_infer_int(type);
-    maybe_assign_def(&type);
-    if (type.def == nullptr) {
+    // No type-name landed. That's still a valid type when a length/sign
+    // specifier implies `int` (`unsigned x;`) -- parse_declarations materializes
+    // the ImplicitInt leaf via MakeTypeSpecifierSeq. Only a spec run with neither
+    // a type-name nor an implied-int flag (`const x;`) is a genuine error.
+    if (id_expression == nullptr && !flags_imply_implicit_int(declspecs->flags)) {
       herr->Error(token) << "Unable to parse type specifier in declaration";
       return nullptr;
     }
@@ -1267,7 +1263,7 @@ std::unique_ptr<AST::Node> TryParseDeclarations(
     auto sc = is_global || global_local.first   ? AST::DeclarationStatement::StorageClass::GLOBAL
               : is_local || global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                                 : AST::DeclarationStatement::StorageClass::TEMPORARY;
-    return parse_declarations(sc, type, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
+    return parse_declarations(sc, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
   }
   return nullptr;
 }
@@ -1705,12 +1701,12 @@ std::unique_ptr<AST::Node> TryParseOperand() {
           args.push_back(ParseExpression(Precedence::kAll));
           require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after functional cast");
           return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
-                                                    std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs)),
+                                                    MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs)),
                                                     std::move(args));
         } else if (token.type == TT_BEGINBRACE) {
           auto init = TryParseInitializer(false);
           require_token(TT_ENDBRACE, "Expected closing brace ('}') after temporary object initializer");
-          init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs));
+          init->target = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
           return init;
         } else {
           herr->Error(token) << "Expected opening parenthesis ('(') or brace ('{') after functional-cast type";
@@ -2243,11 +2239,10 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       sc = global_local.first    ? AST::DeclarationStatement::StorageClass::GLOBAL
            : global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                  : sc;
-      maybe_assign_def(&type);
-      return parse_declarations(sc, type, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
+      return parse_declarations(sc, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
     } else if (token.type == TT_BEGINBRACE) {
       auto init = TryParseBraceInitializer();
-      init->target = std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs));
+      init->target = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
       return init;
     } else if (token.type == TT_BEGINPARENTH) {
       // `Foo( ... )`: parse as a call-shaped expression with a TypeSpecifierSeq callee.
@@ -2263,7 +2258,7 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       // When the semantic phase resolves this construct to a declaration it
       // must split the top-level comma into per-declarator nodes; when it
       // resolves to an expression the comma-expression stands.
-      auto callee = std::make_unique<AST::TypeSpecifierSeq>(type.def, std::move(id_expression), std::move(declspecs));
+      auto callee = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
       auto call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
 
       // [stmt.ambig]: "if it can be a declaration, it is."
@@ -2305,7 +2300,7 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       // declarator, so wrap it in a DeclaratorClause with a single abstract
       // (declarator-less) init-declarator -- keeping cast->type uniformly a
       // DeclaratorClause, same as the operand-level C-style and named casts.
-      auto specifiers = std::make_unique<AST::TypeSpecifierSeq>(std::move(id_expression), std::move(type));
+      auto specifiers = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
       std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
       declarators.push_back(std::make_unique<AST::InitDeclarator>());
       auto type_node = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
@@ -2525,6 +2520,14 @@ std::unique_ptr<AST::WithStatement> ParseWithStatement() {
 }
 
 };  // class AstBuilder
+
+bool flags_imply_implicit_int(std::size_t flags) {
+  return AstBuilder::contains_decflag_bitmask(flags, "long")
+      || AstBuilder::contains_decflag_bitmask(flags, "short")
+      || AstBuilder::contains_decflag_bitmask(flags, "long long")
+      || AstBuilder::contains_decflag_bitmask(flags, "signed")
+      || AstBuilder::contains_decflag_bitmask(flags, "unsigned");
+}
 
 class SyntaxChecker : public AST::Visitor {
   ErrorHandler *herr;
