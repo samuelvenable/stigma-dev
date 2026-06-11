@@ -113,11 +113,14 @@ bool AST::CppPrettyPrinter::VisitDecltype(AST::Decltype &node) {
   return true;
 }
 
-bool AST::CppPrettyPrinter::VisitImplicitInt(AST::ImplicitInt &node) {
-  // Implicit `int` has no source spelling; the user didn't write `int`, so the
-  // printer emits nothing. (VisitTypeSpecifierSeq skips it; this is defensive
-  // for any direct visit.)
-  (void)node;
+bool AST::CppPrettyPrinter::VisitImplicitType(AST::ImplicitType &node) {
+  // Implied `int` prints nothing: the user didn't write it, and C++ accepts
+  // the bare sign/length run (`unsigned x`). The untyped fallback (var/variant)
+  // MUST print -- `const x` is not valid C++ -- using the resolved definition's
+  // name. An unresolved fallback (header-less harness) prints nothing.
+  if (node.kind == AST::ImplicitType::Kind::UNTYPED && node.def) {
+    print(node.def->name);
+  }
   return true;
 }
 
@@ -423,8 +426,10 @@ bool AST::CppPrettyPrinter::VisitTypeSpecifierSeq(AST::TypeSpecifierSeq &node) {
   }
   // The base type is the id-expression tree (type-name leaf, qualified-id,
   // template-id, ...); printing it preserves qualification/template-args the
-  // bare definition name would drop. Implicit `int` is an ImplicitInt leaf that
-  // renders nothing -- the user didn't write `int`, so neither do we.
+  // bare definition name would drop. An inferred base type is an ImplicitType
+  // leaf: implied `int` renders nothing (the user didn't write it, and C++
+  // accepts the bare spec run), the untyped var/variant fallback renders its
+  // definition's name.
   if (node.id_expression) {
     VISIT_AND_CHECK(node.id_expression);
   }

@@ -56,7 +56,7 @@ class AST {
     IDENTIFIER, SCOPE_ACCESS, LITERAL, FUNCTION_CALL,
     IF, FOR, WHILE, DO, WITH, REPEAT, SWITCH, CASE, DEFAULT,
     BREAK, CONTINUE, RETURN, DECLARATION, INIT_DECLARATOR, INITIALIZER,
-    DECLARATOR_CLAUSE, TEMPLATE_ID, DECLTYPE, IMPLICIT_INT
+    DECLARATOR_CLAUSE, TEMPLATE_ID, DECLTYPE, IMPLICIT_TYPE
   };
 
   struct Node;
@@ -264,12 +264,13 @@ class AST {
   //
   // `flags` is the decl-spec bitmask (cv/sign/length) in JDI's encoding. The base
   // type's definition is not stored: it is the id-expression tree's definition
-  // (Definition(), a pure tree read). Implicit int -- a length/sign specifier
-  // standing without a type-name -- is materialized by the parser as an
-  // ImplicitInt leaf in `id_expression`, so no flag-driven fallback is needed
-  // here. `flags` is kept in sync with `declspecs->flags` by the parser (every
-  // flag write hits both); `declspecs` additionally retains the source-order
-  // specifier tokens for round-trip fidelity.
+  // (Definition(), a pure tree read). An inferred base type -- implied `int`
+  // from a length/sign specifier, or EDL's `var` for an otherwise-untyped run
+  // -- is materialized by the parser as an ImplicitType leaf in
+  // `id_expression`, so no flag-driven fallback is needed here. `flags` is
+  // kept in sync with `declspecs->flags` by the parser (every flag write hits
+  // both); `declspecs` additionally retains the source-order specifier tokens
+  // for round-trip fidelity.
   struct TypeSpecifierSeq : TypedNode<NodeType::TYPE_SPECIFIER_SEQ> {
     // Declared before `declspecs` so the primary ctor's mem-init reads the
     // `specs` param's flags before it is moved into `declspecs`.
@@ -280,7 +281,8 @@ class AST {
     BASIC_NODE_ROUTINES(TypeSpecifierSeq);
 
     // The base type this spec-seq denotes: the id-expression tree's definition
-    // (implicit int is an ImplicitInt leaf in that tree, so this stays a pure read).
+    // (an inferred base type is an ImplicitType leaf in that tree, so this
+    // stays a pure read).
     jdi::definition *Definition() const override;
 
     // id_expression is optional (nullable); declspecs is optional (nullable).
@@ -446,19 +448,25 @@ class AST {
     explicit Decltype(PNode operand_): operand(std::move(operand_)) {}
   };
 
-  // The implicit `int` base type. A length/sign specifier (`unsigned`, `long`,
-  // `short`, `signed`) standing in a type-specifier-seq without a type-name
-  // names `int`; there is no source token for that `int`, so this token-free
-  // leaf carries the builtin definition directly. The parser materializes it
-  // once the spec-seq is fully consumed with no type-name (mirroring JDI's
-  // read_type), so a TypeSpecifierSeq's Definition() stays a pure read of its
-  // id-expression tree rather than a flag-driven fallback.
-  struct ImplicitInt : TypedNode<NodeType::IMPLICIT_INT> {
+  // An implicit base type: the user wrote a (non-empty) specifier run but no
+  // type-name, so the base type is inferred by rule. A length/sign specifier
+  // (`unsigned`, `long`, `short`, `signed`) names C's `int`; any other untyped
+  // run (`const x;`) falls back to EDL's universal `var` -- undeclared
+  // variables are var, so untyped declared ones are too (`variant` in
+  // template-argument position, where var makes a poor element type). There is
+  // no source token for the inferred name, so this token-free leaf carries the
+  // definition directly. The parser materializes it once the spec-seq is fully
+  // consumed (mirroring JDI's read_type), so a TypeSpecifierSeq's Definition()
+  // stays a pure read of its id-expression tree rather than a flag-driven
+  // fallback. `kind` records which rule fired -- the def alone can't (var may
+  // be unresolvable in a header-less harness, leaving it null).
+  struct ImplicitType : TypedNode<NodeType::IMPLICIT_TYPE> {
+    enum class Kind { INT, UNTYPED } kind;
     jdi::definition *def;
 
-    BASIC_NODE_ROUTINES(ImplicitInt);
+    BASIC_NODE_ROUTINES(ImplicitType);
 
-    explicit ImplicitInt(jdi::definition *def): def(def) {}
+    ImplicitType(Kind kind, jdi::definition *def): kind(kind), def(def) {}
 
     jdi::definition *Definition() const override { return def; }
   };
@@ -730,7 +738,7 @@ class AST {
     virtual bool VisitScopeAccess(ScopeAccess &node){ return DefaultVisit(node); }
     virtual bool VisitTemplateId(TemplateId &node){ return DefaultVisit(node); }
     virtual bool VisitDecltype(Decltype &node){ return DefaultVisit(node); }
-    virtual bool VisitImplicitInt(ImplicitInt &node){ return DefaultVisit(node); }
+    virtual bool VisitImplicitType(ImplicitType &node){ return DefaultVisit(node); }
     virtual bool VisitLiteral(Literal &node){ return DefaultVisit(node); }
     virtual bool VisitIfStatement(IfStatement &node){ return DefaultVisit(node); }
     virtual bool VisitForLoop(ForLoop &node){ return DefaultVisit(node); }
@@ -787,7 +795,7 @@ class AST {
     bool VisitScopeAccess(ScopeAccess &node);
     bool VisitTemplateId(TemplateId &node);
     bool VisitDecltype(Decltype &node);
-    bool VisitImplicitInt(ImplicitInt &node);
+    bool VisitImplicitType(ImplicitType &node);
     bool VisitLiteral(Literal &node);
     bool VisitIfStatement(IfStatement &node);
     bool VisitForLoop(ForLoop &node);
@@ -832,7 +840,7 @@ class AST {
     bool VisitScopeAccess(ScopeAccess &node) override;
     bool VisitTemplateId(TemplateId &node) override;
     bool VisitDecltype(Decltype &node) override;
-    bool VisitImplicitInt(ImplicitInt &node) override;
+    bool VisitImplicitType(ImplicitType &node) override;
   };
 
   // Used to adapt to current single-error syntax checking interface.

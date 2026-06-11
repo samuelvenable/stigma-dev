@@ -79,12 +79,6 @@ class AstBuilderTestAPI {
 AstBuilderTestAPI *CreateBuilder();
 std::unique_ptr<AST::Node> Parse(Lexer *lexer, ErrorHandler *herr);
 
-// True when these decl-spec flags carry a length/sign specifier (long, short,
-// signed, unsigned) standing without a type-name -- such a seq denotes `int`.
-// The parser tests this after consuming a type-specifier-seq to decide whether
-// to materialize an ImplicitInt leaf in the id-expression slot.
-bool flags_imply_implicit_int(std::size_t flags);
-
 }  // namespace enigma::parsing
 
 #endif  // ENIGMA_COMPILER_PARSING_PARSER_h

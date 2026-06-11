@@ -327,8 +327,9 @@ bool AST::DebugPrinter::VisitDecltype(AST::Decltype &node) {
   return emit(node, "");
 }
 
-bool AST::DebugPrinter::VisitImplicitInt(AST::ImplicitInt &node) {
-  return emit(node, "int");
+bool AST::DebugPrinter::VisitImplicitType(AST::ImplicitType &node) {
+  return emit(node, node.kind == AST::ImplicitType::Kind::INT ? "int"
+              : node.def ? node.def->name : "untyped");
 }
 
 void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
@@ -364,7 +365,7 @@ void AST::TemplateId::RecursiveSubVisit(Visitor &visitor) {
 void AST::Decltype::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, operand);
 }
-void AST::ImplicitInt::RecursiveSubVisit(Visitor &visitor) {
+void AST::ImplicitType::RecursiveSubVisit(Visitor &visitor) {
   (void) visitor;  // Token-free builtin-type leaf; nothing to recurse into.
 }
 void AST::Literal::RecursiveSubVisit(Visitor &visitor) {
@@ -464,7 +465,8 @@ const std::vector<std::string> AST::NodesNames = ENUM_NAME_VECTOR(NodeType,
     INITIALIZER,
     DECLARATOR_CLAUSE,
     TEMPLATE_ID,
-    DECLTYPE);
+    DECLTYPE,
+    IMPLICIT_TYPE);
 
 const std::vector<std::string> AST::DeclarationStatement::StorageNames =
     ENUM_NAME_VECTOR(StorageClass, TEMPORARY, LOCAL, GLOBAL);

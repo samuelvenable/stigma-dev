@@ -20,11 +20,12 @@ void assert_identifier_is(AST::Node *node, std::string_view name) {
   ASSERT_EQ(node->As<AST::IdentifierAccess>()->name.content, name);
 }
 
-// Regression: jdi_decflag_bitmask cached dereferenced jdi::builtin_flag__*
-// globals in a first-call static map; if the first parse of a declaration
-// preceded JDI builtin init, those globals were null and the deref segfaulted.
-// Parsing a declaration here without any SetUp (builtins uninitialized) must not
-// crash -- the decl-flag lookup degrades gracefully instead.
+// Regression: the decl-flag lookup once cached dereferenced
+// jdi::builtin_flag__* globals in a first-call static map; if the first parse
+// of a declaration preceded JDI builtin init, those globals were null and the
+// deref segfaulted. Parsing a declaration here without any SetUp (builtins
+// uninitialized) must not crash -- lookup_decflag/flag_matches degrade
+// gracefully on null globals instead.
 TEST(ParserTest, DeclFlagsUninitializedDoesNotCrash) {
   struct SilentHandler : public ErrorHandler {
     void ReportError(CodeSnippet, std::string_view) final {}
@@ -374,7 +375,7 @@ TEST(ParserTest, DeclarationCarriesIdExpression) {
 }
 
 // A length/sign specifier with no type-name (`unsigned`) denotes `int`. The
-// parser materializes that as an ImplicitInt leaf in the id-expression slot once
+// parser materializes that as an ImplicitType leaf in the id-expression slot once
 // the spec-seq closes -- an eager tree node (mirroring JDI read_type), not a
 // recomputed-on-read flag. Definition() then resolves to builtin_type__int by
 // reading that leaf, with no special-casing in the accessor.
@@ -383,23 +384,25 @@ TEST(ParserTest, TypeIdImplicitIntFromSign) {
   auto seq = test->TryParseTypeID();
   ASSERT_NE(seq, nullptr);
   ASSERT_NE(seq->id_expression, nullptr);
-  EXPECT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_INT);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_TYPE);
+  EXPECT_EQ(seq->id_expression->As<AST::ImplicitType>()->kind, AST::ImplicitType::Kind::INT);
   EXPECT_EQ(seq->Definition(), jdi::builtin_type__int);
 }
 
-// Same eager ImplicitInt materialization when a length specifier trails a sign
+// Same eager ImplicitType materialization when a length specifier trails a sign
 // one (`unsigned long`): still no type-name, still `int`.
 TEST(ParserTest, TypeIdImplicitIntFromLength) {
   ParserTester test = ParserTester::CreateWithSetUp("unsigned long");
   auto seq = test->TryParseTypeID();
   ASSERT_NE(seq, nullptr);
   ASSERT_NE(seq->id_expression, nullptr);
-  EXPECT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_INT);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_TYPE);
+  EXPECT_EQ(seq->id_expression->As<AST::ImplicitType>()->kind, AST::ImplicitType::Kind::INT);
   EXPECT_EQ(seq->Definition(), jdi::builtin_type__int);
 }
 
-// The declaration path materializes ImplicitInt too: `unsigned x;` threads an
-// implicit-int id-expression onto the statement's spec-seq, so Definition()
+// The declaration path materializes the implied int too: `unsigned x;` threads
+// an implicit-type id-expression onto the statement's spec-seq, so Definition()
 // reads builtin_type__int without the user ever writing `int`.
 TEST(ParserTest, DeclarationImplicitInt) {
   ParserTester test = ParserTester::CreateWithSetUp("unsigned x;");
@@ -409,8 +412,66 @@ TEST(ParserTest, DeclarationImplicitInt) {
   auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
   ASSERT_NE(seq, nullptr);
   ASSERT_NE(seq->id_expression, nullptr);
-  EXPECT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_INT);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_TYPE);
+  EXPECT_EQ(seq->id_expression->As<AST::ImplicitType>()->kind, AST::ImplicitType::Kind::INT);
   EXPECT_EQ(seq->Definition(), jdi::builtin_type__int);
+}
+
+// `signed x;` is the encoding-pathological case: JDI's `signed` flag writes no
+// bits (its mask is the unsigned bit, its value 0), so the implied-int rule
+// must read the written token from the spec list, not the flag bitmask.
+TEST(ParserTest, DeclarationImplicitIntFromSigned) {
+  ParserTester test = ParserTester::CreateWithSetUp("signed x;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_TYPE);
+  EXPECT_EQ(seq->id_expression->As<AST::ImplicitType>()->kind, AST::ImplicitType::Kind::INT);
+  EXPECT_EQ(seq->Definition(), jdi::builtin_type__int);
+}
+
+// An untyped specifier run with no sign/length specifier (`const x;`) is not
+// an error and not `int`: undeclared variables are `var` in ENIGMA, so untyped
+// declared ones are too. The leaf records Kind::UNTYPED; the def is whatever
+// `var` resolves to in this frontend (null in a header-less harness -- the
+// semantic phase binds it).
+TEST(ParserTest, DeclarationUntypedConstDeclaresVar) {
+  ParserTester test = ParserTester::CreateWithSetUp("const x = 5;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::IMPLICIT_TYPE);
+  EXPECT_EQ(seq->id_expression->As<AST::ImplicitType>()->kind,
+            AST::ImplicitType::Kind::UNTYPED);
+  EXPECT_EQ(seq->Definition(), test->frontend->look_up("var"));
+}
+
+// A vacuous spec run -- a type-id position whose operand is really a value
+// expression, so NO specifier token was consumed -- must NOT invent a base
+// type; the id-expression slot stays null for the semantic phase to classify.
+TEST(ParserTest, EmptySpecRunStaysUntyped) {
+  ParserTester test = ParserTester::CreateWithSetUp("sizeof(local_var)");
+  auto expr = test->TryParseStatement();
+  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
+  auto *clause = expr->As<AST::SizeofExpression>()->argument->As<AST::DeclaratorClause>();
+  ASSERT_NE(clause, nullptr);
+  ASSERT_NE(clause->specifiers, nullptr);
+  EXPECT_EQ(clause->specifiers->id_expression, nullptr);
+  EXPECT_EQ(clause->specifiers->Definition(), nullptr);
+}
+
+// NodesNames must cover every NodeType: NodeToString indexes it by enum value,
+// so a missing tail entry is an out-of-bounds read (this aborted under a
+// hardened libstdc++ when IMPLICIT_TYPE was added without a name).
+TEST(ParserTest, NodeNamesCoverAllNodeTypes) {
+  ASSERT_EQ(AST::NodesNames.size(), std::size_t(AST::NodeType::IMPLICIT_TYPE) + 1);
+  EXPECT_EQ(AST::NodeToString(AST::NodeType::IMPLICIT_TYPE), "IMPLICIT_TYPE");
 }
 
 // DISABLED: a qualified-id type name (`A::B`) records a ScopeAccess chain on

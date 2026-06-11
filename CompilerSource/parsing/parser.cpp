@@ -252,13 +252,15 @@ std::size_t sizeof_builtin_type(std::string_view type) {
   }
 }
 
-static std::pair<std::size_t, std::size_t> jdi_decflag_bitmask(std::string_view tok) {
-  // Map to the *address* of each jdi global flag pointer, not its dereferenced
-  // mask/value. The globals are null until JDI builtins are initialized; this
-  // function's static map is built on first call, so dereferencing at build
-  // time crashes if the first call precedes init (e.g. parsing a declaration in
-  // a test harness that never ran the full JDI setup). Storing addresses keeps
-  // the map construction safe and lets us read each flag freshly, guarding null.
+// Resolve a decl-specifier spelling to its JDI typeflag. This is the only
+// name-keyed step: it runs once per specifier *token*; all repeated flag
+// *checks* test the typeflag globals directly -- JDI's flags are bitmasks
+// designed for mask compares, not string-map probes. The map stores the
+// *address* of each jdi global flag pointer, not its dereferenced value: the
+// globals are null until JDI builtins are initialized, and this static map is
+// built on first call, so dereferencing at build time crashes if the first
+// call precedes init (e.g. a test harness that never ran the full JDI setup).
+static const jdi::typeflag *lookup_decflag(std::string_view tok) {
   static const std::unordered_map<std::string_view, jdi::typeflag *const *> flags{
     { "volatile",  &jdi::builtin_flag__volatile  },
     { "static",    &jdi::builtin_flag__static    },
@@ -272,19 +274,28 @@ static std::pair<std::size_t, std::size_t> jdi_decflag_bitmask(std::string_view 
     { "long",      &jdi::builtin_flag__long      },
     { "signed",    &jdi::builtin_flag__signed    },
     { "short",     &jdi::builtin_flag__short     },
-    { "long long", &jdi::builtin_flag__long_long },
     { "virtual",   &jdi::builtin_flag__virtual   },
     { "explicit",  &jdi::builtin_flag__explicit  },
   };
 
-  if (tok == "throw")    return {128,  128};
-  if (tok == "override") return {512,  512};
-  if (tok == "final")    return {1024, 1024};
+  if (auto it = flags.find(tok); it != flags.end()) return *it->second;
+  return nullptr;
+}
 
-  if (auto it = flags.find(tok); it != flags.end()) {
-    if (const jdi::typeflag *flag = *it->second) return {flag->mask, flag->value};
-  }
-  return {-1, -1};
+// Null-tolerant typeflag tests/reads, for use both with lookup_decflag results
+// and with the jdi::builtin_flag__* globals directly (null before builtins
+// init). NB: `signed` cannot be tested this way -- JDI encodes it as
+// mask=<the unsigned bit>, value=0, i.e. the *absence* of unsigned, so its
+// Matches() accepts every non-unsigned flag set. Detect a written `signed`
+// from the spec list's tokens instead (see specs_imply_int).
+static bool flag_matches(std::size_t flags, const jdi::typeflag *flag) {
+  return flag != nullptr && flag->Matches(flags);
+}
+static std::size_t flag_value(const jdi::typeflag *flag) {
+  return flag != nullptr ? flag->value : 0;
+}
+static std::size_t flag_mask(const jdi::typeflag *flag) {
+  return flag != nullptr ? flag->mask : 0;
 }
 
 jdi::definition *require_defined_type(const Token &tok) {
@@ -399,19 +410,43 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
   return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
 }
 
+// True when this spec run carries a length/sign specifier, which names C's
+// implied `int`. The sign and length families own disjoint bit ranges of the
+// flag word, and `long`'s mask spans the whole length field (long, long long,
+// and short all write within it), so one combined-mask presence test covers
+// the lot -- the same `flags & flag->mask` idiom JDI uses (e.g. AST.cpp's
+// unsigned checks). `signed` is the exception: its JDI encoding
+// (mask=<the unsigned bit>, value=0) writes no bits, so a written `signed` is
+// only detectable in the spec list's retained source tokens.
+static bool specs_imply_int(const AST::DeclSpecList &declspecs) {
+  const std::size_t sign_or_length =
+      flag_mask(jdi::builtin_flag__unsigned) | flag_mask(jdi::builtin_flag__long);
+  if (declspecs.flags & sign_or_length) return true;
+  for (const Token &spec : declspecs.specs)
+    if (spec.content == "signed") return true;
+  return false;
+}
+
 // Build a TypeSpecifierSeq from a fully-consumed type-specifier run -- the one
 // place a parsed spec run becomes a node, so every construction site funnels
-// through here. `int` may be implied rather than spelled: a length/sign
-// specifier (`unsigned`, `long`, `short`, `signed`) standing without a type-name
-// names `int`. When no type-name landed in the id-expression tree, materialize
-// that `int` as a token-free ImplicitInt leaf (mirroring JDI's read_type, which
-// fixes builtin_type__int once the spec-seq closes with no type-name) so the
-// seq's Definition() stays a pure tree read. The implied-int test reads the spec
-// list's own flag bitmask, the canonical sign/length source.
+// through here. When the user wrote a (non-empty) specifier run but no
+// type-name, the base type is inferred and materialized as a token-free
+// ImplicitType leaf (mirroring JDI's read_type, which fixes the base once the
+// spec-seq closes), so the seq's Definition() stays a pure tree read: a
+// length/sign specifier (`unsigned x;`) names C's `int`; any other untyped run
+// (`const x;`) is EDL's universal `var`, same as an undeclared variable. An
+// EMPTY run stays null -- type-id positions parse vacuously when the operand
+// is really a value expression (`sizeof(local_var)`), and inventing a base
+// type there would mis-tag them.
 std::unique_ptr<AST::TypeSpecifierSeq> MakeTypeSpecifierSeq(
     AST::PNode id_expression, std::unique_ptr<AST::DeclSpecList> declspecs) {
-  if (id_expression == nullptr && declspecs && flags_imply_implicit_int(declspecs->flags))
-    id_expression = std::make_unique<AST::ImplicitInt>(jdi::builtin_type__int);
+  if (id_expression == nullptr && declspecs && !declspecs->specs.empty()) {
+    id_expression = specs_imply_int(*declspecs)
+        ? std::make_unique<AST::ImplicitType>(AST::ImplicitType::Kind::INT,
+                                              jdi::builtin_type__int)
+        : std::make_unique<AST::ImplicitType>(AST::ImplicitType::Kind::UNTYPED,
+                                              frontend->look_up("var"));
+  }
   return std::make_unique<AST::TypeSpecifierSeq>(std::move(id_expression), std::move(declspecs));
 }
 
@@ -606,6 +641,15 @@ void TryParseTemplateArgs(jdi::definition *def, std::vector<AST::PNode> *out_arg
     for (; token.type != TT_GREATER && token.type != TT_ENDOFCODE;) {
       if (template_def->params[args_given]->flags & jdi::DEF_TYPENAME) {
         auto type_node = TryParseTypeID();
+        // In template-argument position the untyped fallback is `variant`,
+        // not `var`: it's lighter weight, and var makes a poor element/key
+        // type. The kind stays UNTYPED; only the inferred def is retagged.
+        if (type_node && type_node->id_expression &&
+            type_node->id_expression->type == AST::NodeType::IMPLICIT_TYPE) {
+          auto *implicit = type_node->id_expression->As<AST::ImplicitType>();
+          if (implicit->kind == AST::ImplicitType::Kind::UNTYPED)
+            implicit->def = frontend->look_up("variant");
+        }
         if (type_node && type_node->Definition()) {
           jdi::full_type t = type_node->to_jdi_fulltype();
           argk[args_given].ft().swap(t);
@@ -833,11 +877,6 @@ AST::PNode TryParseElaboratedName(FullType *type) {
   return scope_tree;
 }
 
-static bool contains_decflag_bitmask(std::size_t combined, std::string_view name) {
-  auto builtin = jdi_decflag_bitmask(name);
-  return (combined & builtin.first) == builtin.second;
-}
-
 void maybe_assign_full_type(FullType *type, jdi::definition *def, Token token) {
   if (def != nullptr && type->def == nullptr) {
     type->def = def;
@@ -860,27 +899,29 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
   switch (token.type) {
     case TT_TYPE_NAME: {
       if (token.content == "long" || token.content == "short") {
-        if (contains_decflag_bitmask(type->flags, "long")) {
+        if (flag_matches(type->flags, jdi::builtin_flag__long)) {
            if (token.content == "long") {
-             type->flags &= ~jdi_decflag_bitmask("long").second;
-             type->flags |= jdi_decflag_bitmask("long long").second;
-             specs->flags &= ~jdi_decflag_bitmask("long").second;
-             specs->flags |= jdi_decflag_bitmask("long long").second;
+             // long + long = long long: swap the length field's value.
+             const std::size_t field = flag_mask(jdi::builtin_flag__long);
+             const std::size_t llong = flag_value(jdi::builtin_flag__long_long);
+             type->flags  = (type->flags  & ~field) | llong;
+             specs->flags = (specs->flags & ~field) | llong;
              specs->specs.push_back(token);
            } else if (token.content == "short") {
              herr->Error(token) << "Conflicting usage of 'long' and 'short' in the same type specifier";
            }
-        } else if (contains_decflag_bitmask(type->flags, "short") && token.content == "long") {
+        } else if (flag_matches(type->flags, jdi::builtin_flag__short) && token.content == "long") {
           herr->Error(token) << "Conflicting usage of 'short' and 'long' in the same type specifier";
-        } else if (contains_decflag_bitmask(type->flags, "long long")) {
+        } else if (flag_matches(type->flags, jdi::builtin_flag__long_long)) {
           if (token.content == "long") {
             herr->Error(token) << "Too many 'long's in type specifier";
           } else if (token.content == "short") {
             herr->Error(token) << "Conflicting usage of 'short' and 'long long' in the same type specifier";
           }
         } else {
-          type->flags |= jdi_decflag_bitmask(token.content).second;
-          specs->flags |= jdi_decflag_bitmask(token.content).second;
+          const std::size_t value = flag_value(lookup_decflag(token.content));
+          type->flags |= value;
+          specs->flags |= value;
           specs->specs.push_back(token);
         }
       } else {
@@ -928,17 +969,18 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
 
     default: {
       if (token.type == TT_DECLSPEC) {
-        //        if (contains_decflag_bitmask(type->flags, "signed") && token.content == "unsigned") {
-        //          // TODO: There is no way to actually detect this, as signed's value is 0
-        //          herr->Error(token) << "Conflicting use of 'signed' and 'unsigned' in the same type specifier";
-        //        } else
-        if (contains_decflag_bitmask(type->flags, "unsigned") && token.content == "signed") {
+        const jdi::typeflag *flag = lookup_decflag(token.content);
+        // unsigned-then-signed is flag-detectable (unsigned wrote a bit); the
+        // reverse order is not (`signed` writes none) and is caught post-parse
+        // by the SyntaxChecker's token-based check. The duplicate warning
+        // likewise exempts `signed`, whose all-zero flag "matches" any run.
+        if (flag_matches(type->flags, jdi::builtin_flag__unsigned) && token.content == "signed") {
           herr->Error(token) << "Conflicting use of 'unsigned' and 'signed' in the same type specifier";
-        } else if (contains_decflag_bitmask(type->flags, token.content) && token.content != "signed") {
+        } else if (flag_matches(type->flags, flag) && token.content != "signed") {
           herr->Warning(token) << "Duplicate usage of flags in type specifier";
         } else {
-          type->flags |= jdi_decflag_bitmask(token.content).second;
-          specs->flags |= jdi_decflag_bitmask(token.content).second;
+          type->flags |= flag_value(flag);
+          specs->flags |= flag_value(flag);
           specs->specs.push_back(token);
         }
         token = lexer->ReadToken();
@@ -1090,8 +1132,12 @@ void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs, AST::PNode 
     case TT_MUTABLE:
     case TT_INLINE:
     case TT_STATIC: {
-      type->flags |= jdi_decflag_bitmask(token.content).second;
-      specs->flags |= jdi_decflag_bitmask(token.content).second;
+      const jdi::typeflag *flag =
+          token.type == TT_MUTABLE ? jdi::builtin_flag__mutable
+          : token.type == TT_INLINE ? jdi::builtin_flag__inline
+                                    : jdi::builtin_flag__static;
+      type->flags |= flag_value(flag);
+      specs->flags |= flag_value(flag);
       specs->specs.push_back(token);
       token = lexer->ReadToken();
       break;
@@ -1251,15 +1297,10 @@ std::unique_ptr<AST::Node> TryParseDeclarations(
       herr->Error(token) << "Cannot have both 'global' and 'local' in the same declaration";
       return nullptr;
     }
-    // No type-name landed. That's still a valid type when a length/sign
-    // specifier implies `int` (`unsigned x;`) -- parse_declarations materializes
-    // the ImplicitInt leaf via MakeTypeSpecifierSeq. Only a spec run with neither
-    // a type-name nor an implied-int flag (`const x;`) is a genuine error.
-    if (id_expression == nullptr && !flags_imply_implicit_int(declspecs->flags)) {
-      herr->Error(token) << "Unable to parse type specifier in declaration";
-      return nullptr;
-    }
-
+    // No guard against a missing type-name here: a non-empty spec run with no
+    // type-name still declares -- a sign/length specifier implies `int`, and
+    // any other untyped run (`const x;`) is EDL's universal `var` --
+    // materialized by parse_declarations via MakeTypeSpecifierSeq.
     auto sc = is_global || global_local.first   ? AST::DeclarationStatement::StorageClass::GLOBAL
               : is_local || global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                                 : AST::DeclarationStatement::StorageClass::TEMPORARY;
@@ -2521,14 +2562,6 @@ std::unique_ptr<AST::WithStatement> ParseWithStatement() {
 
 };  // class AstBuilder
 
-bool flags_imply_implicit_int(std::size_t flags) {
-  return AstBuilder::contains_decflag_bitmask(flags, "long")
-      || AstBuilder::contains_decflag_bitmask(flags, "short")
-      || AstBuilder::contains_decflag_bitmask(flags, "long long")
-      || AstBuilder::contains_decflag_bitmask(flags, "signed")
-      || AstBuilder::contains_decflag_bitmask(flags, "unsigned");
-}
-
 class SyntaxChecker : public AST::Visitor {
   ErrorHandler *herr;
   const LanguageFrontend * frontend;
@@ -2563,25 +2596,41 @@ class SyntaxChecker : public AST::Visitor {
     // with syntactic checks. Tracked separately.
     //
     // Flag conflicts are properties of the shared decl-spec sequence, read
-    // from the clause's specifiers->declspecs (per-declarator FullType::flags
-    // is a transitional mirror, retired in step 4).
+    // from the clause's specifiers->declspecs. Pairs that the parser already
+    // rejects while folding (`long short`) are not re-checked here.
     auto *type_id = node.clause ? node.clause->specifiers.get() : nullptr;
-    std::size_t flags = (type_id && type_id->declspecs) ? type_id->declspecs->flags : 0;
-    static constexpr struct { const char *a, *b; TokenType reporter; } conflicts[] = {
-      {"unsigned", "signed",   TT_DECLSPEC },
-      {"long",     "short",    TT_TYPE_NAME},
-      {"const",    "mutable",  TT_DECLSPEC },
-      {"static",   "register", TT_STATIC   },
-      {"inline",   "register", TT_INLINE   },
-      {"extern",   "register", TT_EXTERN   },
-      {"mutable",  "static",   TT_MUTABLE  },
-    };
-    for (const auto &c : conflicts) {
-      if (AstBuilder::contains_decflag_bitmask(flags, c.a) &&
-          AstBuilder::contains_decflag_bitmask(flags, c.b)) {
-        Token tok; tok.content = c.a; tok.type = c.reporter;
-        herr->Error(tok) << "Conflicting use of '" << c.a << "' and '" << c.b
-                         << "' in the same type specifier";
+    if (type_id && type_id->declspecs) {
+      const AST::DeclSpecList &declspecs = *type_id->declspecs;
+      const std::size_t flags = declspecs.flags;
+      // signed/unsigned: `signed` writes no flag bits (JDI encodes it as the
+      // absence of unsigned), so the pair is only detectable from the retained
+      // spec tokens. The parser catches unsigned-then-signed at fold time;
+      // this catches both orders, reported on the real `signed` token.
+      if (flags & AstBuilder::flag_mask(jdi::builtin_flag__unsigned)) {
+        for (const Token &spec : declspecs.specs) {
+          if (spec.content == "signed") {
+            herr->Error(spec) << "Conflicting use of 'signed' and 'unsigned' in the same type specifier";
+            break;
+          }
+        }
+      }
+      static const struct { jdi::typeflag *const *a, *const *b; } conflicts[] = {
+        {&jdi::builtin_flag__const,   &jdi::builtin_flag__mutable },
+        {&jdi::builtin_flag__static,  &jdi::builtin_flag__register},
+        {&jdi::builtin_flag__inline,  &jdi::builtin_flag__register},
+        {&jdi::builtin_flag__mutable, &jdi::builtin_flag__static  },
+      };
+      for (const auto &c : conflicts) {
+        const jdi::typeflag *a = *c.a, *b = *c.b;
+        if (AstBuilder::flag_matches(flags, a) && AstBuilder::flag_matches(flags, b)) {
+          const Token *at = nullptr;
+          for (const Token &spec : declspecs.specs)
+            if (spec.content == a->name) { at = &spec; break; }
+          if (at != nullptr) {
+            herr->Error(*at) << "Conflicting use of '" << a->name << "' and '"
+                             << b->name << "' in the same type specifier";
+          }
+        }
       }
     }
     node.RecursiveSubVisit(*this);
