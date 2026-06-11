@@ -3967,3 +3967,93 @@ TEST(ParserTest, ParentheticalUntypedTupleUnchanged) {
   ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
   EXPECT_THAT(node.get(), IsParenthetical(IsBinaryOperation(TT_COMMA, IsIdentifier("x"), IsIdentifier("y"))));
 }
+
+// Postfix ++/-- must attach to any lvalue-shaped postfix-expression, not just
+// bare names and member accesses. `a[1]++` used to end the expression at
+// `a[1]` and silently leave the `++` dangling for the next statement.
+TEST(ParserTest, PostfixIncrementAfterSubscript) {
+  ParserTester test = ParserTester::CreateWithSetUp("a[1]++;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  EXPECT_THAT(node.get(),
+              IsUnaryPostfixOperator(TT_INCREMENT,
+                  IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier("a"), IsLiteral("1"))));
+}
+
+TEST(ParserTest, PostfixDecrementAfterNestedSubscript) {
+  ParserTester test = ParserTester::CreateWithSetUp("grid[1][2]--;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  EXPECT_THAT(node.get(),
+              IsUnaryPostfixOperator(TT_DECREMENT,
+                  IsBinaryOperation(TT_BEGINBRACKET,
+                      IsBinaryOperation(TT_BEGINBRACKET, IsIdentifier("grid"), IsLiteral("1")),
+                      IsLiteral("2"))));
+}
+
+// The boundary convention: EDL statements need no semicolon, so ++/-- after a
+// parenthesized group (or a call result -- see UnaryPrefixAfterFunctionCall)
+// starts the NEXT statement rather than postfix-binding onto the group. This
+// is what keeps `while (cond) ++i` from eating the body's `++`.
+TEST(ParserTest, PostfixAfterParentheticalSplitsStatement) {
+  ParserTester test = ParserTester::CreateWithSetUp("(a)++x;");
+  auto node = test->ParseCode();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 2u);
+  EXPECT_THAT(block->statements[0].get(), IsParenthetical(IsIdentifier("a")));
+  EXPECT_THAT(block->statements[1].get(),
+              IsUnaryPrefixOperator(TT_INCREMENT, IsIdentifier("x")));
+}
+
+// Member access keeps working (the one shape the old gate admitted).
+TEST(ParserTest, PostfixIncrementAfterMemberAccess) {
+  ParserTester test = ParserTester::CreateWithSetUp("a.b++;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  EXPECT_THAT(node.get(),
+              IsUnaryPostfixOperator(TT_INCREMENT,
+                  IsBinaryOperation(TT_DOT, IsIdentifier("a"), IsIdentifier("b"))));
+}
+
+// DISABLED: torture case tying postfix binding to the boundary convention
+// across qualified ids: `some::identifier++` is one complete statement
+// (a bare qualified id has no boundary reading, like a[1], so postfix binds
+// to the ScopeAccess), and `::global_identifier = 10` starts the next
+// statement (statement-leading global qualification). Blocked on the
+// expression-context id-expression tree: today the qualified-id path resolves
+// eagerly (erroring on unresolved segments) and flattens to a leaf, so no
+// ScopeAccess reaches expression position. Also requires that `::` after a
+// postfix operand is NOT glued as a binary scope operator (kBinaryPrec still
+// carries TT_SCOPEACCESS). Flip green with the id-expression unification.
+TEST(ParserTest, DISABLED_PostfixOnQualifiedIdThenGlobalAssignment) {
+  ParserTester test =
+      ParserTester::CreateWithSetUp("some::identifier++::global_identifier=10");
+  auto node = test->ParseCode();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 2u);
+
+  ASSERT_EQ(block->statements[0]->type, AST::NodeType::UNARY_POSTFIX_EXPRESSION);
+  auto *post = block->statements[0]->As<AST::UnaryPostfixExpression>();
+  EXPECT_EQ(post->operation.type, TT_INCREMENT);
+  ASSERT_EQ(post->operand->type, AST::NodeType::SCOPE_ACCESS);
+  auto *qual = post->operand->As<AST::ScopeAccess>();
+  EXPECT_EQ(qual->name.content, "identifier");
+  ASSERT_NE(qual->lhs, nullptr);
+  EXPECT_THAT(qual->lhs.get(), IsIdentifier("some"));
+
+  ASSERT_EQ(block->statements[1]->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *assign = block->statements[1]->As<AST::BinaryExpression>();
+  EXPECT_EQ(assign->operation.type, TT_EQUALS);
+  ASSERT_EQ(assign->left->type, AST::NodeType::SCOPE_ACCESS);
+  auto *glob = assign->left->As<AST::ScopeAccess>();
+  EXPECT_EQ(glob->name.content, "global_identifier");
+  EXPECT_EQ(glob->lhs, nullptr);
+  EXPECT_THAT(assign->right.get(), IsLiteral("10"));
+}

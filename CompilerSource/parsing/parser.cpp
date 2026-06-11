@@ -1805,6 +1805,27 @@ static bool ShouldAcceptPrecedence(const OperatorPrecedence &prec,
                 prec.associativity == Associativity::RTL);
 }
 
+// Operand shapes postfix ++/-- binds to: a name (qualified or not) or an
+// access chain (member access, subscript). Call results and parenthesized
+// groups are deliberately excluded: EDL statements need no semicolon, so
+// after `foo(12)` or a `while (cond)` header, a following `--x`/`++i` starts
+// the NEXT statement (or the loop body) -- the statement boundary outranks
+// postfix binding. Names and access chains carry no such boundary reading
+// (a bare `a[1]` statement does nothing), so `grid[x]++` binds.
+static bool operand_takes_postfix(AST::Node *operand) {
+  switch (operand->type) {
+    case AST::NodeType::IDENTIFIER:
+    case AST::NodeType::SCOPE_ACCESS:
+      return true;
+    case AST::NodeType::BINARY_EXPRESSION: {
+      TokenType op = operand->As<AST::BinaryExpression>()->operation.type;
+      return op == TT_DOT || op == TT_ARROW || op == TT_BEGINBRACKET;
+    }
+    default:
+      return false;
+  }
+}
+
 std::unique_ptr<AST::Node> TryParseLambdaExpression(std::unique_ptr<AST::Node> operand) {
   token = lexer->ReadToken();
   auto body = ParseStatementOrBlock();
@@ -1838,15 +1859,8 @@ std::unique_ptr<AST::Node> ParseExpression(int precedence, std::unique_ptr<AST::
         }
         operand = TryParseBinaryExpression(precedence, std::move(operand));
       } else if (map_contains(Precedence::kUnaryPostfixPrec, token.type)) {
-        if (operand->type == AST::NodeType::BINARY_EXPRESSION) {
-          auto exp = operand->As<AST::BinaryExpression>();
-          if (exp->operation.type != TT_DOT && exp->operation.type != TT_ARROW) {
-            break;
-          }
-        }
-        bool valid_operand_type =
-            operand->type == AST::NodeType::IDENTIFIER || operand->type == AST::NodeType::BINARY_EXPRESSION;
-        if (precedence < Precedence::kUnaryPostfix || !valid_operand_type) {
+        if (precedence < Precedence::kUnaryPostfix ||
+            !operand_takes_postfix(operand.get())) {
           break;
         }
         operand = TryParseUnaryPostfixExpression(precedence, std::move(operand));
