@@ -4069,17 +4069,13 @@ TEST(ParserTest, PostfixIncrementAfterMemberAccess) {
                   IsBinaryOperation(TT_DOT, IsIdentifier("a"), IsIdentifier("b"))));
 }
 
-// DISABLED: torture case tying postfix binding to the boundary convention
-// across qualified ids: `some::identifier++` is one complete statement
-// (a bare qualified id has no boundary reading, like a[1], so postfix binds
-// to the ScopeAccess), and `::global_identifier = 10` starts the next
-// statement (statement-leading global qualification). Blocked on the
-// expression-context id-expression tree: today the qualified-id path resolves
-// eagerly (erroring on unresolved segments) and flattens to a leaf, so no
-// ScopeAccess reaches expression position. Also requires that `::` after a
-// postfix operand is NOT glued as a binary scope operator (kBinaryPrec still
-// carries TT_SCOPEACCESS). Flip green with the id-expression unification.
-TEST(ParserTest, DISABLED_PostfixOnQualifiedIdThenGlobalAssignment) {
+// Torture case tying postfix binding to the boundary convention across
+// qualified ids: `some::identifier++` is one complete statement (a bare
+// qualified id has no boundary reading, like a[1], so postfix binds to the
+// ScopeAccess chain), and `::global_identifier = 10` starts the next
+// statement (statement-leading global qualification). Requires that `::`
+// after a complete operand is NOT glued as a binary scope operator.
+TEST(ParserTest, PostfixOnQualifiedIdThenGlobalAssignment) {
   ParserTester test =
       ParserTester::CreateWithSetUp("some::identifier++::global_identifier=10");
   auto node = test->ParseCode();
@@ -4142,4 +4138,40 @@ TEST(ParserTest, OperandGlobalQualifiedName) {
   auto *value = assign->right->As<AST::ScopeAccess>();
   EXPECT_EQ(value->name.content, "x");
   EXPECT_EQ(value->lhs, nullptr);
+}
+
+// Expression-context qualified-ids build the same ScopeAccess chains the
+// type-context resolvers emit, with per-segment resolution deferred when the
+// parent scope is unknown -- no parse-time "does not exist in the scope"
+// errors (the harness error handler enforces the no-error half of this);
+// the semantic phase binds unresolved segments.
+TEST(ParserTest, ExprQualifiedIdBuildsChain) {
+  ParserTester test = ParserTester::CreateWithSetUp("a = ns::value;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *assign = node->As<AST::BinaryExpression>();
+  EXPECT_THAT(assign->left.get(), IsIdentifier("a"));
+  ASSERT_EQ(assign->right->type, AST::NodeType::SCOPE_ACCESS);
+  auto *chain = assign->right->As<AST::ScopeAccess>();
+  EXPECT_EQ(chain->name.content, "value");
+  EXPECT_THAT(chain->lhs.get(), IsIdentifier("ns"));
+}
+
+TEST(ParserTest, ExprQualifiedIdDeepChain) {
+  ParserTester test = ParserTester::CreateWithSetUp("x = a::b::c;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *assign = node->As<AST::BinaryExpression>();
+  ASSERT_EQ(assign->right->type, AST::NodeType::SCOPE_ACCESS);
+  auto *outer = assign->right->As<AST::ScopeAccess>();
+  EXPECT_EQ(outer->name.content, "c");
+  ASSERT_NE(outer->lhs, nullptr);
+  ASSERT_EQ(outer->lhs->type, AST::NodeType::SCOPE_ACCESS);
+  auto *inner = outer->lhs->As<AST::ScopeAccess>();
+  EXPECT_EQ(inner->name.content, "b");
+  EXPECT_THAT(inner->lhs.get(), IsIdentifier("a"));
 }

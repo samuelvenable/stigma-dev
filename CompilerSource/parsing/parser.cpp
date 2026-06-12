@@ -513,81 +513,70 @@ bool next_can_begin_id_expression() {
   return can_begin_id_expression(token.type);
 }
 
-// Parses an `id-expression`, which can be a `qualified-id` or `unqualified-id`.
-// Also handles `declarator-id` when used in a declaration context.
-jdi::definition *TryParseIdExpression(Token *out_name) {
+// Parses an `id-expression` in expression context -- a `qualified-id` or
+// `unqualified-id` -- as a tree: a bare name is an IdentifierAccess leaf, a
+// qualified name a ScopeAccess chain (template segments wrapped in a
+// TemplateId), the same shapes the type-context resolvers emit. Names resolve
+// where possible (the leading segment by ordinary lookup, later segments in
+// their parent's scope); anything unresolved stays on the tree with a null
+// def for the semantic phase to bind -- not a parse error: EDL permits
+// implicitly declared variables, and a not-yet-known qualified name is the
+// semantic phase's to classify.
+std::unique_ptr<AST::Node> TryParseIdExpression() {
   switch (token.type) {
-    case TT_SCOPEACCESS: {
+    case TT_IDENTIFIER: {
+      Token name = token;
       token = lexer->ReadToken();
-      if (next_can_begin_id_expression() && token.type != TT_SCOPEACCESS) {
-        return TryParseIdExpression(out_name);
-      } else {
-        herr->Error(token) << "Expected qualified-id after '::', got: '" << token.content << '\'';
-        return nullptr;
+      if (token.type == TT_SCOPEACCESS) {
+        return TryParseNestedNameSpecifier(std::make_unique<AST::IdentifierAccess>(
+            frontend->look_up(name.content), name));
       }
+      // A locally declared name reads through its declaration, so it stays an
+      // unresolved leaf even when a C++ global shares the name.
+      if (map_contains(declarations, name.content)) {
+        return std::make_unique<AST::IdentifierAccess>(name);
+      }
+      if (jdi::definition *def = frontend->look_up(name.content)) {
+        return std::make_unique<AST::IdentifierAccess>(def, name);
+      }
+      return std::make_unique<AST::IdentifierAccess>(name);
     }
+
+    case TT_SCOPEACCESS:
+      // Leading `::` (global qualification). The operand parser usually
+      // dispatches this earlier; kept for callers that reach an
+      // id-expression directly.
+      return TryParseNestedNameSpecifier(nullptr);
 
     case TT_DECLTYPE: {
-      auto decltype_ = TryParseDecltype();
+      auto base = TryParseDecltype();
       if (token.type == TT_SCOPEACCESS) {
-        return id_expression_def(
-            TryParseNestedNameSpecifier(std::move(decltype_), out_name, out_name != nullptr));
-      } else {
-        herr->Error(token) << "Expected qualified-id after decltype-expression, got: '" << token.content << '\'';
-        return nullptr;
+        return TryParseNestedNameSpecifier(std::move(base));
       }
-    }
-
-    case TT_IDENTIFIER: {
-      if (false/*next_is_user_defined_type()*/) {
-        return id_expression_def(TryParsePrefixIdentifier(out_name));
-      } else {
-        Token name = token;
-        auto def = frontend->look_up(token.content);
-        token = lexer->ReadToken();
-        const bool is_declarator = out_name;
-        if (is_declarator && token.type != TT_SCOPEACCESS) {
-          *out_name = name;  // If we're not accessing a scope then we're probably declaring a variable
-        } else if (token.type == TT_SCOPEACCESS) {
-          return id_expression_def(TryParseNestedNameSpecifier(
-              std::make_unique<AST::IdentifierAccess>(def, name), out_name, out_name != nullptr));
-        } else if (map_contains(declarations, name.content)) {
-          return declarations[name.content]->specifiers->Definition();
-        } else if (def == nullptr) {
-          herr->Error(token) << "No such name exists in global scope";
-        }
-
-        return def;
-      }
+      return base;
     }
 
     case TT_OPERATOR: {
+      // operator-function-ids are not modeled yet; consume the form so the
+      // parse can continue, and report.
       Token op = token;
       token = lexer->ReadToken();
-      std::string type = read_required_operatorkw();
-
-      if (type != "") {
-        std::string oper = "operator" + type;
-        if (token.type == TT_LESS && is_template_type(op)) {
-          TryParseTemplateArgs(frontend->look_up(oper));
-        } else {
-          return frontend->look_up(oper);
-        }
-      }
-
+      read_required_operatorkw();
+      herr->Error(op) << "Unimplemented: operator-function id-expressions";
       return nullptr;
     }
 
     case TT_TILDE: {
+      // Destructor-ids are not modeled yet; consume `~type-name` and report.
+      Token tilde = token;
       token = lexer->ReadToken();
       if (token.type == TT_IDENTIFIER) {
-        return id_expression_def(TryParseTypeName());
+        TryParseTypeName();
       } else if (token.type == TT_DECLTYPE) {
-        return id_expression_def(TryParseDecltype());
-      } else {
-        herr->Error(token) << "Given token is not valid for specifying a destructor to call";
-        return nullptr;
+        TryParseDecltype();
       }
+      herr->Error(tilde) << "Unimplemented: destructor id-expressions";
+      return nullptr;
     }
 
     default: {
@@ -595,27 +584,6 @@ jdi::definition *TryParseIdExpression(Token *out_name) {
                          << token.content << '\'';
       return nullptr;
     }
-  }
-}
-
-std::unique_ptr<AST::Node> TryParseIdExpression() {
-  Token name;
-  auto def = TryParseIdExpression(&name);
-
-  if (name.content.empty()) {
-    herr->Error(token) << "Unable to parse id-expression";
-    return nullptr;
-  } else if (map_contains(declarations, name.content)) {
-    return std::make_unique<AST::IdentifierAccess>(name);
-  } else if (def != nullptr) {
-    return std::make_unique<AST::IdentifierAccess>(def, name);
-  } else {
-    // Unresolved identifier. Per types-as-trees, the parser does not resolve
-    // names: an identifier matching neither a JDI definition nor a locally
-    // declared name is emitted as an unresolved IdentifierAccess (CPP kind,
-    // empty type) for the semantic phase to bind. EDL further permits
-    // implicitly-declared variables, so an unknown name is not a parse error.
-    return std::make_unique<AST::IdentifierAccess>(name);
   }
 }
 
@@ -739,7 +707,7 @@ AST::PNode TryParseTypenameSpecifier() {
 // Parses a type name, potentially followed by template arguments and/or a nested
 // name specifier. Corresponds roughly to the start of a `qualified-id` or just a
 // `type-name`. Returns the id-expression tree; its root carries the resolved def.
-AST::PNode TryParsePrefixIdentifier(Token *out_name = nullptr, bool is_declarator = false) {
+AST::PNode TryParsePrefixIdentifier() {
   Token id = token;
   require_token(TT_IDENTIFIER, "Expected identifier");
   auto def = require_defined_type(id);
@@ -755,7 +723,7 @@ AST::PNode TryParsePrefixIdentifier(Token *out_name = nullptr, bool is_declarato
   }
 
   if (token.type == TT_SCOPEACCESS) {
-    return TryParseNestedNameSpecifier(std::move(leaf), out_name, is_declarator);
+    return TryParseNestedNameSpecifier(std::move(leaf));
   }
 
   return leaf;
@@ -765,30 +733,23 @@ AST::PNode TryParsePrefixIdentifier(Token *out_name = nullptr, bool is_declarato
 // `unqualified-id`. Despite the name, it parses the rest of a qualified-id, not
 // just the specifier. `scope_tree` is the already-parsed scope id-expression (the
 // chain's `lhs`), null for a global-scope `::name`. Returns the assembled
-// id-expression tree -- a ScopeAccess chain, with any template segment wrapped in
-// a TemplateId -- each node's `def` resolved in its enclosing scope.
-AST::PNode TryParseNestedNameSpecifier(AST::PNode scope_tree, Token *out_name = nullptr, bool is_declarator = false) {
+// id-expression tree -- a ScopeAccess chain, with any template segment wrapped
+// in a TemplateId. Each segment resolves in its parent's scope when that scope
+// is known; an unresolved or non-scope parent defers the rest of the chain
+// (null segment defs, no diagnostic) for the semantic phase to bind -- whether
+// a dangling name is an error depends on what the chain turns out to be, which
+// the parser cannot judge.
+AST::PNode TryParseNestedNameSpecifier(AST::PNode scope_tree) {
   if (token.type != TT_SCOPEACCESS) {
     herr->Error(token) << "Expected scope access '::' in nested name specifier, got: '" << token.content << '\'';
-    return nullptr;
+    return scope_tree;
   }
-
-  jdi::definition *def = id_expression_def(scope_tree);
-  if (def != nullptr && !(def->flags & jdi::DEF_SCOPE)) {
-    herr->Error(token) << "Given specifier does not refer to any existing scopes";
-  }
-
-  bool is_global_scope = def == nullptr;
 
   AST::PNode current = std::move(scope_tree);
-  Token prev{};
-  Token name{};
   while (token.type == TT_SCOPEACCESS) {
-    prev = token;
     token = lexer->ReadToken();
     if (token.type == TT_IDENTIFIER) {
       Token id = token;
-      name = token;
       token = lexer->ReadToken();
       bool is_template_seg = token.type == TT_LESS && is_template_type(id);
       std::vector<AST::PNode> args;
@@ -796,37 +757,26 @@ AST::PNode TryParseNestedNameSpecifier(AST::PNode scope_tree, Token *out_name = 
       if (is_template_seg) {
         seg_def = frontend->look_up(id.content);
         TryParseTemplateArgs(seg_def, &args);
-      } else if (is_global_scope) {
-        is_global_scope = false;
-        def = frontend->look_up(id.content);
-        seg_def = def;
-        if (def == nullptr) {
-          herr->Error(id) << "Given name does not exist in the scope: '" << id.content << '\'';
-          break;
-        }
-      } else if (auto *def_scope = require_scope_type(def, prev); def_scope != nullptr) {
-        def = def_scope->look_up(std::string{id.content});
-        seg_def = def;
-        if (def == nullptr) {
-          herr->Error(id) << "Given name does not exist in the scope: '" << id.content << '\'';
-          break;
+      } else if (current == nullptr) {
+        // Leading `::name`: ordinary global lookup.
+        seg_def = frontend->look_up(id.content);
+      } else if (jdi::definition *parent = current->Definition();
+                 parent != nullptr && (parent->flags & (jdi::DEF_SCOPE | jdi::DEF_CLASS))) {
+        if (auto *parent_scope = dynamic_cast<jdi::definition_scope *>(parent)) {
+          seg_def = parent_scope->look_up(std::string{id.content});
         }
       }
       AST::PNode seg = std::make_unique<AST::ScopeAccess>(std::move(current), id, seg_def);
       if (is_template_seg)
         seg = std::make_unique<AST::TemplateId>(std::move(seg), std::move(args), nullptr);
       current = std::move(seg);
-    } else if (token.type != TT_STAR) {
-      herr->Error(token) << "Expected either identifier or star ('*') after nested name specifier";
-      return nullptr;
-    }
-  }
-
-  if (is_declarator) {
-    if (out_name == nullptr) {
-      herr->Error(name) << "Internal error: nullptr name out-param passed to TryParseNestedNameSpecifier()";
+    } else if (token.type == TT_STAR) {
+      // `A::*` -- the star is a pointer-to-member declarator operator; the
+      // nested-name ends here and the `*` is the caller's.
+      break;
     } else {
-      *out_name = name;
+      herr->Error(token) << "Expected either identifier or star ('*') after nested name specifier";
+      return current;
     }
   }
 

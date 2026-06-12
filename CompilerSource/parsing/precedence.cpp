@@ -20,7 +20,11 @@
 namespace enigma::parsing {
 
 std::unordered_map<TokenType, OperatorPrecedence> Precedence::kBinaryPrec{
-    {TT_SCOPEACCESS,  {Precedence::kScope,          Associativity::LTR}},
+    // XXX: unused -- qualified-ids are built as ScopeAccess chains by the
+    // id-expression parser inside the operand, never by the binary loop; a
+    // stray `::` after a complete operand starts the next statement
+    // (`some::id++::global_id=10` is two statements).
+    // {TT_SCOPEACCESS,  {Precedence::kScope,          Associativity::LTR}},
     {TT_DOT,          {Precedence::kMemberAccess,   Associativity::LTR}},
     {TT_ARROW,        {Precedence::kMemberAccess,   Associativity::LTR}},
     {TT_DOT_STAR,     {Precedence::kMemberPointer,  Associativity::LTR}},
