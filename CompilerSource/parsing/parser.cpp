@@ -1614,10 +1614,26 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_SIZEOF: {
       token = lexer->ReadToken();
       if (token.type == TT_BEGINPARENTH) {
+        // `sizeof(...)`: the parenthesized operand is a type-id OR a value
+        // expression. Parse it through the uniform group (as ParseParenthetical
+        // does) so a type-name promotes to a DeclaratorClause and anything else
+        // parses as a full expression -- the old unconditional type-id parse
+        // choked on any top-level binary operator (`sizeof(x + 1)`). Classify
+        // by the resulting shape; a value keeps its source parens as a
+        // Parenthetical so the EXPR printing round-trips them.
         token = lexer->ReadToken();
-        auto type_node = ParseTypeIdClause();
+        std::unique_ptr<AST::Node> body;
+        {
+          ScopedFlag group(maybe_declarator_group_, true);
+          body = ParseExpression(Precedence::kAll);
+        }
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after sizeof-expression");
-        return std::make_unique<AST::SizeofExpression>(AST::SizeofExpression::Kind::TYPE, std::move(type_node));
+        if (body && body->type == AST::NodeType::DECLARATOR_CLAUSE) {
+          return std::make_unique<AST::SizeofExpression>(AST::SizeofExpression::Kind::TYPE, std::move(body));
+        }
+        return std::make_unique<AST::SizeofExpression>(
+            AST::SizeofExpression::Kind::EXPR,
+            std::make_unique<AST::Parenthetical>(std::move(body)));
       } else if (token.type == TT_ELLIPSES) {
         token = lexer->ReadToken();
         require_token(TT_BEGINPARENTH, "Expected opening '(' after 'sizeof ...'");
@@ -1639,9 +1655,15 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_ALIGNOF: {
       token = lexer->ReadToken();
       if (require_token(TT_BEGINPARENTH, "Expected opening parenthesis ('(') after 'alignof'")) {
-        auto type_node = ParseTypeIdClause();
+        // Same uniform group parse as sizeof; no Parenthetical wrap here
+        // because the alignof printing always supplies the parens.
+        std::unique_ptr<AST::Node> body;
+        {
+          ScopedFlag group(maybe_declarator_group_, true);
+          body = ParseExpression(Precedence::kAll);
+        }
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after alignof-expression");
-        return std::make_unique<AST::AlignofExpression>(std::move(type_node));
+        return std::make_unique<AST::AlignofExpression>(std::move(body));
       } else {
         return nullptr;
       }
@@ -1786,6 +1808,12 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_STATIC: case TT_THREAD_LOCAL: case TT_EXTERN:
     case TT_MUTABLE: case TT_UNION: case TT_DECLSPEC:
     case TT_ENUM: case TT_TYPEDEF: {
+      // Inside a maybe-declarator group, a decl-spec-led run (`const int`,
+      // bare `unsigned`) is a type-id clause, same as the type-name promotion
+      // in the identifier case above.
+      if (maybe_declarator_group_ && next_is_type_specifier()) {
+        return ParseTypeIdClause();
+      }
       herr->Error(token) << "Unexpected declarator";
       return nullptr;
     }

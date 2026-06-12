@@ -240,19 +240,66 @@ TEST(ParserTest, SizeofTypeSpecifierSeq) {
   ASSERT_TRUE((value.flags & jdi::builtin_flag__const->mask) == jdi::builtin_flag__const->value);
 }
 
-// `sizeof(local_var)` -- a parenthesised *value*, not a type. Per types-as-trees,
-// the parser does NOT distinguish this from `sizeof(type)`: anything parenthesised
-// after `sizeof` is parsed as a type-id-shaped tree (Kind::TYPE, a DeclaratorClause
-// whose "type-specifier" is the unresolved name) and the value-vs-type decision is
-// deferred to the semantic phase. The name need not resolve here (see f3e2f144a).
+// `sizeof(local_var)` -- a parenthesised *value*, not a type. The operand goes
+// through the uniform group parse: a type-name would promote to a
+// DeclaratorClause (Kind::TYPE); a non-type name parses as an expression and
+// keeps its source parens as a Parenthetical (Kind::EXPR). The name need not
+// resolve here (see f3e2f144a); if it later resolves to a type, the semantic
+// phase reinterprets.
 TEST(ParserTest, SizeofParenthesizedName) {
   ParserTester test = ParserTester::CreateWithSetUp("sizeof(local_var)");
   auto expr = test->TryParseStatement();
 
   ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
   auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::EXPR);
+  EXPECT_THAT(sizeof_exp->argument.get(), IsParenthetical(IsIdentifier("local_var")));
+}
+
+// A parenthesized value expression with a top-level binary operator. The old
+// unconditional type-id parse stopped at `+` (declarators parse at unary
+// precedence) and failed on the `)`.
+TEST(ParserTest, SizeofParenthesizedExpression) {
+  ParserTester test = ParserTester::CreateWithSetUp("sizeof(x + 1)");
+  auto expr = test->TryParseStatement();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+
+  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
+  auto *sizeof_exp = expr->As<AST::SizeofExpression>();
+  ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::EXPR);
+  EXPECT_THAT(sizeof_exp->argument.get(),
+              IsParenthetical(IsBinaryOperation(TT_PLUS, IsIdentifier("x"), IsLiteral("1"))));
+}
+
+// Decl-spec-led type-ids still classify as types inside the group: the
+// promotion covers TT_DECLSPEC-led runs (`const int`), not just type-names.
+TEST(ParserTest, SizeofConstQualifiedType) {
+  ParserTester test = ParserTester::CreateWithSetUp("sizeof(const int)");
+  auto expr = test->TryParseStatement();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+
+  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
+  auto *sizeof_exp = expr->As<AST::SizeofExpression>();
   ASSERT_EQ(sizeof_exp->kind, AST::SizeofExpression::Kind::TYPE);
   ASSERT_EQ(sizeof_exp->argument->type, AST::NodeType::DECLARATOR_CLAUSE);
+  auto *clause = sizeof_exp->argument->As<AST::DeclaratorClause>();
+  ASSERT_NE(clause->specifiers, nullptr);
+  EXPECT_TRUE((clause->specifiers->flags & jdi::builtin_flag__const->mask) ==
+              jdi::builtin_flag__const->value);
+  if (clause->specifiers->Definition()) {
+    EXPECT_EQ(clause->specifiers->Definition()->name, "int");
+  }
+}
+
+TEST(ParserTest, AlignofParenthesizedExpression) {
+  ParserTester test = ParserTester::CreateWithSetUp("alignof(x + 1)");
+  auto expr = test->TryParseStatement();
+  ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
+
+  ASSERT_EQ(expr->type, AST::NodeType::ALIGNOF);
+  auto *alignof_exp = expr->As<AST::AlignofExpression>();
+  EXPECT_THAT(alignof_exp->type.get(),
+              IsBinaryOperation(TT_PLUS, IsIdentifier("x"), IsLiteral("1")));
 }
 
 // DISABLED: `sizeof` of a template-id. Two gaps compound here: (1) the parser has
@@ -452,15 +499,17 @@ TEST(ParserTest, DeclarationUntypedConstDeclaresVar) {
   EXPECT_EQ(seq->Definition(), test->frontend->look_up("var"));
 }
 
-// A vacuous spec run -- a type-id position whose operand is really a value
-// expression, so NO specifier token was consumed -- must NOT invent a base
-// type; the id-expression slot stays null for the semantic phase to classify.
+// A vacuous spec run -- a type-id position whose operand consumed NO
+// specifier token (here a named-cast target that is a plain unresolved name)
+// -- must NOT invent a base type; the id-expression slot stays null for the
+// semantic phase to classify.
 TEST(ParserTest, EmptySpecRunStaysUntyped) {
-  ParserTester test = ParserTester::CreateWithSetUp("sizeof(local_var)");
+  ParserTester test = ParserTester::CreateWithSetUp("static_cast<local_var>(x)");
   auto expr = test->TryParseStatement();
-  ASSERT_EQ(expr->type, AST::NodeType::SIZEOF);
-  auto *clause = expr->As<AST::SizeofExpression>()->argument->As<AST::DeclaratorClause>();
-  ASSERT_NE(clause, nullptr);
+  ASSERT_EQ(expr->type, AST::NodeType::CAST);
+  auto *cast = expr->As<AST::CastExpression>();
+  ASSERT_EQ(cast->type->type, AST::NodeType::DECLARATOR_CLAUSE);
+  auto *clause = cast->type->As<AST::DeclaratorClause>();
   ASSERT_NE(clause->specifiers, nullptr);
   EXPECT_EQ(clause->specifiers->id_expression, nullptr);
   EXPECT_EQ(clause->specifiers->Definition(), nullptr);
