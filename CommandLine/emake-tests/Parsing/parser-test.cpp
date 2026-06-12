@@ -4106,3 +4106,40 @@ TEST(ParserTest, DISABLED_PostfixOnQualifiedIdThenGlobalAssignment) {
   EXPECT_EQ(glob->lhs, nullptr);
   EXPECT_THAT(assign->right.get(), IsLiteral("10"));
 }
+
+// Statement-leading `::` routes through the shared global-scope dispatch: the
+// qualifier used to be consumed on the way into the declaration router and
+// silently dropped when neither new nor delete followed (`::x = 5` parsed as
+// `x = 5`). It now parses as a global-qualified assignment whose target is a
+// ScopeAccess with a null lhs (= global scope) -- deliberately NOT routed
+// through the unqualified-id path, so neither the local declarations map nor
+// EDL's implicit-local fallback can capture an explicitly global name.
+TEST(ParserTest, StatementLeadingGlobalQualifiedAssignment) {
+  ParserTester test = ParserTester::CreateWithSetUp("::x = 5;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *assign = node->As<AST::BinaryExpression>();
+  EXPECT_EQ(assign->operation.type, TT_EQUALS);
+  ASSERT_EQ(assign->left->type, AST::NodeType::SCOPE_ACCESS);
+  auto *target = assign->left->As<AST::ScopeAccess>();
+  EXPECT_EQ(target->name.content, "x");
+  EXPECT_EQ(target->lhs, nullptr);
+  EXPECT_THAT(assign->right.get(), IsLiteral("5"));
+}
+
+// Same dispatch at operand level: `::x` as a value reads the global name.
+TEST(ParserTest, OperandGlobalQualifiedName) {
+  ParserTester test = ParserTester::CreateWithSetUp("a = ::x;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *assign = node->As<AST::BinaryExpression>();
+  EXPECT_THAT(assign->left.get(), IsIdentifier("a"));
+  ASSERT_EQ(assign->right->type, AST::NodeType::SCOPE_ACCESS);
+  auto *value = assign->right->As<AST::ScopeAccess>();
+  EXPECT_EQ(value->name.content, "x");
+  EXPECT_EQ(value->lhs, nullptr);
+}

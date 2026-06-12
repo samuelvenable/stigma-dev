@@ -1437,6 +1437,7 @@ std::unique_ptr<AST::Node> TryParseDeleteExpression(bool is_global) {
 }
 
 
+
 /// Parse an operand--this includes variables, literals, arrays, and
 /// unary expressions on these.
 // An abstract (nameless) declarator -- the operand position of a type-id with
@@ -1707,14 +1708,35 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     }
 
     case TT_SCOPEACCESS: {
+      // A global `::` can qualify only new, delete, or an unqualified-id (a
+      // globally qualified user TYPE arrives as a plain identifier too,
+      // indistinguishable from a value without resolution -- classifying it
+      // is the semantic phase's job).
       token = lexer->ReadToken();
       if (token.type == TT_S_NEW) {
         return TryParseNewExpression(true);
       } else if (token.type == TT_S_DELETE) {
         return TryParseDeleteExpression(true);
-      } else {
-        return TryParseIdExpression();
       }
+      // A global-qualified id denotes the GLOBAL name only: do NOT delegate
+      // to TryParseIdExpression, whose unqualified path consults the local
+      // `declarations` map and EDL's implicit-local fallback -- neither may
+      // apply under explicit qualification. The qualification is carried as
+      // a ScopeAccess with a null lhs (= global scope); an unresolved name
+      // stays unresolved on the node for the semantic phase to bind in
+      // global scope.
+      if (token.type == TT_IDENTIFIER) {
+        Token name = token;
+        token = lexer->ReadToken();
+        auto access = std::make_unique<AST::ScopeAccess>(
+            nullptr, name, frontend->look_up(name.content));
+        if (token.type == TT_SCOPEACCESS) {
+          return TryParseNestedNameSpecifier(std::move(access));
+        }
+        return access;
+      }
+      herr->Error(token) << "Expected qualified-id after '::', got: '" << token.content << '\'';
+      return nullptr;
     }
 
     case TT_TILDE: {
@@ -2051,12 +2073,11 @@ std::unique_ptr<AST::Node> TryParseControlExpression(SyntaxMode mode_) {
 std::unique_ptr<AST::Node> TryParseDeclOrTypeExpression() {
   if (next_is_decl_specifier() || next_maybe_functional_cast()) {
     if (token.type == TT_SCOPEACCESS) {
-      token = lexer->ReadToken();
-      if (token.type == TT_S_NEW) {
-        return TryParseNewExpression(true);
-      } else if (token.type == TT_S_DELETE) {
-        return TryParseDeleteExpression(true);
-      }
+      // The operand parser owns the global-`::` dispatch (new / delete /
+      // qualified-id); parse the whole expression statement from here. This
+      // used to consume the `::` itself and drop it on the floor when neither
+      // new nor delete followed, so `::x = 5` parsed unqualified.
+      return ParseExpression(Precedence::kAll);
     }
     return TryParseEitherFunctionalCastOrDeclaration(AST::DeclaratorType::NON_ABSTRACT, true, true,
                                                      AST::DeclarationStatement::StorageClass::TEMPORARY);
