@@ -95,6 +95,7 @@ SOFTWARE.
 #include <climits>
 #include <cstdlib>
 #include <unistd.h>
+#include <confname.h>
 #include <sys/types.h>
 #include <process.h>
 #elif defined(__HAIKU__)
@@ -523,12 +524,14 @@ const char *__getexecname(long long pid) {
   #elif (defined(__QNX__) || defined(__QNXNTO__))
   pid_t processid = (pid_t)pid;
   if (processid == -1 || processid == getpid()) {
-    char buffer[PATH_MAX];
+    size_t maximum_path = (size_t)pathconf("/", _PC_PATH_MAX);
+    char *buffer = (char *)malloc(maximum_path);
     if(_cmdname(buffer)) {
       char exe[PATH_MAX];
       if (realpath(buffer, exe)) {
         path = exe;
       }
+      free(buffer);
     }
     if (path.empty()) {
       FILE *fp = fopen("/proc/self/exefile", "r");

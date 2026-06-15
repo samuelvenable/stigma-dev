@@ -77,6 +77,8 @@ SOFTWARE.
 #include <cstdio>
 #include <climits>
 #include <cstdlib>
+#include <unistd.h>
+#include <confname.h>
 #include <process.h>
 #elif defined(__HAIKU__)
 #include <cstdint>
@@ -345,12 +347,14 @@ const char *__getexecname(void) {
     }
   }
   #elif (defined(__QNX__) || defined(__QNXNTO__))
-  char buffer[PATH_MAX];
+  size_t maximum_path = (size_t)pathconf("/", _PC_PATH_MAX);
+  char *buffer = (char *)malloc(maximum_path);
   if(_cmdname(buffer)) {
     char exe[PATH_MAX];
     if (realpath(buffer, exe)) {
       path = exe;
     }
+    free(buffer);
   }
   if (path.empty()) {
     FILE *fp = fopen("/proc/self/exefile", "r");
