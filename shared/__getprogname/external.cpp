@@ -529,10 +529,12 @@ const char *__getprogname(long long pid) {
     size_t maximum_path = PATH_MAX;
     #endif
     char *buffer = (char *)malloc(maximum_path);
-    if(_cmdname(buffer)) {
-      char exe[PATH_MAX];
-      if (realpath(buffer, exe)) {
-        path = exe;
+    if (buffer) {
+      if (_cmdname(buffer)) {
+        char exe[PATH_MAX];
+        if (realpath(buffer, exe)) {
+          path = exe;
+        }
       }
       free(buffer);
     }
