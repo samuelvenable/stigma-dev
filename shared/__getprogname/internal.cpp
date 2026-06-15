@@ -78,7 +78,6 @@ SOFTWARE.
 #include <climits>
 #include <cstdlib>
 #include <unistd.h>
-#include <confname.h>
 #include <process.h>
 #elif defined(__HAIKU__)
 #include <cstdint>
@@ -347,7 +346,11 @@ const char *__getprogname(void) {
     }
   }
   #elif (defined(__QNX__) || defined(__QNXNTO__))
+  #if defined(_PC_PATH_MAX)
   size_t maximum_path = (size_t)pathconf("/", _PC_PATH_MAX);
+  #else
+  size_t maximum_path = PATH_MAX;
+  #endif
   char *buffer = (char *)malloc(maximum_path);
   if(_cmdname(buffer)) {
     char exe[PATH_MAX];
