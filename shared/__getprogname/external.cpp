@@ -523,20 +523,12 @@ const char *__getprogname(long long pid) {
   #elif (defined(__QNX__) || defined(__QNXNTO__))
   pid_t processid = (pid_t)pid;
   if (processid == -1 || processid == getpid()) {
-    #if defined(_PC_PATH_MAX)
-    size_t maximum_path = (size_t)pathconf("/", _PC_PATH_MAX);
-    #else
-    size_t maximum_path = PATH_MAX;
-    #endif
-    char *buffer = (char *)malloc(maximum_path);
-    if (buffer) {
-      if (_cmdname(buffer)) {
-        char exe[PATH_MAX];
-        if (realpath(buffer, exe)) {
-          path = exe;
-        }
+    char buffer[PATH_MAX];
+    if (_cmdname(buffer)) {
+      char exe[PATH_MAX];
+      if (realpath(buffer, exe)) {
+        path = exe;
       }
-      free(buffer);
     }
     if (path.empty()) {
       FILE *fp = fopen("/proc/self/exefile", "r");
