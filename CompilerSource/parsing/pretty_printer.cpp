@@ -310,9 +310,11 @@ bool AST::CppPrettyPrinter::VisitFunctionCallExpression(AST::FunctionCallExpress
     }
   }
 
+  bool varargs_opened = false;
   for (std::size_t i = 0; i < node.arguments.size(); i++) {
     if (is_variadic && i == std::size_t(variadic_index)) {
       print("(enigma::varargs(),");
+      varargs_opened = true;
     }
     VISIT_AND_CHECK(node.arguments[i]);
     if (i < node.arguments.size() - 1) {
@@ -320,7 +322,9 @@ bool AST::CppPrettyPrinter::VisitFunctionCallExpression(AST::FunctionCallExpress
     }
   }
 
-  if (is_variadic) print(")");
+  // Close the varargs wrapper only if it opened: a variadic function called
+  // with no variadic arguments never reaches the opening index.
+  if (varargs_opened) print(")");
 
   print(")");
   return true;
@@ -484,8 +488,9 @@ bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
 
 bool AST::CppPrettyPrinter::VisitArray(AST::Array &node) {
   print("[");
-  if (node.elements.size()) {
-    VISIT_AND_CHECK(node.elements[0]);
+  for (std::size_t i = 0; i < node.elements.size(); ++i) {
+    if (i > 0) print(", ");
+    VISIT_AND_CHECK(node.elements[i]);
   }
   print("]");
   return true;
@@ -723,34 +728,44 @@ bool AST::CppPrettyPrinter::VisitSwitchStatement(AST::SwitchStatement &node) {
 
 bool AST::CppPrettyPrinter::VisitWhileLoop(AST::WhileLoop &node) {
   if (node.kind == AST::WhileLoop::Kind::REPEAT) {
-    print("int strange_name = ");
-  } else {
-    print("while");
-    if (node.condition->type != AST::NodeType::PARENTHETICAL) {
-      print("(");
-    }
+    // Lower `repeat (N) body` to a counted while. The pair is braced so it
+    // acts as ONE statement wherever the repeat sits (an unbraced loop or if
+    // body would otherwise detach the while), and the block scopes the
+    // counter; nesting levels get numbered counters so an inner repeat's
+    // condition can still read outer locals without shadowing surprises.
+    std::string counter = "strange_name";
+    if (repeat_depth_ > 0) counter += std::to_string(repeat_depth_);
+    ++repeat_depth_;
+    print("{ int " + counter + " = ");
+    VISIT_AND_CHECK(node.condition);
+    print("; while(" + counter + "--) ");
+    VISIT_AND_CHECK(node.body);
+    PrintSemiColon(node.body);
+    print(" }");
+    --repeat_depth_;
+    return true;
+  }
 
-    if (node.kind == AST::WhileLoop::Kind::UNTIL) {
-      if (node.condition->type == AST::NodeType::PARENTHETICAL) {
-        print("(!");
-      } else {
-        print("!(");
-      }
+  print("while");
+  if (node.condition->type != AST::NodeType::PARENTHETICAL) {
+    print("(");
+  }
+
+  if (node.kind == AST::WhileLoop::Kind::UNTIL) {
+    if (node.condition->type == AST::NodeType::PARENTHETICAL) {
+      print("(!");
+    } else {
+      print("!(");
     }
   }
 
   VISIT_AND_CHECK(node.condition);
 
-  if (node.kind != AST::WhileLoop::Kind::REPEAT) {
-    if (node.kind == AST::WhileLoop::Kind::UNTIL) {
-      print(")");
-    }
-
-    if (node.condition->type != AST::NodeType::PARENTHETICAL) {
-      print(")");
-    }
-  } else {
-    print("; while(strange_name--)");
+  if (node.kind == AST::WhileLoop::Kind::UNTIL) {
+    print(")");
+  }
+  if (node.condition->type != AST::NodeType::PARENTHETICAL) {
+    print(")");
   }
 
   print(" ");

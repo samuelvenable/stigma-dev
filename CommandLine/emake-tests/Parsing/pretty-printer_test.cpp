@@ -179,9 +179,9 @@ TEST(PrinterTest, test9) {
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
   code =
-      "int strange_name = (3); while(strange_name--){ int xx =12;  foo(12, fo(12), sizeof( int)); "
+      "{ int strange_name = (3); while(strange_name--){ int xx =12;  foo(12, fo(12), sizeof( int)); "
       "while((2)){c--; "
-      "c++; c*=2;}}";
+      "c++; c*=2;}} }";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -545,8 +545,8 @@ TEST(PrinterTest, test26) {
       "condition = (size_a > size_b) ? 1 : 0;result = (condition) ? size_a : size_b;outer = 1;do {"
       "inner = 1;do {inner++;} while (inner <= outer);outer++;} while (!(outer <= 3));result = (c > 10.0) ? ( "
       "int)c "
-      ": b; int strange_name = 123; while(strange_name--){int * z = new (int), d = new (int), g; "
-      "fn(alignof (int), sizeof 4, 12, x+x+(x++)-x*22); }";
+      ": b; { int strange_name = 123; while(strange_name--){int * z = new (int), d = new (int), g; "
+      "fn(alignof (int), sizeof 4, 12, x+x+(x++)-x*22); } }";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -985,7 +985,7 @@ TEST(PrinterTest, test42) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "while(i==1){i++;} while(!(i==1)) {i++;} int strange_name =(4) ; while(strange_name--){i++;}";
+  code = "while(i==1){i++;} while(!(i==1)) {i++;} { int strange_name =(4) ; while(strange_name--){i++;} }";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1515,4 +1515,31 @@ TEST(PrinterTest, test73) {
   std::string printed = v.GetPrintedCode();
 
   ASSERT_TRUE(compare(code, printed));
+}
+
+// Nested repeats: each lowering is braced (one statement wherever it sits,
+// counter scoped) and each nesting level numbers its counter, so the inner
+// loop cannot shadow-decrement the outer one's.
+TEST(PrinterTest, NestedRepeatLowering) {
+  std::string code = "repeat(2) repeat(3) i++";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected =
+      "{ int strange_name = (2); while(strange_name--) "
+      "{ int strange_name1 = (3); while(strange_name1--) i++; } }";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// Array literals print every element, not just the first.
+TEST(PrinterTest, ArrayLiteralAllElements) {
+  std::string code = "x = [1, 2, 3];";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
 }

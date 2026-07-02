@@ -775,6 +775,8 @@ class AST {
     bool print_type;
     bool is_script;
     const LanguageFrontend *language_fe = nullptr;
+    // Nesting depth of `repeat` lowerings; numbers each level's counter.
+    int repeat_depth_ = 0;
 
    public:
     CppPrettyPrinter();
