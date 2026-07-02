@@ -1543,3 +1543,33 @@ TEST(PrinterTest, ArrayLiteralAllElements) {
   ASSERT_TRUE(v.VisitCode(*block));
   ASSERT_TRUE(compare(code, v.GetPrintedCode()));
 }
+
+// enigma::varargs emission insurance ahead of the jdi2 rewrite: variadic
+// detection flows through is_variadic_function/function_variadic_after, which
+// read the JDI definition -- exactly the surface a backend swap can break.
+// max() joins choose() (test64) as a pinned emitter.
+TEST(PrinterTest, VarargsEmissionMax) {
+  std::string code = "y = max(a, b, c, d)";
+  ParserTester test = ParserTester::CreateWithSetUp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "y = max((enigma::varargs(), a, b, c, d));";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// A variadic function called with no variadic arguments emits NO wrapper --
+// and, in particular, no unbalanced closing parenthesis (the pre-#65 bug).
+TEST(PrinterTest, VarargsEmissionZeroArgs) {
+  std::string code = "y = max()";
+  ParserTester test = ParserTester::CreateWithSetUp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "y = max();";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
