@@ -408,13 +408,19 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
 
   auto type_node = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
   auto clause = std::make_unique<AST::DeclaratorClause>(std::move(type_node), std::move(decls));
-  // Record each declared name's owning clause so later id-expressions can
-  // resolve it (the base type lives on clause->specifiers; the per-name
-  // declarator modifiers on its InitDeclarator). Borrowed pointer, valid for
-  // the parse -- the clause is heap-stable across its move into the statement.
-  for (auto &id : clause->declarators)
-    declarations[id->name.content] = clause.get();
+  register_declarations(clause.get());
   return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
+}
+
+// Record each declared name's owning clause so later id-expressions can
+// resolve it (the base type lives on clause->specifiers; the per-name
+// declarator modifiers on its InitDeclarator). Borrowed pointer, valid for
+// the parse -- the clause is heap-stable across its move into the statement.
+// Abstract declarators have no name and register nothing.
+void register_declarations(AST::DeclaratorClause *clause) {
+  for (auto &id : clause->declarators)
+    if (!id->name.content.empty())
+      declarations[id->name.content] = clause;
 }
 
 // True when this spec run carries a length/sign specifier, which names C's
@@ -2391,6 +2397,7 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
               name, std::move(declarator_expr),
               next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
           auto clause = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
+          register_declarations(clause.get());
           return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
         }
       }

@@ -4425,3 +4425,14 @@ TEST(ParserTest, CastTargetReachedByChecker) {
   ASSERT_NE(root, nullptr);
   EXPECT_GT(herr.errors, 0);
 }
+
+// The [stmt.ambig] promotion path declares too: a name promoted out of the
+// call shape (`int(x) = 5`) must land in the declarations map like any other
+// declaration, so later id-expressions read it as a declared local.
+TEST(ParserTest, PromotedDeclarationRegistersName) {
+  ParserTester test = ParserTester::CreateWithSetUp("int(x) = 5;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  EXPECT_EQ(test->declarations.count("x"), 1u);
+}
