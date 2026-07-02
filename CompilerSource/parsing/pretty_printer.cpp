@@ -677,13 +677,14 @@ bool AST::CppPrettyPrinter::VisitIfStatement(AST::IfStatement &node) {
 bool AST::CppPrettyPrinter::VisitForLoop(AST::ForLoop &node) {
   print("for(");
 
-  VISIT_AND_CHECK(node.assignment);
+  // Omitted clauses are null.
+  if (node.assignment) VISIT_AND_CHECK(node.assignment);
   print("; ");
 
-  VISIT_AND_CHECK(node.condition);
+  if (node.condition) VISIT_AND_CHECK(node.condition);
   print("; ");
 
-  VISIT_AND_CHECK(node.increment);
+  if (node.increment) VISIT_AND_CHECK(node.increment);
   print(") ");
 
   if (node.body) {

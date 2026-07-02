@@ -1091,7 +1091,9 @@ std::unique_ptr<AST::Node> ParseParenthetical() {
   auto paren = token;
   token = lexer->ReadToken();
   std::unique_ptr<AST::Node> body;
-  {
+  // `()` is a legitimate empty group (an empty lambda parameter list); the
+  // Parenthetical carries a null expression rather than a sentinel.
+  if (token.type != TT_ENDPARENTH) {
     ScopedFlag group(maybe_declarator_group_, true);
     body = ParseExpression(Precedence::kAll);
   }
@@ -1505,6 +1507,9 @@ bool at_abstract_declarator_end() {
   switch (token.type) {
     case TT_ENDPARENTH: case TT_ENDBRACKET: case TT_COMMA:
     case TT_SEMICOLON:  case TT_GREATER:    case TT_ENDOFCODE:
+    // A block close ends a semicolonless declaration (`{int cc = new int}`),
+    // so it ends an abstract declarator the same way `;` does.
+    case TT_ENDBRACE:
       return true;
     // A leading `[` is an abstract *array* declarator (`int[10]`, `new int[]`).
     // Unlike `(`, it's unambiguous -- no grouped-declarator form begins with
@@ -1532,6 +1537,16 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_BEGINBRACE: case TT_ENDBRACE:
     case TT_ENDPARENTH: case TT_ENDBRACKET:
     case TT_ENDOFCODE: case TT_SEMICOLON:
+      // Not consumed: closers and terminators belong to the caller. Callers
+      // with OPTIONAL expression slots (return values, for-loop clauses,
+      // empty groups and array literals) peek their current token before
+      // parsing, so reaching here is a genuinely missing expression -- raise,
+      // so the SyntaxError substituted upstream always has a diagnostic.
+      if (token.type == TT_ENDOFCODE) {
+        herr->Error(token) << "Expected an expression before end of code";
+      } else {
+        herr->Error(token) << "Expected an expression before '" << token.content << '\'';
+      }
       return nullptr;
     case TT_COLON:
       herr->ReportError(token, "Expected label or ternary expression before colon");
@@ -1594,8 +1609,10 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       token = lexer->ReadToken();
       std::vector<std::unique_ptr<AST::Node>> elements;
 
-      while (std::unique_ptr<AST::Node> element = ParseExpression(Precedence::kComma)) {
-        elements.push_back(std::move(element));
+      // `[]` is a legitimate empty array literal; peek the closer rather
+      // than reading an empty expression.
+      while (token.type != TT_ENDBRACKET && token.type != TT_ENDOFCODE) {
+        elements.push_back(ParseExpression(Precedence::kComma));
         if (token.type != TT_COMMA) break;
         token = lexer->ReadToken();
       }
@@ -1781,7 +1798,14 @@ std::unique_ptr<AST::Node> TryParseOperand() {
         if (token.type == TT_BEGINPARENTH) {
           token = lexer->ReadToken();
           std::vector<AST::PNode> args;
-          args.push_back(ParseExpression(Precedence::kAll));
+          {
+            // `Type(...)` is the same most-vexing ambiguity as the statement
+            // form: the parenthesized content may be an abstract declarator
+            // (`int (*)` as a type-id), so a missing operand is the abstract
+            // leaf, not an error -- the semantic phase classifies the shape.
+            ScopedFlag allow_abstract(allow_abstract_operand_, true);
+            args.push_back(ParseExpression(Precedence::kAll));
+          }
           require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after functional cast");
           return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
                                                     MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs)),
@@ -1942,9 +1966,10 @@ std::unique_ptr<AST::Node> ParseExpression(int precedence, std::unique_ptr<AST::
     return operand;
   }
   // No operand parsed -- expression site reached without anything to parse.
-  // Naming convention: Parse* never returns null. TryParseOperand has already
-  // raised any relevant diagnostic; substitute a SyntaxError so callers can
-  // rely on the result being non-null.
+  // Naming convention: Parse* never returns null. TryParseOperand raises a
+  // diagnostic on every null return (optional-expression callers peek before
+  // calling), so a SyntaxError node never appears in a legitimate tree --
+  // substitute one so callers can rely on the result being non-null.
   return std::make_unique<AST::SyntaxError>(origin);
 }
 
@@ -2366,7 +2391,16 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
       // must split the top-level comma into per-declarator nodes; when it
       // resolves to an expression the comma-expression stands.
       auto callee = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
-      auto call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
+      // The call shape is a maybe-declarator context: when this production
+      // permits an abstract declarator, its argument positions may hold
+      // abstract shapes too (`int (*)[10]` as a nested parameter), so the
+      // abstract-operand flag follows decl_type through the call parse.
+      std::unique_ptr<AST::FunctionCallExpression> call;
+      {
+        ScopedFlag allow_abstract(allow_abstract_operand_,
+                                  decl_type != AST::DeclaratorType::NON_ABSTRACT);
+        call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
+      }
 
       // [stmt.ambig]: "if it can be a declaration, it is."
       // Convert a cast like `int(identifier)` to a declaration.
@@ -2445,7 +2479,8 @@ std::unique_ptr<AST::ForLoop> ParseForLoop() {
         is_conventional = false;
       }
     }
-  } else {
+  } else if (token.type != TT_SEMICOLON) {
+    // All three clauses are optional; an omitted one is null, not a sentinel.
     init = ParseExpression(Precedence::kAll, nullptr);
   }
   if (token.type == TT_ENDPARENTH) {
@@ -2453,11 +2488,11 @@ std::unique_ptr<AST::ForLoop> ParseForLoop() {
     token = lexer->ReadToken();
   }
   require_token(TT_SEMICOLON, "Expected semicolon (';') after for-loop initializer");
-  if (token.type != TT_SEMICOLON) {
+  if (token.type != TT_SEMICOLON && token.type != TT_ENDPARENTH) {
     cond = TryParseControlExpression(SyntaxMode::GML);
   }
   require_token(TT_SEMICOLON, "Expected semicolon (';') after for-loop condition");
-  if (token.type != TT_SEMICOLON) {
+  if (token.type != TT_SEMICOLON && token.type != TT_ENDPARENTH) {
     incr = ParseExpression(Precedence::kAll);
   }
 
@@ -2515,15 +2550,17 @@ std::unique_ptr<AST::WhileLoop> ParseRepeatStatement() {
 
 std::unique_ptr<AST::ReturnStatement> ParseReturnStatement() {
   token = lexer->ReadToken();
-  auto value = ParseExpression(Precedence::kAll);
+  // The value is optional: a bare `return` carries a null expression, not a
+  // sentinel. Peek the statement's legitimate enders before parsing.
+  AST::PNode value;
+  if (token.type != TT_SEMICOLON && token.type != TT_ENDBRACE &&
+      token.type != TT_ENDOFCODE) {
+    value = ParseExpression(Precedence::kAll);
+  }
 
   MaybeConsumeSemicolon();
 
-  if (value) {
-    return std::make_unique<AST::ReturnStatement>(std::move(value), false);
-  } else {
-    return std::make_unique<AST::ReturnStatement>(nullptr, false);
-  }
+  return std::make_unique<AST::ReturnStatement>(std::move(value), false);
 }
 
 std::unique_ptr<AST::BreakStatement> ParseBreakStatement() {

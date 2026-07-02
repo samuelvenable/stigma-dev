@@ -4436,3 +4436,46 @@ TEST(ParserTest, PromotedDeclarationRegistersName) {
   ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
   EXPECT_EQ(test->declarations.count("x"), 1u);
 }
+
+// Optional expression slots hold null, never a silent SyntaxError: sentinels
+// only enter a tree alongside a raised diagnostic. The harness handler
+// enforces the no-error half of each of these.
+TEST(ParserTest, ReturnWithoutValueIsNull) {
+  ParserTester test = ParserTester::CreateWithSetUp("return;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::RETURN);
+  EXPECT_EQ(node->As<AST::ReturnStatement>()->expression, nullptr);
+}
+
+TEST(ParserTest, EmptyArrayLiteral) {
+  ParserTester test = ParserTester::CreateWithSetUp("x = [];");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *rhs = node->As<AST::BinaryExpression>()->right.get();
+  ASSERT_EQ(rhs->type, AST::NodeType::ARRAY);
+  EXPECT_EQ(rhs->As<AST::Array>()->elements.size(), 0u);
+}
+
+TEST(ParserTest, EmptyLambdaParameterList) {
+  ParserTester test = ParserTester::CreateWithSetUp("() => c;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::LAMBDA_EXPRESSION);
+  auto *lambda = node->As<AST::LambdaExpression>();
+  ASSERT_EQ(lambda->parameters->type, AST::NodeType::PARENTHETICAL);
+  EXPECT_EQ(lambda->parameters->As<AST::Parenthetical>()->expression, nullptr);
+}
+
+TEST(ParserTest, ForLoopOmittedClausesAreNull) {
+  ParserTester test = ParserTester::CreateWithSetUp("for (; a < 2; ) b();");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::FOR);
+  auto *loop = node->As<AST::ForLoop>();
+  EXPECT_EQ(loop->assignment, nullptr);
+  ASSERT_NE(loop->condition, nullptr);
+  EXPECT_EQ(loop->increment, nullptr);
+  ASSERT_NE(loop->body, nullptr);
+}
