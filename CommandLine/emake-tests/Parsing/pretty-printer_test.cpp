@@ -470,8 +470,10 @@ TEST(PrinterTest, test23) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
+  // `char` round-trips as written; canonicalizing it to `signed char` was the
+  // pre-[E] expectation this test carried after test21/22 were fixed.
   code =
-      "do {signed char j = '1';while (j <= '2') {for (signed char k = 'a'; k <= 'b'; ++k) {signed char l = 'X';do "
+      "do {char j = '1';while (j <= '2') {for (char k = 'a'; k <= 'b'; ++k) {char l = 'X';do "
       "{switch (int((i))) {case "
       "'A':{break;}case 'B':{break;}default:{break;}}condition = (i == 'A' && j == '1') || (k == 'b' && l == 'Y');if "
       "(condition) {c++;}++l;} while (l <= 'Y');k--;k++;}++j;}++i;} while (i <= 'B');";
@@ -666,12 +668,12 @@ TEST(PrinterTest, test28) {
       " int *num1 = new ( int)(5);  int *num2 = new ( int)(3);  int *result = new "
       "( "
       "int);  int choice = 2; do {switch(int((choice))) {case "
-      "1: {*(result) = *(num1) + *(num2);break;} case 2:{ *(result) = *(num1) - *(num2);break;} case 3:{ *(result) = "
-      "*(num1) * "
-      "*(num2);break;} case 4: {if (*(num2) != 0) { int tempResult = static_cast< int>(*(num1)) / "
-      "static_cast< int>(*(num2));*(result) = static_cast< int>(tempResult);} else {*(result) = "
-      "0;}break;}case 5:{*(result) = "
-      "static_cast< int>(sqrt(static_cast< int>(*(num1))));break;} default: {*(result) = "
+      "1: {*result = *num1 + *num2;break;} case 2:{ *result = *num1 - *num2;break;} case 3:{ *result = "
+      "*num1 * "
+      "*num2;break;} case 4: {if (*num2 != 0) { int tempResult = static_cast< int>(*num1) / "
+      "static_cast< int>(*num2);*result = static_cast< int>(tempResult);} else {*result = "
+      "0;}break;}case 5:{*result = "
+      "static_cast< int>(sqrt(static_cast< int>(*num1)));break;} default: {*result = "
       "0;break;}}choice++; }while "
       "(choice <= "
       "5);";
@@ -929,7 +931,9 @@ TEST(PrinterTest, test40) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "int((*(x))[5] + 6); int *(*a)[10] = nullptr;  int(*((*(a))[10]) + b); int(*(*(*(*(x) + 4))));";
+  // Source grouping round-trips verbatim (no synthesized parens, per [B]);
+  // only the second statement reshapes, via its promotion to a declaration.
+  code = "int((*x)[5] + 6); int *(*a)[10] = nullptr;  int(*(*a)[10] + b); int(*(*(*(*x + 4))));";
 
   ASSERT_TRUE(compare(code, printed));
 }
