@@ -23,6 +23,8 @@
 #include <cstdio>
 #include "languages/lang_CPP.h"
 
+#include <set>
+
 string lang_CPP::get_name() { return "C++"; }
 
 void lang_CPP::load_extension_locals() {
@@ -191,9 +193,18 @@ syntax_error *lang_CPP::definitionsModified(const char* wscode,
 
   enigma::parsing::StdErrorHandler hack;  // TODO: FIXME: This should be using a central error handler...
   cout << "Translating macros to EDL...\n";
-  for (const auto &macro_pair : main_context->get_macros())
+  // The syntax-quirk lowering macros (syntax_quirks.h) exist so EMITTED C++
+  // can carry EDL's operator keywords verbatim and lower at C++ compile time.
+  // They must not expand in EDL source: there, `repeat`/`until` are statement
+  // productions and `mod`/`div` are operator keywords (TT_MOD/TT_DIV), and a
+  // macro expansion would hijack them before the keyword table sees the name.
+  static const std::set<std::string_view> kEmissionOnlyMacros{
+      "repeat", "until", "mod", "div"};
+  for (const auto &macro_pair : main_context->get_macros()) {
+    if (kEmissionOnlyMacros.count(macro_pair.first)) continue;
     builtin_macros_.insert({macro_pair.first,
                             TranslateMacro(*macro_pair.second, &hack)});
+  }
 
   cout << "Grabbing locals...\n";
 

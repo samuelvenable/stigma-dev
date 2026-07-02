@@ -2537,34 +2537,18 @@ repeat (10) {
 }
 
 // Test that verifies token types in the mod macro expansion
-TEST(ParserTest, TokenTypeCorrection_ModMacro) {
-  // The mod macro expands to %(variant)
-  // Test that when this is used, the % and parentheses have correct types
-  std::string code = "(x mod 2) == 1;";
-  
-  ParserTester test = ParserTester::CreateWithSetUp(code);
+TEST(ParserTest, ModKeywordInComparison) {
+  ParserTester test = ParserTester::CreateWithSetUp("(x mod 2) == 1;");
   auto node = test->TryParseStatement();
   ASSERT_NE(node, nullptr);
   ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
-  
-  // Verify the expression structure
   ASSERT_EQ(node->type, AST::NodeType::BINARY_EXPRESSION);
   auto *bin = node->As<AST::BinaryExpression>();
-  ASSERT_NE(bin, nullptr);
-  
-  // The == operator should be TT_EQUALTO, not TT_IDENTIFIER
   ASSERT_EQ(bin->operation.type, TT_EQUALTO);
-  
-  // The left side should be a parenthetical expression with mod operation
   ASSERT_EQ(bin->left->type, AST::NodeType::PARENTHETICAL);
-  auto *paren = bin->left->As<AST::Parenthetical>();
-  ASSERT_NE(paren, nullptr);
-  ASSERT_EQ(paren->expression->type, AST::NodeType::BINARY_EXPRESSION);
-  
-  // The mod operation should expand to %, which should be TT_PERCENT, not TT_IDENTIFIER
-  auto *mod_op = paren->expression->As<AST::BinaryExpression>();
-  ASSERT_NE(mod_op, nullptr);
-  ASSERT_EQ(mod_op->operation.type, TT_PERCENT);
+  EXPECT_THAT(bin->left->As<AST::Parenthetical>()->expression.get(),
+              IsBinaryOperation(TT_MOD, IsIdentifier("x"), IsLiteral("2")));
+  EXPECT_THAT(bin->right.get(), IsLiteral("1"));
 }
 
 // Test parameter extraction for random() function
@@ -3761,53 +3745,19 @@ for (a = 0; a < 22; a += 1)            //Loop through the field.
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
 }
 
-TEST(ParserTest, ModMacroExpansion) {
-  // Test that the 'mod' macro expands correctly before parsing
-  // This verifies macro expansion happens before keyword translation
-  // The macro is defined as: #define mod %(variant)
-  // Note: The macro definition is unusual - it expands to %(variant), not just %
-  // For the expression (x mod 2), the macro should expand mod before parsing
+TEST(ParserTest, ModKeywordIsBinaryOperator) {
+  // `mod` is an EDL operator keyword (TT_MOD), not a macro: the engine's
+  // syntax_quirks.h lowers the keyword in EMITTED C++, so the tree keeps it
+  // verbatim. (The old test expected the emission-side macro to expand in
+  // EDL source, which would have hijacked the keyword.)
   ParserTester test = ParserTester::CreateWithSetUp("(x mod 2);");
-  
   auto node = test->TryParseStatement();
   ASSERT_NE(node, nullptr);
-  
-  // If macro expansion works, we should parse successfully
-  // The macro expands 'mod' to '%', so (x mod 2) becomes (x % 2)
   ASSERT_EQ(test->current_token().type, TT_ENDOFCODE);
-  
-  // Verify it's a parenthetical expression
   ASSERT_EQ(node->type, AST::NodeType::PARENTHETICAL);
   auto *paren = node->As<AST::Parenthetical>();
-  ASSERT_NE(paren, nullptr);
-  ASSERT_NE(paren->expression, nullptr);
-  
-  // Verify the expression is a binary expression
-  ASSERT_EQ(paren->expression->type, AST::NodeType::BINARY_EXPRESSION);
-  auto *bin = paren->expression->As<AST::BinaryExpression>();
-  ASSERT_NE(bin, nullptr);
-  
-  // The macro should expand 'mod' to '%', so we should get TT_PERCENT, not TT_MOD
-  // (If the macro wasn't expanded, we'd get a parse error or TT_MOD)
-  ASSERT_EQ(bin->operation.type, TT_PERCENT);
-  
-  // Verify left operand is 'x'
-  assert_identifier_is(bin->left.get(), "x");
-  
-  // Verify right operand is '2'
-  // Note: The macro expands to %(variant), so the right operand might be a parenthetical
-  // expression (variant) followed by 2, or it might be parsed differently
-  // For now, just verify the operation is TT_PERCENT (macro expanded)
-  // The exact structure depends on how %(variant) is parsed
-  if (bin->right->type == AST::NodeType::LITERAL) {
-    auto *right = bin->right->As<AST::Literal>();
-    ASSERT_NE(right, nullptr);
-    ASSERT_EQ(std::get<std::string>(right->value.value), "2");
-  } else {
-    // The macro expands to %(variant), so the structure might be different
-    // Just verify the operation type is correct
-    ASSERT_EQ(bin->operation.type, TT_PERCENT);
-  }
+  EXPECT_THAT(paren->expression.get(),
+              IsBinaryOperation(TT_MOD, IsIdentifier("x"), IsLiteral("2")));
 }
 
 // Test decimal literals starting with . in expressions (the bug we fixed)
