@@ -4381,3 +4381,47 @@ TEST(ParserTest, TwoBaseTypesDiagnosedByChecker) {
   ASSERT_NE(root, nullptr);
   EXPECT_GT(herr.errors, 0);
 }
+
+// Switch bodies are owned by their case/default nodes and must be traversed:
+// the checker's if(=)-to-(==) correction now reaches a condition inside a
+// case body. (The body statements were invisible to visitors before.)
+TEST(ParserTest, SwitchBodyReachedByChecker) {
+  struct SilentHandler : public ErrorHandler {
+    void ReportError(CodeSnippet, std::string_view) final {}
+    void ReportWarning(CodeSnippet, std::string_view) final {}
+  } herr;
+  Lexer lexer(std::string("switch(x){case 1: if (a = b) c;}"),
+              &ParseContext::ForTesting(true), &herr);
+  auto root = enigma::parsing::Parse(&lexer, &herr);
+  ASSERT_NE(root, nullptr);
+  ASSERT_EQ(root->type, AST::NodeType::BLOCK);
+  auto &stmts = root->As<AST::CodeBlock>()->statements;
+  ASSERT_EQ(stmts.size(), 1u);
+  ASSERT_EQ(stmts[0]->type, AST::NodeType::SWITCH);
+  auto *sw = stmts[0]->As<AST::SwitchStatement>();
+  ASSERT_EQ(sw->body->statements.size(), 1u);
+  ASSERT_EQ(sw->body->statements[0]->type, AST::NodeType::CASE);
+  auto *body = sw->body->statements[0]->As<AST::CaseStatement>()->statements.get();
+  ASSERT_EQ(body->statements.size(), 1u);
+  ASSERT_EQ(body->statements[0]->type, AST::NodeType::IF);
+  auto *cond = body->statements[0]->As<AST::IfStatement>()->condition.get();
+  ASSERT_EQ(cond->type, AST::NodeType::PARENTHETICAL);
+  auto *cmp = cond->As<AST::Parenthetical>()->expression.get();
+  ASSERT_EQ(cmp->type, AST::NodeType::BINARY_EXPRESSION);
+  EXPECT_EQ(cmp->As<AST::BinaryExpression>()->operation.type, TT_EQUALTO);
+}
+
+// Cast targets are traversed too: the two-base-types evidence inside a cast's
+// type clause now reaches the checker (the #61 diagnostic previously could
+// not fire inside a cast).
+TEST(ParserTest, CastTargetReachedByChecker) {
+  struct CountingHandler : public ErrorHandler {
+    int errors = 0;
+    void ReportError(CodeSnippet, std::string_view) final { ++errors; }
+    void ReportWarning(CodeSnippet, std::string_view) final {}
+  } herr;
+  Lexer lexer(std::string("y = (int float)x;"), &ParseContext::ForTesting(true), &herr);
+  auto root = enigma::parsing::Parse(&lexer, &herr);
+  ASSERT_NE(root, nullptr);
+  EXPECT_GT(herr.errors, 0);
+}

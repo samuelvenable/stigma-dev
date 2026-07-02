@@ -347,7 +347,7 @@ void AST::AlignofExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, type);
 }
 void AST::CastExpression::RecursiveSubVisit(Visitor &visitor) {
-  RV(visitor, expr);
+  RV(visitor, type, expr);
 }
 void AST::Parenthetical::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expression);
@@ -386,13 +386,15 @@ void AST::DoLoop::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, body, condition);
 }
 void AST::CaseStatement::RecursiveSubVisit(Visitor &visitor) {
-  RV(visitor, value);
+  RV(visitor, value, statements);
 }
 void AST::DefaultStatement::RecursiveSubVisit(Visitor &visitor) {
-  (void) visitor;  // Label must preceed a statement, but does not own it
+  // The parser nests each label's statements inside the node (see
+  // ParseCaseOrDefaultStatement), so they are this node's to visit.
+  RV(visitor, statements);
 }
 void AST::SwitchStatement::RecursiveSubVisit(Visitor &visitor) {
-  RV(visitor, expression);
+  RV(visitor, expression, body);
 }
 void AST::ReturnStatement::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, expression);
