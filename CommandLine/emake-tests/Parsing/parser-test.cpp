@@ -4350,3 +4350,34 @@ TEST(ParserTest, TypeIdTemplateIdShape) {
   ASSERT_EQ(ti->args.size(), 1u);
   EXPECT_EQ(ti->args[0]->type, AST::NodeType::DECLARATOR_CLAUSE);
 }
+
+// A specifier run names at most one base type, but the parser no longer
+// judges that mid-parse: the surplus tree is retained on the spec list as
+// evidence (the later name wins the id-expression slot) and the parse itself
+// stays clean -- the harness handler enforces the no-error half.
+TEST(ParserTest, TwoBaseTypesRetainedForChecker) {
+  ParserTester test = ParserTester::CreateWithSetUp("int float x;");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->declspecs, nullptr);
+  ASSERT_EQ(seq->declspecs->extra_base_types.size(), 1u);
+  EXPECT_THAT(seq->declspecs->extra_base_types[0].get(), IsIdentifier("int"));
+  EXPECT_THAT(seq->id_expression.get(), IsIdentifier("float"));
+}
+
+// The diagnostic itself moved to the post-parse checker (the interim home of
+// semantic judgments), which fires when the full Parse() pipeline runs.
+TEST(ParserTest, TwoBaseTypesDiagnosedByChecker) {
+  struct CountingHandler : public ErrorHandler {
+    int errors = 0;
+    void ReportError(CodeSnippet, std::string_view) final { ++errors; }
+    void ReportWarning(CodeSnippet, std::string_view) final {}
+  } herr;
+  Lexer lexer(std::string("int float x;"), &ParseContext::ForTesting(true), &herr);
+  auto root = enigma::parsing::Parse(&lexer, &herr);
+  ASSERT_NE(root, nullptr);
+  EXPECT_GT(herr.errors, 0);
+}

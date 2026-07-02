@@ -333,7 +333,9 @@ bool AST::DebugPrinter::VisitImplicitType(AST::ImplicitType &node) {
 }
 
 void AST::DeclSpecList::RecursiveSubVisit(Visitor &visitor) {
-  (void) visitor;  // Leaf: specs are Tokens, not AST nodes.
+  // `specs` are Tokens, not nodes; any surplus base-type trees are visitable
+  // (diagnostics), though never printed.
+  RV(visitor, extra_base_types);
 }
 void AST::LambdaExpression::RecursiveSubVisit(Visitor &visitor) {
   RV(visitor, parameters, body);

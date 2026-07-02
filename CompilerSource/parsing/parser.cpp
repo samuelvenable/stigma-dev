@@ -849,7 +849,7 @@ bool matches_token_type(jdi::definition *def, const Token &tok) {
   }
 }
 
-AST::PNode TryParseElaboratedName(FullType *type) {
+AST::PNode TryParseElaboratedName() {
   Token tok = token;
 
   token = lexer->ReadToken();
@@ -871,21 +871,26 @@ AST::PNode TryParseElaboratedName(FullType *type) {
     scope_tree = TryParseNestedNameSpecifier(std::move(scope_tree));
   }
 
+  // The elaborated form asserts its referent's kind; check it only when the
+  // name actually resolved. An unresolved name stays on the tree for the
+  // semantic phase -- whether it exists is not the parser's judgment.
   jdi::definition *def = id_expression_def(scope_tree);
-  if (def != nullptr && matches_token_type(def, tok)) {
-    type->def = def;
-  } else {
-    herr->Error(name) << "Given specifier does not refer to a declared enum";
+  if (def != nullptr && !matches_token_type(def, tok)) {
+    herr->Error(name) << "'" << name.content << "' does not name "
+                      << (tok.type == TT_ENUM ? "an " : "a ") << tok.content;
   }
   return scope_tree;
 }
 
-void maybe_assign_full_type(FullType *type, jdi::definition *def, Token token) {
-  if (def != nullptr && type->def == nullptr) {
-    type->def = def;
-  } else if (type->def != nullptr) {
-    herr->Error(token) << "Usage of two types in type specifier";
-  }
+// Install `base` as the run's base type. A specifier run names at most one;
+// if the slot is already taken, the earlier tree is retained on the spec
+// list's extra_base_types as evidence for the post-parse checker, which owns
+// the "two types in one specifier" diagnostic. The later name wins the slot,
+// matching the id-expression threading since step 2A.
+void stash_base_type(AST::DeclSpecList *specs, AST::PNode &slot, AST::PNode base) {
+  if (base == nullptr) return;
+  if (slot != nullptr) specs->extra_base_types.push_back(std::move(slot));
+  slot = std::move(base);
 }
 
 jdi::definition *get_builtin(std::string_view name) {
@@ -896,41 +901,35 @@ jdi::definition *get_builtin(std::string_view name) {
   return frontend->look_up(std::string(name));
 }
 
-AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
+AST::PNode TryParseTypeSpecifier(AST::DeclSpecList *specs) {
   AST::PNode id_expression;
   Token start = token;
   switch (token.type) {
     case TT_TYPE_NAME: {
       if (token.content == "long" || token.content == "short") {
-        if (flag_matches(type->flags, jdi::builtin_flag__long)) {
+        if (flag_matches(specs->flags, jdi::builtin_flag__long)) {
            if (token.content == "long") {
              // long + long = long long: swap the length field's value.
              const std::size_t field = flag_mask(jdi::builtin_flag__long);
-             const std::size_t llong = flag_value(jdi::builtin_flag__long_long);
-             type->flags  = (type->flags  & ~field) | llong;
-             specs->flags = (specs->flags & ~field) | llong;
+             specs->flags = (specs->flags & ~field) | flag_value(jdi::builtin_flag__long_long);
              specs->specs.push_back(token);
            } else if (token.content == "short") {
              herr->Error(token) << "Conflicting usage of 'long' and 'short' in the same type specifier";
            }
-        } else if (flag_matches(type->flags, jdi::builtin_flag__short) && token.content == "long") {
+        } else if (flag_matches(specs->flags, jdi::builtin_flag__short) && token.content == "long") {
           herr->Error(token) << "Conflicting usage of 'short' and 'long' in the same type specifier";
-        } else if (flag_matches(type->flags, jdi::builtin_flag__long_long)) {
+        } else if (flag_matches(specs->flags, jdi::builtin_flag__long_long)) {
           if (token.content == "long") {
             herr->Error(token) << "Too many 'long's in type specifier";
           } else if (token.content == "short") {
             herr->Error(token) << "Conflicting usage of 'short' and 'long long' in the same type specifier";
           }
         } else {
-          const std::size_t value = flag_value(lookup_decflag(token.content));
-          type->flags |= value;
-          specs->flags |= value;
+          specs->flags |= flag_value(lookup_decflag(token.content));
           specs->specs.push_back(token);
         }
       } else {
-        auto def = get_builtin(token.content);
-        maybe_assign_full_type(type, def, token);
-        id_expression = std::make_unique<AST::IdentifierAccess>(def, token);
+        id_expression = std::make_unique<AST::IdentifierAccess>(get_builtin(token.content), token);
       }
       token = lexer->ReadToken();
       break;
@@ -938,13 +937,11 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
 
     case TT_IDENTIFIER: {
       id_expression = TryParsePrefixIdentifier();
-      maybe_assign_full_type(type, id_expression_def(id_expression), start);
       break;
     }
 
     case TT_SCOPEACCESS: {
       id_expression = TryParseNestedNameSpecifier(nullptr);
-      maybe_assign_full_type(type, id_expression_def(id_expression), start);
       break;
     }
 
@@ -955,10 +952,9 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
         id_expression = TryParseNestedNameSpecifier(std::move(id_expression));
       }
 
-      jdi::definition *def = id_expression_def(id_expression);
-      if (def != nullptr) {
-        maybe_assign_full_type(type, def, start);
-      } else {
+      // decltype RESOLUTION is unimplemented (Decltype::Definition() is
+      // always null), so a decltype base type still reports here.
+      if (id_expression_def(id_expression) == nullptr) {
         herr->Error(start) << "Could not parse decltype specifier";
       }
       break;
@@ -966,7 +962,6 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
 
     case TT_TYPENAME: {
       id_expression = TryParseTypenameSpecifier();
-      maybe_assign_full_type(type, id_expression_def(id_expression), start);
       break;
     }
 
@@ -977,18 +972,17 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
         // reverse order is not (`signed` writes none) and is caught post-parse
         // by the SyntaxChecker's token-based check. The duplicate warning
         // likewise exempts `signed`, whose all-zero flag "matches" any run.
-        if (flag_matches(type->flags, jdi::builtin_flag__unsigned) && token.content == "signed") {
+        if (flag_matches(specs->flags, jdi::builtin_flag__unsigned) && token.content == "signed") {
           herr->Error(token) << "Conflicting use of 'unsigned' and 'signed' in the same type specifier";
-        } else if (flag_matches(type->flags, flag) && token.content != "signed") {
+        } else if (flag_matches(specs->flags, flag) && token.content != "signed") {
           herr->Warning(token) << "Duplicate usage of flags in type specifier";
         } else {
-          type->flags |= flag_value(flag);
           specs->flags |= flag_value(flag);
           specs->specs.push_back(token);
         }
         token = lexer->ReadToken();
       } else if (next_is_class_key() || token.type == TT_ENUM) {
-        id_expression = TryParseElaboratedName(type);
+        id_expression = TryParseElaboratedName();
       } else {
         herr->Error(token) << "Given token does not specify a valid type specifier";
       }
@@ -998,7 +992,7 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
   return id_expression;
 }
 
-std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList *specs,
+std::pair<bool, bool> TryParseTypeSpecifierSeq(AST::DeclSpecList *specs,
                                                AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
   while (next_is_type_specifier() || next_is_user_defined_type() ||
@@ -1009,8 +1003,8 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList
     } else if (token.content == "local") {
       global_local.second = true;
       token = lexer->ReadToken();
-    } else if (AST::PNode base = TryParseTypeSpecifier(type, specs)) {
-      out_id_expression = std::move(base);
+    } else {
+      stash_base_type(specs, out_id_expression, TryParseTypeSpecifier(specs));
     }
   }
   return global_local;
@@ -1021,13 +1015,10 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList
 // specifier tokens and the flag bitmask) and the base type's id-expression tree;
 // the seq's Definition() reads the resolved type back from that tree root.
 std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
-  FullType type;
   auto declspecs = std::make_unique<AST::DeclSpecList>();
   AST::PNode id_expression;
   while (next_is_type_specifier() || next_is_user_defined_type()) {
-    if (AST::PNode base = TryParseTypeSpecifier(&type, declspecs.get())) {
-      id_expression = std::move(base);
-    }
+    stash_base_type(declspecs.get(), id_expression, TryParseTypeSpecifier(declspecs.get()));
   }
 
   return MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
@@ -1107,7 +1098,7 @@ std::unique_ptr<AST::Node> ParseParenthetical() {
   return std::make_unique<AST::Parenthetical>(std::move(body));
 }
 
-void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs, AST::PNode &out_id_expression) {
+void TryParseDeclSpecifier(AST::DeclSpecList *specs, AST::PNode &out_id_expression) {
   switch (token.type) {
     case TT_TYPEDEF: {
       // `typedef` is a decl-specifier; the following type-specifier-seq and
@@ -1140,7 +1131,6 @@ void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs, AST::PNode 
           token.type == TT_MUTABLE ? jdi::builtin_flag__mutable
           : token.type == TT_INLINE ? jdi::builtin_flag__inline
                                     : jdi::builtin_flag__static;
-      type->flags |= flag_value(flag);
       specs->flags |= flag_value(flag);
       specs->specs.push_back(token);
       token = lexer->ReadToken();
@@ -1149,14 +1139,13 @@ void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs, AST::PNode 
 
     default:
       if (next_is_type_specifier() || next_is_user_defined_type()) {
-        if (AST::PNode base = TryParseTypeSpecifier(type, specs))
-          out_id_expression = std::move(base);
+        stash_base_type(specs, out_id_expression, TryParseTypeSpecifier(specs));
         break;
       }
   }
 }
 
-std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList *specs,
+std::pair<bool, bool> TryParseDeclSpecifierSeq(AST::DeclSpecList *specs,
                                                AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
   while (next_is_decl_specifier() || next_is_user_defined_type() ||
@@ -1168,7 +1157,7 @@ std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList
       global_local.second = true;
       token = lexer->ReadToken();
     } else
-      TryParseDeclSpecifier(type, specs, out_id_expression);
+      TryParseDeclSpecifier(specs, out_id_expression);
   }
   return global_local;
 }
@@ -1294,10 +1283,9 @@ std::unique_ptr<AST::Node> TryParseDeclarations(
   bool is_global = token.content == "global";
   bool is_local = token.content == "local";
   if (next_is_decl_specifier() || is_global || is_local) {
-    FullType type;
     auto declspecs = std::make_unique<AST::DeclSpecList>();
     AST::PNode id_expression;
-    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(&type, declspecs.get(), id_expression);
+    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(declspecs.get(), id_expression);
     if (global_local.first && global_local.second) {
       herr->Error(token) << "Cannot have both 'global' and 'local' in the same declaration";
       return nullptr;
@@ -1782,9 +1770,8 @@ std::unique_ptr<AST::Node> TryParseOperand() {
         return ParseTypeIdClause();
       }
       if (next_maybe_functional_cast()) {
-        FullType type;
         auto declspecs = std::make_unique<AST::DeclSpecList>();
-        AST::PNode id_expression = TryParseTypeSpecifier(&type, declspecs.get());
+        AST::PNode id_expression = TryParseTypeSpecifier(declspecs.get());
         if (token.type == TT_BEGINPARENTH) {
           token = lexer->ReadToken();
           std::vector<AST::PNode> args;
@@ -2340,14 +2327,13 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
     AST::DeclaratorType decl_type, bool parse_unbounded,
     bool maybe_c_style_cast, AST::DeclarationStatement::StorageClass sc) {
   if (next_maybe_functional_cast()) {
-    FullType type;
     auto declspecs = std::make_unique<AST::DeclSpecList>();
-    AST::PNode id_expression = TryParseTypeSpecifier(&type, declspecs.get());
+    AST::PNode id_expression = TryParseTypeSpecifier(declspecs.get());
     if (next_is_type_specifier() ||
         // Make sure we don't accidentally consume a c-style cast when its required
         (!(maybe_c_style_cast && token.type == TT_ENDPARENTH) &&
          (token.type != TT_BEGINBRACE && token.type != TT_BEGINPARENTH))) {
-      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(&type, declspecs.get(), id_expression);
+      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(declspecs.get(), id_expression);
       if (global_local.first && global_local.second) {
         herr->Error(token) << "Cannot have both `global` and `local` storage class specifiers";
       }
@@ -2636,12 +2622,45 @@ std::unique_ptr<AST::WithStatement> ParseWithStatement() {
 
 };  // class AstBuilder
 
+// The source token of an id-expression tree's final segment, for reporting
+// against; null for token-free roots (ImplicitType, Decltype).
+static const Token *id_expression_token(AST::Node *node) {
+  if (node == nullptr) return nullptr;
+  switch (node->type) {
+    case AST::NodeType::IDENTIFIER:
+      return &node->As<AST::IdentifierAccess>()->name;
+    case AST::NodeType::SCOPE_ACCESS:
+      return &node->As<AST::ScopeAccess>()->name;
+    case AST::NodeType::TEMPLATE_ID:
+      return id_expression_token(node->As<AST::TemplateId>()->name.get());
+    default:
+      return nullptr;
+  }
+}
+
 class SyntaxChecker : public AST::Visitor {
   ErrorHandler *herr;
   const LanguageFrontend * frontend;
 
  public:
   SyntaxChecker(ErrorHandler *herr, const LanguageFrontend *fe) : herr(herr), frontend(fe) {}
+
+  bool VisitTypeSpecifierSeq(AST::TypeSpecifierSeq &node) {
+    // A specifier run names at most one base type. The parser retains any
+    // surplus trees on the spec list (last one wins the id-expression slot)
+    // rather than judging mid-parse; the diagnostic lives here, reported
+    // against the winning (i.e. colliding) name.
+    if (node.declspecs && !node.declspecs->extra_base_types.empty()) {
+      if (const Token *at = id_expression_token(node.id_expression.get())) {
+        herr->Error(*at) << "Usage of two types in type specifier";
+      } else if (!node.declspecs->specs.empty()) {
+        herr->Error(node.declspecs->specs.front()) << "Usage of two types in type specifier";
+      }
+    }
+    node.RecursiveSubVisit(*this);
+    return false;
+  }
+
   bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) {
     if (node.function->type == AST::NodeType::IDENTIFIER) {
       auto func = node.function->As<AST::IdentifierAccess>();

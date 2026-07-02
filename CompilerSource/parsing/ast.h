@@ -19,11 +19,12 @@
 #define ENIGMA_COMPILER_PARSING_AST_h
 
 #include "win32_macro_guard.h"
-#include "full_type.h"
 #include "error_reporting.h"
 #include "lexer.h"
 #include "tokens.h"
 #include "darray.h"
+
+#include <JDI/src/Storage/definition.h>
 
 #include <memory>
 #include <optional>
@@ -240,6 +241,13 @@ class AST {
   struct DeclSpecList : TypedNode<NodeType::DECL_SPEC_LIST> {
     std::vector<Token> specs;
     std::size_t flags = 0;
+    // A specifier run names at most one base type; when the source names more
+    // (`int float x;`), the later name wins the owning seq's id-expression
+    // slot and the earlier trees are retained here as evidence. The parser
+    // does not judge this -- the "two types in one specifier" diagnostic is
+    // the post-parse checker's (see SyntaxChecker::VisitTypeSpecifierSeq).
+    // Not printed; visited for diagnostics.
+    std::vector<PNode> extra_base_types;
 
     BASIC_NODE_ROUTINES(DeclSpecList);
 

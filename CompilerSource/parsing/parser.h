@@ -2,7 +2,6 @@
 #define ENIGMA_COMPILER_PARSING_PARSER_h
 
 #include "ast.h"
-#include "full_type.h"
 #include "language_frontend.h"
 #include "lexer.h"
 #include "precedence.h"
