@@ -4422,3 +4422,40 @@ TEST(ParserTest, ForLoopOmittedClausesAreNull) {
   EXPECT_EQ(loop->increment, nullptr);
   ASSERT_NE(loop->body, nullptr);
 }
+
+// The full compound-assignment set lexes as TT_ASSOP: `&=` and `|=` were
+// missing from the operator table (found by the var_test SOG's create event,
+// where `v1 &= t1` lexed as `&` then `=` and derailed the statement).
+TEST(ParserTest, CompoundAssignmentOperatorsLex) {
+  ParserTester test = ParserTester::CreateWithSetUp(
+      "a += 1; a -= 1; a *= 1; a /= 1; a %= 1; a &= 1; a |= 1; a ^= 1; a <<= 1; a >>= 1;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 10u);
+  for (auto &stmt : block->statements) {
+    ASSERT_EQ(stmt->type, AST::NodeType::BINARY_EXPRESSION);
+    EXPECT_EQ(stmt->As<AST::BinaryExpression>()->operation.type, TT_ASSOP);
+  }
+}
+
+// Hex/binary/octal PREFIXES lex in every compatibility mode: a digit cannot
+// begin a GML identifier, so 0x5B is unambiguous even under GML literals
+// (where it previously lexed as `0` + identifier `x5B` -- found by the
+// string_test SOG, whose (char) 0x5B call arguments derailed).
+TEST(ParserTest, HexLiteralLexesUnderGmlCompat) {
+  ParserTester test = ParserTester::CreateWithoutCpp("x = 0x5B; y = 0b101; z = 0o17;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 3u);
+  const TokenType kinds[] = {TT_HEXLITERAL, TT_BINLITERAL, TT_OCTLITERAL};
+  for (size_t i = 0; i < 3; ++i) {
+    ASSERT_EQ(block->statements[i]->type, AST::NodeType::BINARY_EXPRESSION);
+    auto *rhs = block->statements[i]->As<AST::BinaryExpression>()->right.get();
+    ASSERT_EQ(rhs->type, AST::NodeType::LITERAL);
+    EXPECT_EQ(rhs->As<AST::Literal>()->value.type, kinds[i]);
+  }
+}

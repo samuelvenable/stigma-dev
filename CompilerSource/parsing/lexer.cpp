@@ -66,6 +66,7 @@ static TokenTrie token_lookup {
   { "%=",  TT_ASSOP        },
   { "&",   TT_AMPERSAND    },
   { "&&",  TT_AND          },
+  { "&=",  TT_ASSOP        },
   { "(",   TT_BEGINPARENTH },
   { ")",   TT_ENDPARENTH   },
   { "+",   TT_PLUS         },
@@ -109,6 +110,7 @@ static TokenTrie token_lookup {
   { "^^",  TT_XOR          },
   { "{",   TT_BEGINBRACE   },
   { "|",   TT_PIPE         },
+  { "|=",  TT_ASSOP        },
   { "||",  TT_OR           },
   { "}",   TT_ENDBRACE     },
   { "~",   TT_TILDE        },
@@ -631,9 +633,13 @@ Lexer::Lexer(TokenVector tokens, const ParseContext *ctex, ErrorHandler *herr_):
 Lexer::Options::Options(const ParseContext *ctex):
     use_escapes(ctex->compatibility_opts.use_cpp_escapes),
     use_char_literals(ctex->compatibility_opts.use_cpp_strings),
-    use_hex_literals(ctex->compatibility_opts.use_cpp_literals),
-    use_oct_literals(ctex->compatibility_opts.use_cpp_literals),
-    use_bin_literals(ctex->compatibility_opts.use_cpp_literals),
+    // Literal prefixes are additive syntax: a digit cannot begin a GML
+    // identifier, so 0x/0b/0o conflict with nothing in any compatibility
+    // mode (GM's own $ hex stays available via use_gml_style_hex). The
+    // cpp-literals bit governs quirks that change meaning, not these.
+    use_hex_literals(true),
+    use_oct_literals(true),
+    use_bin_literals(true),
     use_gml_style_hex(true),
     use_preprocessor_tokens(false) {}
 

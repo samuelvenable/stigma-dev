@@ -2719,10 +2719,14 @@ class SyntaxChecker : public AST::Visitor {
       unsigned int max = 0;
       frontend->definition_parameter_bounds(def, min, max);
       if (max != unsigned(-1)) {
+        // TODO(jdi2): warnings, not errors, while the bounds come from JDI1's
+        // engine parse, which miscounts qualified parameters (a lone
+        // `const unsigned int id` reads as two; likewise `const ::variant&`).
+        // Restore hard errors when the counts are trustworthy.
         if (node.arguments.size() < min) {
-          herr->Error(func->name) << "Too few arguments to function call";
+          herr->Warning(func->name) << "Too few arguments to function call";
         } else if (node.arguments.size() > max) {
-          herr->Error(func->name) << "Too many arguments to function call";
+          herr->Warning(func->name) << "Too many arguments to function call";
         }
       }
     }
