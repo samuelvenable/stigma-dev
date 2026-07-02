@@ -1622,7 +1622,8 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     }
 
     case TT_DECLITERAL: case TT_BINLITERAL: case TT_OCTLITERAL:
-    case TT_HEXLITERAL: case TT_STRINGLIT: case TT_CHARLIT: {
+    case TT_HEXLITERAL: case TT_STRINGLIT: case TT_CHARLIT:
+    case TT_BOOLLITERAL: {
       Token res = token;
       token = lexer->ReadToken();
       return std::make_unique<AST::Literal>(std::move(res));
@@ -2168,6 +2169,7 @@ std::unique_ptr<AST::Node> TryParseStatement() {
     case TT_BEGINPARENTH: case TT_BEGINBRACKET:
     case TT_DECLITERAL: case TT_BINLITERAL: case TT_OCTLITERAL:
     case TT_HEXLITERAL: case TT_STRINGLIT: case TT_CHARLIT:
+    case TT_BOOLLITERAL:
     case TT_SCOPEACCESS: case TT_CO_AWAIT:
     case TT_NOEXCEPT: case TT_ALIGNOF: case TT_SIZEOF:
     case TT_STATIC_CAST: case TT_DYNAMIC_CAST:

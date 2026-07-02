@@ -7,13 +7,6 @@ using namespace ::testing;
 
 std::string ExpectedMsg = "";
 
-// `true` / `false` currently lex as plain identifiers; there's no TT_BOOLLITERAL
-// in our token enum. Stub it as TT_IDENTIFIER so the existing four bool-literal
-// tests compile. They'll fail at runtime (the AST::Literal cast will return
-// nullptr because the parser produces an IdentifierAccess) -- correct signal
-// for "bool-literal lexing not implemented." Tracked separately.
-constexpr auto TT_BOOLLITERAL = TT_IDENTIFIER;
-
 void assert_identifier_is(AST::Node *node, std::string_view name) {
   ASSERT_NE(node, nullptr) << "expected IdentifierAccess `" << name << "`, got null";
   ASSERT_EQ(node->type, AST::NodeType::IDENTIFIER);

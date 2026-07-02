@@ -90,6 +90,7 @@ static const std::vector<std::string> kTokenNames = [](){
     REGISTER(TT_HEXLITERAL);
     REGISTER(TT_STRINGLIT);
     REGISTER(TT_CHARLIT);
+    REGISTER(TT_BOOLLITERAL);
     REGISTER(TT_SCOPEACCESS);
     REGISTER(TT_TYPE_NAME);
     REGISTER(TT_LOCAL);
