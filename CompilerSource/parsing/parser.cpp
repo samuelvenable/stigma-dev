@@ -1,5 +1,9 @@
 #include "parser.h"
 
+#include <JDI/src/Parser/context_parser.h>
+
+#include <charconv>
+
 namespace enigma::parsing {
 
 // RAII guard: set a bool for the duration of a scope, restore the prior value
@@ -364,7 +368,10 @@ bool maybe_functional_cast(TokenType tok) {
 }
 
 bool next_maybe_functional_cast() {
-  return maybe_functional_cast(token.type);
+  // A resolvable user-defined type (class/enum/template) lexes as a plain
+  // TT_IDENTIFIER when its definition lacks DEF_TYPENAME (class templates
+  // carry only DEF_TEMPLATE), so the token-type test alone misses it.
+  return maybe_functional_cast(token.type) || next_is_user_defined_type();
 }
 
 std::unique_ptr<AST::DeclarationStatement> parse_declarations(
@@ -489,9 +496,11 @@ AST::PNode TryParseTypeName() {
   auto def = frontend->look_up(name.content);
   if (is_template_type(name) && token.type == TT_LESS) {
     std::vector<AST::PNode> args;
-    TryParseTemplateArgs(def, &args);
+    jdi::definition *inst = TryParseTemplateArgs(def, &args);
+    // The leaf names the template; the TemplateId's def is the instantiation
+    // (null when deferred to the semantic phase).
     return std::make_unique<AST::TemplateId>(
-        std::make_unique<AST::IdentifierAccess>(def, name), std::move(args), def);
+        std::make_unique<AST::IdentifierAccess>(def, name), std::move(args), inst);
   }
   return std::make_unique<AST::IdentifierAccess>(def, name);
 }
@@ -597,96 +606,137 @@ AST::PNode TryParseDecltype() {
 }
 
 // `out_args`, when non-null, collects the parsed argument trees in source order
-// (type-id seqs for type params, constant-expressions for NTTPs) so a TemplateId
-// can hold them. The JDI arg_key/instantiation side is unaffected.
-void TryParseTemplateArgs(jdi::definition *def, std::vector<AST::PNode> *out_args = nullptr) {
-  if (def->flags & jdi::DEF_TEMPLATE) {
-    require_token(TT_LESS, "Expected '<' at start of template arguments");
-    auto template_def = reinterpret_cast<jdi::definition_template *>(def);
-    jdi::arg_key argk;
-    argk.mirror_types(template_def);
-    std::size_t args_given = 0;
-    for (; token.type != TT_GREATER && token.type != TT_ENDOFCODE;) {
-      if (template_def->params[args_given]->flags & jdi::DEF_TYPENAME) {
-        auto type_node = TryParseTypeID();
-        // In template-argument position the untyped fallback is `variant`,
-        // not `var`: it's lighter weight, and var makes a poor element/key
-        // type. The kind stays UNTYPED; only the inferred def is retagged.
-        if (type_node && type_node->id_expression &&
-            type_node->id_expression->type == AST::NodeType::IMPLICIT_TYPE) {
-          auto *implicit = type_node->id_expression->As<AST::ImplicitType>();
-          if (implicit->kind == AST::ImplicitType::Kind::UNTYPED)
-            implicit->def = frontend->look_up("variant");
-        }
-        if (type_node && type_node->Definition()) {
-          jdi::full_type t = type_node->to_jdi_fulltype();
-          argk[args_given].ft().swap(t);
-        }
-        if (out_args) out_args->push_back(std::move(type_node));
-      } else if (next_can_begin_id_expression()) {
-        herr->Error(token) << "Unimplemented: id-expressions as template arguments";
-//        auto id = TryParseIdExpression(nullptr, false);
-        // TODO: this thing
-      } else {
-        herr->Error(token) << "Unimplemented: NTTP template arguments";
-        auto expr = TryParseConstantExpression();
-      }
-
-      if (token.type == TT_ELLIPSES) {
-        herr->Error(token) << "Unimplemented: variadic template arguments";
-        token = lexer->ReadToken();
-      }
-
-      if (token.type == TT_COMMA) {
-        token = lexer->ReadToken();
-        args_given++;
-        if (args_given > template_def->params.size()) {
-          herr->Error(token) << "Too many types in template instantiation";
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    if (require_token(TT_GREATER, "Expected '>' after template arguments")) {
-      jdi::remap_set remap;
-      for (std::size_t i = 0; i < args_given; i++) {
-        if (argk[i].type == jdi::arg_key::AKT_FULLTYPE) {
-          remap[template_def->params[i].get()] =
-              std::make_unique<jdi::definition_typed>(template_def->params[i]->name, template_def, argk[i].ft(),
-                                                      jdi::DEF_TYPENAME | jdi::DEF_TYPED).release();
-        } else if (argk[i].type == jdi::arg_key::AKT_VALUE) {
-          remap[template_def->params[i].get()] =
-              std::make_unique<jdi::definition_valued>(template_def->params[i]->name, template_def,
-                                                       template_def->params[i]->integer_type.def,
-                                                       template_def->params[i]->integer_type.flags,
-                                                       jdi::DEF_VALUED, argk[i].val()).release();
-        } else {
-          herr->Error(token) << "Internal error: type of template parameter unknown";
-        }
-      }
-
-      // TODO: Fix whatever this garbage is
-      auto errc = jdi::ErrorContext{new jdi::DefaultErrorHandler{}, jdi::SourceLocation{"lol", token.position, token.line}};
-      for (std::size_t i = args_given; i < template_def->params.size(); i++) {
-        if (template_def->params[i]->default_assignment) {
-          jdi::AST ast(*template_def->params[i]->default_assignment, true);
-          ast.remap(remap, errc);
-          if (template_def->params[i]->flags & jdi::DEF_TYPENAME)
-            argk.put_type(i, ast.coerce(errc));
-          else
-            argk.put_value(i, ast.eval(errc));
-        } else {
-          herr->Error(token) << "Expected template argument, parameter " << i << " has no default value";
-        }
-      }
-
-      for (auto &value: remap) {
-        delete value.second;
-      }
-    }
+// Forwards jdi diagnostics raised while filling defaults / instantiating a
+// template onto the EDL error handler, reported against the template-name
+// token. Ordinarily silent: it fires for user-side argument problems (count
+// mismatches, bad defaults) or an engine-side definition breaking under a
+// user instantiation.
+struct JdiDiagnosticForwarder : jdi::ErrorHandler {
+  enigma::parsing::ErrorHandler *herr;
+  Token at;
+  JdiDiagnosticForwarder(enigma::parsing::ErrorHandler *herr, Token at):
+      herr(herr), at(std::move(at)) {}
+  void error(std::string_view msg, jdi::SourceLocation) final {
+    herr->Error(at) << std::string(msg);
   }
+  void warning(std::string_view msg, jdi::SourceLocation) final {
+    herr->Warning(at) << std::string(msg);
+  }
+  void info(std::string_view, int, jdi::SourceLocation) final {}
+};
+
+// Evaluate a parsed non-type template argument to a JDI value, when the tree
+// is one of the two forms the parser can fold without a real evaluator: an
+// integer literal, or an id-expression whose root resolved to a constant
+// (jdi definition_valued). Returns VT_NONE for anything else -- arbitrary
+// constant expressions await the semantic phase.
+static jdi::value nttp_value(const AST::Node *arg) {
+  if (arg == nullptr) return {};
+  if (arg->type == AST::NodeType::LITERAL) {
+    auto &cv = const_cast<AST::Node*>(arg)->As<AST::Literal>()->value;
+    if (cv.type == TT_DECLITERAL) {
+      if (auto *s = std::get_if<std::string>(&cv.value)) {
+        long v = 0;
+        auto [end, ec] = std::from_chars(s->data(), s->data() + s->size(), v);
+        if (ec == std::errc{} && end == s->data() + s->size()) return jdi::value{v};
+      }
+    }
+    return {};
+  }
+  jdi::definition *def = arg->Definition();
+  if (def != nullptr && (def->flags & jdi::DEF_VALUED))
+    return static_cast<jdi::definition_valued*>(def)->value_of;
+  return {};
+}
+
+// Parse `< template-argument-list >` for a template `def`, build the JDI
+// arg_key, and instantiate. Returns the instantiated definition -- cached by
+// JDI, so `vec<int>` is one definition and `vec<float>` another, and repeats
+// are the same pointer -- or null when any argument is unresolved or beyond
+// the parse-time evaluator (the TemplateId then carries a null def for the
+// semantic phase). Count validation and default-argument fill-in are JDI's
+// check_read_template_parameters, reported through the forwarder. `out_args`,
+// when non-null, collects the parsed argument trees in source order (type-id
+// clauses for type params, expressions for NTTPs) for the TemplateId to hold.
+//
+// NTTP expressions parse at kShift: a top-level `>` must close the argument
+// list, not compare (C++ requires parenthesizing a comparison here), and the
+// comma is the list separator. (`vec<vec<int>>` still lexes `>>` as one
+// TT_RSH token -- the C++11 re-lex hack is not implemented.)
+jdi::definition *TryParseTemplateArgs(jdi::definition *def, std::vector<AST::PNode> *out_args = nullptr) {
+  if (!(def->flags & jdi::DEF_TEMPLATE)) return def;
+  Token name_token = token;
+  require_token(TT_LESS, "Expected '<' at start of template arguments");
+  auto template_def = static_cast<jdi::definition_template *>(def);
+  // Sized construction is load-bearing: the default arg_key ctor leaves its
+  // slot array null, and mirror_types placement-news into it.
+  jdi::arg_key argk(template_def->params.size());
+  argk.mirror_types(template_def);
+  std::size_t args_given = 0;
+  bool resolved = true;
+  while (token.type != TT_GREATER && token.type != TT_ENDOFCODE) {
+    const bool in_range = args_given < template_def->params.size();
+    const bool is_type_param =
+        in_range && (template_def->params[args_given]->flags & jdi::DEF_TYPENAME);
+    // Beyond the parameter list there is no kind to parse against; read the
+    // extra argument as a type-id clause when it looks like one (so the token
+    // stream stays sane) and let check_read_template_parameters report the
+    // count. Never indexes params out of range.
+    if (is_type_param || (!in_range && next_is_type_specifier())) {
+      auto clause = ParseTypeIdClause();
+      // In template-argument position the untyped fallback is `variant`, not
+      // `var`: it's lighter weight, and var makes a poor element/key type.
+      // The kind stays UNTYPED; only the inferred def is retagged.
+      if (clause->specifiers && clause->specifiers->id_expression &&
+          clause->specifiers->id_expression->type == AST::NodeType::IMPLICIT_TYPE) {
+        auto *implicit = clause->specifiers->id_expression->As<AST::ImplicitType>();
+        if (implicit->kind == AST::ImplicitType::Kind::UNTYPED)
+          implicit->def = frontend->look_up("variant");
+      }
+      // The clause's full_type carries the declarator too, so `vec<int*>`
+      // keys differently from `vec<int>`.
+      if (jdi::full_type t = clause->to_jdi_fulltype(0); t.def != nullptr) {
+        if (in_range) argk[args_given].ft().swap(t);
+      } else {
+        resolved = false;
+      }
+      if (out_args) out_args->push_back(std::move(clause));
+    } else {
+      auto expr = ParseExpression(Precedence::kShift);
+      if (jdi::value v = nttp_value(expr.get()); v.type != jdi::VT_NONE) {
+        if (in_range) argk.put_value(args_given, v);
+      } else {
+        herr->Error(token) << "Unimplemented: non-constant template arguments";
+        resolved = false;
+      }
+      if (out_args) out_args->push_back(std::move(expr));
+    }
+    ++args_given;
+
+    if (token.type == TT_ELLIPSES) {
+      herr->Error(token) << "Unimplemented: variadic template arguments";
+      token = lexer->ReadToken();
+    }
+    if (token.type == TT_COMMA) {
+      token = lexer->ReadToken();
+      continue;
+    }
+    break;
+  }
+
+  if (!require_token(TT_GREATER, "Expected '>' after template arguments"))
+    return nullptr;
+  // An unresolved argument defers the whole instantiation to the semantic
+  // phase -- silently, per types-as-trees: the parser cannot judge whether a
+  // not-yet-known name is an error.
+  if (!resolved) return nullptr;
+
+  JdiDiagnosticForwarder fwd(herr, name_token);
+  jdi::ErrorContext errc(&fwd, jdi::SourceLocation{
+      "user code", name_token.position, name_token.line});
+  if (jdi::check_read_template_parameters(argk, args_given, template_def, errc))
+    return nullptr;
+  return template_def->instantiate(argk, errc);
 }
 
 AST::PNode TryParseTypenameSpecifier() {
@@ -715,9 +765,9 @@ AST::PNode TryParsePrefixIdentifier() {
   AST::PNode leaf;
   if (token.type == TT_LESS && is_template_type(def)) {
     std::vector<AST::PNode> args;
-    TryParseTemplateArgs(def, &args);
+    jdi::definition *inst = TryParseTemplateArgs(def, &args);
     leaf = std::make_unique<AST::TemplateId>(
-        std::make_unique<AST::IdentifierAccess>(def, id), std::move(args), def);
+        std::make_unique<AST::IdentifierAccess>(def, id), std::move(args), inst);
   } else {
     leaf = std::make_unique<AST::IdentifierAccess>(def, id);
   }
@@ -751,14 +801,12 @@ AST::PNode TryParseNestedNameSpecifier(AST::PNode scope_tree) {
     if (token.type == TT_IDENTIFIER) {
       Token id = token;
       token = lexer->ReadToken();
-      bool is_template_seg = token.type == TT_LESS && is_template_type(id);
-      std::vector<AST::PNode> args;
+      // Resolve the segment name in its parent's scope first (global lookup
+      // for a leading `::name`), THEN test for a template segment -- the
+      // template must be found where the chain says it lives, not by an
+      // unqualified global probe.
       jdi::definition *seg_def = nullptr;
-      if (is_template_seg) {
-        seg_def = frontend->look_up(id.content);
-        TryParseTemplateArgs(seg_def, &args);
-      } else if (current == nullptr) {
-        // Leading `::name`: ordinary global lookup.
+      if (current == nullptr) {
         seg_def = frontend->look_up(id.content);
       } else if (jdi::definition *parent = current->Definition();
                  parent != nullptr && (parent->flags & (jdi::DEF_SCOPE | jdi::DEF_CLASS))) {
@@ -766,9 +814,14 @@ AST::PNode TryParseNestedNameSpecifier(AST::PNode scope_tree) {
           seg_def = parent_scope->look_up(std::string{id.content});
         }
       }
+      bool is_template_seg = token.type == TT_LESS && seg_def != nullptr &&
+                             (seg_def->flags & jdi::DEF_TEMPLATE);
       AST::PNode seg = std::make_unique<AST::ScopeAccess>(std::move(current), id, seg_def);
-      if (is_template_seg)
-        seg = std::make_unique<AST::TemplateId>(std::move(seg), std::move(args), nullptr);
+      if (is_template_seg) {
+        std::vector<AST::PNode> args;
+        jdi::definition *inst = TryParseTemplateArgs(seg_def, &args);
+        seg = std::make_unique<AST::TemplateId>(std::move(seg), std::move(args), inst);
+      }
       current = std::move(seg);
     } else if (token.type == TT_STAR) {
       // `A::*` -- the star is a pointer-to-member declarator operator; the
@@ -948,7 +1001,8 @@ AST::PNode TryParseTypeSpecifier(FullType *type, AST::DeclSpecList *specs) {
 std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type, AST::DeclSpecList *specs,
                                                AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
-  while (next_is_type_specifier() || token.content == "global" || token.content == "local") {
+  while (next_is_type_specifier() || next_is_user_defined_type() ||
+         token.content == "global" || token.content == "local") {
     if (token.content == "global") {
       global_local.first = true;
       token = lexer->ReadToken();
@@ -970,7 +1024,7 @@ std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
   FullType type;
   auto declspecs = std::make_unique<AST::DeclSpecList>();
   AST::PNode id_expression;
-  while (next_is_type_specifier()) {
+  while (next_is_type_specifier() || next_is_user_defined_type()) {
     if (AST::PNode base = TryParseTypeSpecifier(&type, declspecs.get())) {
       id_expression = std::move(base);
     }
@@ -1094,7 +1148,7 @@ void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs, AST::PNode 
     }
 
     default:
-      if (next_is_type_specifier()) {
+      if (next_is_type_specifier() || next_is_user_defined_type()) {
         if (AST::PNode base = TryParseTypeSpecifier(type, specs))
           out_id_expression = std::move(base);
         break;
@@ -1105,7 +1159,8 @@ void TryParseDeclSpecifier(FullType *type, AST::DeclSpecList *specs, AST::PNode 
 std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type, AST::DeclSpecList *specs,
                                                AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
-  while (next_is_decl_specifier() || token.content == "global" || token.content == "local") {
+  while (next_is_decl_specifier() || next_is_user_defined_type() ||
+         token.content == "global" || token.content == "local") {
     if (token.content == "global") {
       global_local.first = true;
       token = lexer->ReadToken();
@@ -1743,6 +1798,12 @@ std::unique_ptr<AST::Node> TryParseOperand() {
           require_token(TT_ENDBRACE, "Expected closing brace ('}') after temporary object initializer");
           init->target = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
           return init;
+        } else if (declspecs->specs.empty() && id_expression != nullptr) {
+          // A lone id-expression with no specifier run and no cast tokens is
+          // just a (possibly qualified) name read -- `test_vec<int>::size` as
+          // a value. Return the tree; whether the chain denotes a type or a
+          // value is the semantic phase's call.
+          return id_expression;
         } else {
           herr->Error(token) << "Expected opening parenthesis ('(') or brace ('{') after functional-cast type";
           return nullptr;

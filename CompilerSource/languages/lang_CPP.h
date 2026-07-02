@@ -97,6 +97,10 @@ struct lang_CPP: language_adapter {
   void quickmember_integer(jdi::definition_scope* scope, string name) final {
     return quickmember_variable(scope, jdi::builtin_type__int, name);
   }
+  /// Create a class template in the given scope: `type_params` type
+  /// parameters followed by `value_params` int non-type parameters.
+  void quickmember_template(jdi::definition_scope* scope, string name,
+                            size_t type_params, size_t value_params) final;
   /// Look up an enigma_user definition by its name.
   jdi::definition* look_up(std::string_view name) const final;
 

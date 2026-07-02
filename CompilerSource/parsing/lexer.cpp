@@ -211,6 +211,7 @@ class NullLanguageFrontend : public LanguageFrontend {
   PURE_VIRTUAL(void, definition_parameter_bounds(jdi::definition *, unsigned &, unsigned &) const);
   PURE_VIRTUAL(void, quickmember_script(jdi::definition_scope*, string));
   PURE_VIRTUAL(void, quickmember_integer(jdi::definition_scope*, string));
+  PURE_VIRTUAL(void, quickmember_template(jdi::definition_scope*, string, size_t, size_t));
 
   bool global_exists(string) const final { return false; }
   const MacroMap &builtin_macros() const final { return kNoMacros; }

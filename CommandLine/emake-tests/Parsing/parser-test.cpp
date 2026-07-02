@@ -540,18 +540,8 @@ TEST(ParserTest, DISABLED_TypeIdScopeAccessShape) {
   EXPECT_EQ(seq->Definition(), seq->id_expression->Definition());
 }
 
-// DISABLED: a template-id type name (`T<int>`) records a TemplateId on
-// id_expression -- name is the template's id-expression, args hold the parsed
-// type-id trees. Blocked: no resolvable template type in the harness.
-TEST(ParserTest, DISABLED_TypeIdTemplateIdShape) {
-  ParserTester test = ParserTester::CreateWithSetUp("T<int>");
-  auto seq = test->TryParseTypeID();
-  ASSERT_NE(seq->id_expression, nullptr);
-  ASSERT_EQ(seq->id_expression->type, AST::NodeType::TEMPLATE_ID);
-  auto *ti = seq->id_expression->As<AST::TemplateId>();
-  ASSERT_NE(ti->name, nullptr);
-  EXPECT_EQ(ti->args.size(), 1u);
-}
+// (The TypeIdTemplateIdShape test lives with the template-argument suite at
+// the end of this file, where the injected-template fixture is defined.)
 
 // DISABLED: `decltype(x)::y` records a ScopeAccess whose lhs is a Decltype node
 // holding the operand expression. Blocked: standalone `decltype(x)` errors
@@ -4174,4 +4164,189 @@ TEST(ParserTest, ExprQualifiedIdDeepChain) {
   auto *inner = outer->lhs->As<AST::ScopeAccess>();
   EXPECT_EQ(inner->name.content, "b");
   EXPECT_THAT(inner->lhs.get(), IsIdentifier("a"));
+}
+
+// ---- Template-argument parsing (injected JDI fixtures) ----
+// The engine headers don't parse under this harness's JDI, so no template
+// resolves through SetUp alone. quickmember_template injects synthetic class
+// templates straight into the frontend's enigma_user namespace, giving the
+// parser resolvable templates without an engine parse:
+//   test_vec<T0>, test_pair<T0, T1>, test_arr<T0, int N0>.
+static void inject_test_templates(const ParserTester &test) {
+  static bool done = false;
+  if (done) return;
+  auto *cpp = const_cast<lang_CPP *>(
+      static_cast<const lang_CPP *>(test.context->language_fe));
+  ASSERT_NE(cpp->namespace_enigma_user, nullptr);
+  cpp->quickmember_template(cpp->namespace_enigma_user, "test_vec", 1, 0);
+  cpp->quickmember_template(cpp->namespace_enigma_user, "test_pair", 2, 0);
+  cpp->quickmember_template(cpp->namespace_enigma_user, "test_arr", 1, 1);
+  done = true;
+}
+
+// A template-id names a JDI instantiation: the TemplateId's def is non-null,
+// distinct from the template itself, and usable as a declaration's base type.
+TEST(ParserTest, TemplateIdInstantiates) {
+  ParserTester test = ParserTester::CreateWithSetUp("test_vec<int> x;");
+  inject_test_templates(test);
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
+  ASSERT_NE(seq, nullptr);
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::TEMPLATE_ID);
+  jdi::definition *inst = seq->Definition();
+  ASSERT_NE(inst, nullptr);
+  EXPECT_NE(inst, test->frontend->look_up("test_vec"));
+  EXPECT_THAT(inst->name, testing::StartsWith("test_vec<"));
+}
+
+// Instantiations key on their arguments: test_vec<int> and test_vec<float>
+// are different definitions; repeating test_vec<int> returns the SAME cached
+// definition. This is the property the old void-discarding parse lost
+// entirely (every specialization collapsed to the bare template).
+TEST(ParserTest, TemplateInstantiationsKeyedAndCached) {
+  ParserTester t1 = ParserTester::CreateWithSetUp("test_vec<int> a;");
+  inject_test_templates(t1);
+  auto n1 = t1->TryParseStatement();
+  ASSERT_EQ(n1->type, AST::NodeType::DECLARATION);
+  jdi::definition *int1 = n1->As<AST::DeclarationStatement>()->clause->specifiers->Definition();
+
+  ParserTester t2 = ParserTester::CreateWithSetUp("test_vec<float> b;");
+  auto n2 = t2->TryParseStatement();
+  ASSERT_EQ(n2->type, AST::NodeType::DECLARATION);
+  jdi::definition *flt = n2->As<AST::DeclarationStatement>()->clause->specifiers->Definition();
+
+  ParserTester t3 = ParserTester::CreateWithSetUp("test_vec<int> c;");
+  auto n3 = t3->TryParseStatement();
+  ASSERT_EQ(n3->type, AST::NodeType::DECLARATION);
+  jdi::definition *int2 = n3->As<AST::DeclarationStatement>()->clause->specifiers->Definition();
+
+  ASSERT_NE(int1, nullptr);
+  ASSERT_NE(flt, nullptr);
+  EXPECT_NE(int1, flt);
+  EXPECT_EQ(int1, int2);
+}
+
+// The declarator matters to the key: test_vec<int*> is not test_vec<int>.
+TEST(ParserTest, TemplateArgDeclaratorKeysDistinctly) {
+  ParserTester t1 = ParserTester::CreateWithSetUp("test_vec<int> a;");
+  inject_test_templates(t1);
+  auto n1 = t1->TryParseStatement();
+  ASSERT_EQ(n1->type, AST::NodeType::DECLARATION);
+  jdi::definition *plain = n1->As<AST::DeclarationStatement>()->clause->specifiers->Definition();
+
+  ParserTester t2 = ParserTester::CreateWithSetUp("test_vec<int*> b;");
+  auto n2 = t2->TryParseStatement();
+  ASSERT_EQ(n2->type, AST::NodeType::DECLARATION);
+  jdi::definition *ptr = n2->As<AST::DeclarationStatement>()->clause->specifiers->Definition();
+
+  ASSERT_NE(plain, nullptr);
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_NE(plain, ptr);
+}
+
+// The off-by-one regression: a fully-specified instantiation must not demand
+// a default for its own last parameter (the last argument previously never
+// counted, so `test_pair<int, float>` errored "parameter 1 has no default").
+// TestFailureErrorHandler enforces the no-error half.
+TEST(ParserTest, TemplateFullArgListDemandsNoDefaults) {
+  ParserTester test = ParserTester::CreateWithSetUp("test_pair<int, float> p;");
+  inject_test_templates(test);
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  EXPECT_NE(node->As<AST::DeclarationStatement>()->clause->specifiers->Definition(), nullptr);
+}
+
+// One argument too many previously indexed params[] out of bounds before the
+// count check could fire. Now it parses to completion and reports the count
+// mismatch through JDI's checker (forwarded onto our handler).
+TEST(ParserTest, TemplateTooManyArgsDiagnosedNotCrashed) {
+  ParserTester donor = ParserTester::CreateWithSetUp("");
+  inject_test_templates(donor);
+  struct CountingHandler : public ErrorHandler {
+    int errors = 0;
+    void ReportError(CodeSnippet, std::string_view) final { ++errors; }
+    void ReportWarning(CodeSnippet, std::string_view) final {}
+  } herr;
+  Lexer lexer(std::string("test_vec<int, float> x;"), donor.context, &herr);
+  AstBuilderTestAPI *b = CreateBuilder();
+  b->initialize(&lexer, &herr);
+  auto node = b->TryParseStatement();
+  EXPECT_NE(node, nullptr);
+  EXPECT_GT(herr.errors, 0);
+  delete b;
+}
+
+// Integer-literal non-type arguments fold to a JDI value at parse time and
+// participate in the instantiation key.
+TEST(ParserTest, TemplateNttpLiteralInstantiates) {
+  ParserTester t1 = ParserTester::CreateWithSetUp("test_arr<int, 10> a;");
+  inject_test_templates(t1);
+  auto n1 = t1->TryParseStatement();
+  ASSERT_NE(n1, nullptr);
+  ASSERT_EQ(n1->type, AST::NodeType::DECLARATION);
+  jdi::definition *ten = n1->As<AST::DeclarationStatement>()->clause->specifiers->Definition();
+  ASSERT_NE(ten, nullptr);
+
+  ParserTester t2 = ParserTester::CreateWithSetUp("test_arr<int, 16> b;");
+  auto n2 = t2->TryParseStatement();
+  ASSERT_EQ(n2->type, AST::NodeType::DECLARATION);
+  jdi::definition *sixteen = n2->As<AST::DeclarationStatement>()->clause->specifiers->Definition();
+  ASSERT_NE(sixteen, nullptr);
+  EXPECT_NE(ten, sixteen);
+}
+
+// An unresolved type argument defers the instantiation: the TemplateId keeps
+// a null def for the semantic phase, with NO parse-time diagnostic (the
+// harness handler enforces silence).
+TEST(ParserTest, TemplateUnresolvedArgDefersSilently) {
+  ParserTester test = ParserTester::CreateWithSetUp("test_vec<local_var> x;");
+  inject_test_templates(test);
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::DECLARATION);
+  auto *seq = node->As<AST::DeclarationStatement>()->clause->specifiers.get();
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::TEMPLATE_ID);
+  EXPECT_EQ(seq->Definition(), nullptr);
+}
+
+// A resolved template-id scopes: the segment after test_vec<int>:: resolves
+// in the instantiated class (empty here, so the trailing name is unresolved
+// -- but the chain parses and the TemplateId root carries the instantiation).
+TEST(ParserTest, TemplateIdScopesFollowingSegment) {
+  ParserTester test = ParserTester::CreateWithSetUp("x = test_vec<int>::size;");
+  inject_test_templates(test);
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::BINARY_EXPRESSION);
+  auto *assign = node->As<AST::BinaryExpression>();
+  ASSERT_EQ(assign->right->type, AST::NodeType::SCOPE_ACCESS);
+  auto *seg = assign->right->As<AST::ScopeAccess>();
+  EXPECT_EQ(seg->name.content, "size");
+  ASSERT_NE(seg->lhs, nullptr);
+  ASSERT_EQ(seg->lhs->type, AST::NodeType::TEMPLATE_ID);
+  EXPECT_NE(seg->lhs->Definition(), nullptr);
+}
+
+// A template-id type name records a TemplateId on id_expression -- name is
+// the template's id-expression, args hold the parsed type-id trees.
+// (Re-ported from the step-1 DISABLED shape test onto the injected fixture.)
+TEST(ParserTest, TypeIdTemplateIdShape) {
+  ParserTester test = ParserTester::CreateWithSetUp("test_vec<int>");
+  inject_test_templates(test);
+  auto seq = test->TryParseTypeID();
+  ASSERT_NE(seq->id_expression, nullptr);
+  ASSERT_EQ(seq->id_expression->type, AST::NodeType::TEMPLATE_ID);
+  auto *ti = seq->id_expression->As<AST::TemplateId>();
+  ASSERT_NE(ti->name, nullptr);
+  ASSERT_EQ(ti->args.size(), 1u);
+  EXPECT_EQ(ti->args[0]->type, AST::NodeType::DECLARATOR_CLAUSE);
 }

@@ -133,6 +133,33 @@ void lang_CPP::quickmember_variable(jdi::definition_scope* scope, jdi::definitio
   scope->members[name] = std::make_unique<jdi::definition_typed>(name,scope,type);
 }
 
+void lang_CPP::quickmember_template(jdi::definition_scope* scope, string name,
+                                    size_t type_params, size_t value_params) {
+  // Mirrors what handle_templates builds for `template<typename T0, ...,
+  // int N0, ...> class name {};` -- params registered in the template scope,
+  // the templated entity a plain class -- without a JDI source parse.
+  auto temp = std::make_unique<definition_template>(name, scope, DEF_TEMPLATE);
+  for (size_t i = 0; i < type_params; ++i) {
+    auto p = std::make_unique<definition_tempparam>(
+        "T" + std::to_string(i), temp.get(),
+        DEF_TEMPPARAM | DEF_DEPENDENT | DEF_TYPENAME);
+    temp->use_general(p->name, p.get());
+    temp->params.push_back(std::move(p));
+  }
+  for (size_t i = 0; i < value_params; ++i) {
+    // The full_type-taking definition_tempparam constructor is declared but
+    // has no definition in JDI; set integer_type post-construction instead.
+    auto p = std::make_unique<definition_tempparam>(
+        "N" + std::to_string(i), temp.get(), DEF_TEMPPARAM | DEF_DEPENDENT);
+    p->integer_type.def = jdi::builtin_type__int;
+    temp->use_general(p->name, p.get());
+    temp->params.push_back(std::move(p));
+  }
+  temp->def = std::make_unique<definition_class>(name, temp.get(),
+                                                 DEF_CLASS | DEF_TYPENAME);
+  scope->members[name] = std::move(temp);
+}
+
 enigma::parsing::StdErrorHandler hackybaby;  // TODO: FIXME: This should be using a central error handler...
 void lang_CPP::quickmember_script(jdi::definition_scope* scope, string name) {
   jdi::ref_stack rfs;
