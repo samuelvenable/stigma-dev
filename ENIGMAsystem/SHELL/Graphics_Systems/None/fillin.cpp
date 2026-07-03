@@ -77,6 +77,10 @@ namespace enigma
 	void scene_end() {}
 	void delete_tiles() {}
 	void load_tiles() {}
+
+	// Draw-side state normally owned by General/GSfont.cpp; the resource
+	// system pokes it when the active font is deleted.
+	int currentfont = -1;
 }
 
 namespace enigma_user
@@ -99,6 +103,9 @@ namespace enigma_user
 	void surface_set_target(int id){}
 	void surface_reset_target(void){}
 	int surface_get_target(){return -1;}
+	int surface_get_texture(int id){return -1;}
+	int surface_get_width(int id){return 0;}
+	int surface_get_height(int id){return 0;}
 	void surface_free(int id){}
 
 	int draw_get_msaa_maxlevel(){return 0;}
