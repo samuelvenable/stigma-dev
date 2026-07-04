@@ -1,0 +1,42 @@
+// GML-dialect surface pins: the literal forms and keywords whose lexing or
+// emission differs from C++. Each of these once broke silently between the
+// parser and the emitted C++ -- see the literal-fidelity fixes.
+
+// Single-quoted strings are strings, not char literals.
+s1 = ' ';
+gtest_assert_eq(string_length(s1), 1);
+s2 = 'hello';
+gtest_assert_eq(string_length(s2), 5);
+gtest_assert_eq(s2, "hello");
+
+// The emitted literal must escape embedded delimiter quotes.
+q1 = 'he said "hi"';
+gtest_assert_eq(string_length(q1), 12);
+q2 = "it's fine";
+gtest_assert_eq(string_length(q2), 9);
+
+// Strings with bytes outside printable ASCII survive emission byte-for-byte.
+// The $FF mask sidesteps string_byte_at's signed-char return (engine
+// divergence from GML's 0-255; same estring family as string_char_at).
+u = "✓";
+gtest_assert_eq(string_byte_length(u), 3);
+gtest_assert_eq(string_byte_at(u, 1) & $FF, 226);
+
+// Radix literals: GM $ hex and the 0x/0b/0o prefixes lex in GML mode.
+h1 = $F0;
+gtest_assert_eq(h1, 240);
+h2 = 0x5B;
+gtest_assert_eq(h2, 91);
+b1 = 0b101;
+gtest_assert_eq(b1, 5);
+o1 = 0o17;
+gtest_assert_eq(o1, 15);
+
+// GML word operators and repeat.
+m = 7 mod 4;
+gtest_assert_eq(m, 3);
+d = 7 div 2;
+gtest_assert_eq(d, 3);
+t = 0;
+repeat (3) t += 5;
+gtest_assert_eq(t, 15);

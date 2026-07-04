@@ -1,0 +1,36 @@
+// Dot access is EDL's universal accessor: self.<var>, global.<var>, and
+// <instance-id>.<var> all route through the same machinery. These pin the
+// working behavior ahead of the uniform-access-node refactor.
+//
+// instance_create below spawns a second test_object, which runs this create
+// event too -- the instance_number guard keeps the body single-shot.
+if (instance_number(test_object) == 1)
+{
+  // self.<var> and the bare name are the same storage.
+  hp = 3;
+  gtest_assert_eq(hp, 3);
+  self.hp = 5;
+  gtest_assert_eq(hp, 5);
+  gtest_assert_eq(self.hp, 5);
+  hp += 1;
+  gtest_assert_eq(self.hp, 6);
+
+  // global.<var> names a global, distinct from any instance variable.
+  global.team_score = 7;
+  gtest_assert_eq(global.team_score, 7);
+  team_score = 2;  // instance variable of the same name
+  gtest_assert_eq(team_score, 2);
+  gtest_assert_eq(global.team_score, 7);
+  global.team_score += 3;
+  gtest_assert_eq(global.team_score, 10);
+
+  // <instance-id>.<var>: a second instance's variables are reachable by id.
+  buddy = instance_create(64, 64, test_object);
+  buddy.hp = 42;
+  gtest_assert_eq(buddy.hp, 42);
+  gtest_assert_eq(self.hp, 6);  // untouched by the write through buddy
+
+  // Dot reads compose in expressions.
+  total = self.hp + buddy.hp + global.team_score;
+  gtest_assert_eq(total, 58);
+}
