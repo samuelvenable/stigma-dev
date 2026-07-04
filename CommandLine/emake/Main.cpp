@@ -141,7 +141,21 @@ int main(int argc, char* argv[])
   if (dot != std::string::npos) ext = ToLower(input_file.substr(dot + 1));
   egm::LibEGMInit(&event_data);
   if (!(project = egm::LoadProject(input_file))) return 1;
-    return plugin.BuildGame(project->game(), mode, output_file.c_str());
-    
-  return 1;
+
+  // A definitions.h beside a game's event files is its definition page:
+  // global C++ parsed by JDI beside the engine and included in the emitted
+  // game through IDE_EDIT_whitespace.h. The SOG format has no proto field
+  // for it, so feed it to the plugin directly. This re-runs the engine
+  // parse, same as the IDE does when a definition page changes.
+  if (ext == "sog") {
+    fs::path defs = fs::path(input_file)/"definitions.h";
+    if (fs::exists(defs)) {
+      std::ifstream defs_in(defs);
+      std::string def_code{std::istreambuf_iterator<char>(defs_in),
+                           std::istreambuf_iterator<char>()};
+      plugin.SetDefinitions(def_code.c_str(), options.APIyaml().c_str());
+    }
+  }
+
+  return plugin.BuildGame(project->game(), mode, output_file.c_str());
 }

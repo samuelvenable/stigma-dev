@@ -129,6 +129,22 @@ syntax_error *lang_CPP::definitionsModified(const char* wscode,
     CURRENT_TIME(te);
   }
 
+  // Definition pages parse as their own stream, into enigma_user, where all
+  // EDL-visible names resolve (look_up searches only that namespace). The
+  // engine parse above scars its scope stack on headers JDI can't handle, so
+  // the IDE_EDIT_whitespace.h include inside SHELLmain can land definitions
+  // in whatever namespace was left open; this stream is immune to that. The
+  // emitted game still sees them through the include, at global scope under
+  // `using namespace enigma_user`, so unqualified names agree. TODO(jdi2):
+  // the include alone should suffice once the engine parses cleanly.
+  if (wscode && *wscode) {
+    std::string wrapped = "namespace enigma_user {\n";
+    wrapped += wscode;
+    wrapped += "\n}\n";
+    llreader defs("IDE_EDIT_whitespace.h", std::move(wrapped));
+    main_context->parse_stream(defs);
+  }
+
   jdi::definition *d;
   if ((d = main_context->get_global()->look_up("variant"))) {
     enigma_type__variant = d;
