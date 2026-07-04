@@ -1,6 +1,7 @@
 #include <gmock/gmock.h>
 #include "parser-test-classes.h"
 #include <languages/lang_CPP.h>
+#include <parser/semantics.h>
 
 using namespace ::enigma::parsing;
 using namespace ::testing;
@@ -4519,6 +4520,28 @@ TEST(ParserTest, GmlWithStatement) {
 // printer lowers it to enigma::varaccess_b(a) regardless of what `a` is; the
 // uniform-access refactor keeps this shape and moves the lowering decision to
 // the semantic annotator (typed locals become plain a.b, vars keep varaccess).
+
+// The semantic annotator classifies dot accesses after linking; the printer
+// reads the classification and only falls back to name heuristics on
+// UNRESOLVED. This drives the annotator directly over a bare parse tree.
+TEST(ParserTest, SemanticAnnotatorClassifiesDotAccess) {
+  using AccessKind = AST::BinaryExpression::AccessKind;
+  ParserTester test = ParserTester::CreateWithoutCpp(
+      "a = global.foo; b = local.bar; c = p.q;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  SemanticAnnotator annotator;
+  node->RecurusiveVisit(annotator);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 3u);
+  const AccessKind expected[] = {AccessKind::GLOBAL, AccessKind::LOCAL,
+                                 AccessKind::VARACCESS};
+  for (size_t i = 0; i < 3; ++i) {
+    auto *rhs = block->statements[i]->As<AST::BinaryExpression>()->right.get();
+    ASSERT_EQ(rhs->type, AST::NodeType::BINARY_EXPRESSION);
+    EXPECT_EQ(rhs->As<AST::BinaryExpression>()->access_kind, expected[i]);
+  }
+}
 
 TEST(ParserTest, DotAccessParsesAsBinaryDot) {
   ParserTester test = ParserTester::CreateWithoutCpp("result = p.x;");

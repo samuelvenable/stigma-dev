@@ -56,6 +56,7 @@ using namespace std;
 #include "backend/JavaCallbacks.h"
 #include "compile_includes.h"
 #include "compile_common.h"
+#include "parser/semantics.h"
 #include "System/builtins.h"
 
 #include "settings-parse/crawler.h"
@@ -629,6 +630,9 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
   res = current_language->link_globals(game, state);
   res = current_language->link_ambiguous(game, state);
   irrr();
+
+  edbg << "Annotating semantics" << flushl;
+  annotate_semantics(state);
 
   edbg << "Running Secondary Parse Passes" << flushl;
   res = current_language->compile_parseSecondary(state);

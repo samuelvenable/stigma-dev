@@ -180,6 +180,12 @@ class AST {
     PNode left, right;
     Operation operation;
 
+    /// Semantic classification of a TT_DOT access, written by the semantic
+    /// annotator after linking. Printers read it; UNRESOLVED trees (unit
+    /// harnesses, pre-annotation prints) fall back to legacy heuristics.
+    enum class AccessKind : char { UNRESOLVED, MEMBER, VARACCESS, GLOBAL, LOCAL };
+    AccessKind access_kind = AccessKind::UNRESOLVED;
+
     BASIC_NODE_ROUTINES(BinaryExpression);
 
     BinaryExpression(PNode left_, PNode right_, Operation operation_):

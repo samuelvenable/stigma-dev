@@ -259,8 +259,29 @@ bool AST::CppPrettyPrinter::VisitWithStatement(AST::WithStatement &node) {
 }
 
 bool AST::CppPrettyPrinter::VisitDot(AST::BinaryExpression &node) {
+  using AccessKind = AST::BinaryExpression::AccessKind;
   std::string left = node.left->As<AST::IdentifierAccess>()->name.content;
   std::string right = node.right->As<AST::IdentifierAccess>()->name.content;
+
+  // The annotator's classification wins; UNRESOLVED trees (unit harnesses,
+  // pre-annotation prints) fall back to the name heuristics below.
+  switch (node.access_kind) {
+    case AccessKind::MEMBER:
+      print(left + "." + right);
+      return true;
+    case AccessKind::LOCAL:
+      print(right);
+      return true;
+    case AccessKind::GLOBAL:
+      print("enigma::varaccess_" + right + "(int(global))");
+      return true;
+    case AccessKind::VARACCESS:
+      print("enigma::varaccess_" + right + "(" + left + ")");
+      return true;
+    case AccessKind::UNRESOLVED:
+      break;
+  }
+
   if (left == "local") {
     print(right);
     return true;
