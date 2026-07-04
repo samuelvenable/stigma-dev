@@ -4459,3 +4459,20 @@ TEST(ParserTest, HexLiteralLexesUnderGmlCompat) {
     EXPECT_EQ(rhs->As<AST::Literal>()->value.type, kinds[i]);
   }
 }
+
+// An argument of a NAMED function call is never a parameter-declaration --
+// only declarator-shaped callees keep the maybe-declarator dispatch. The
+// string_test SOG surfaced this: `gtest_assert_eq(string(my_str), ...)`
+// promoted its first argument to a declaration and emitted
+// `gtest_assert_eq(string my_str, ...)`.
+TEST(ParserTest, NamedCallArgFunctionalCastStaysExpression) {
+  ParserTester test = ParserTester::CreateWithSetUp("foo(int(x), 1);");
+  auto node = test->TryParseStatement();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->type, AST::NodeType::FUNCTION_CALL);
+  auto *call = node->As<AST::FunctionCallExpression>();
+  ASSERT_EQ(call->arguments.size(), 2u);
+  EXPECT_NE(call->arguments[0]->type, AST::NodeType::DECLARATION);
+  EXPECT_EQ(call->arguments[0]->type, AST::NodeType::INITIALIZER);
+}

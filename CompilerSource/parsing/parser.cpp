@@ -2045,7 +2045,14 @@ std::unique_ptr<AST::BinaryExpression> TryParseSubscriptExpression(int precedenc
 std::unique_ptr<AST::FunctionCallExpression> TryParseFunctionCallExpression(int precedence, std::unique_ptr<AST::Node> operand) {
   (void)precedence;
   while (token.type == TT_BEGINPARENTH) {
-    // Token oper = token;
+    // A named value callee (`foo(...)`, `a::b(...)`) is a CALL: its
+    // parenthesized list can never be a function-declarator's parameter
+    // list, so a type-specifier-led argument there is a functional cast or
+    // temporary, not a parameter-declaration. Only type-flavored or grouped
+    // callees keep the maybe-declarator argument dispatch below.
+    const bool callee_is_named_value =
+        operand->type == AST::NodeType::IDENTIFIER ||
+        operand->type == AST::NodeType::SCOPE_ACCESS;
     token = lexer->ReadToken(); // Consume the operator
 
     std::vector<std::unique_ptr<AST::Node>> arguments{};
@@ -2058,7 +2065,7 @@ std::unique_ptr<AST::FunctionCallExpression> TryParseFunctionCallExpression(int 
       // comma stays ours: parse_unbounded=false so commas separate parameters,
       // not declarators. The call stays uniformly shaped; the semantic phase
       // decides call-vs-declarator and reinterprets typed args accordingly.
-      if (next_is_decl_specifier()) {
+      if (!callee_is_named_value && next_is_decl_specifier()) {
         arguments.emplace_back(TryParseEitherFunctionalCastOrDeclaration(
             AST::DeclaratorType::MAYBE_ABSTRACT, /*parse_unbounded=*/false,
             /*maybe_c_style_cast=*/false,
