@@ -2714,32 +2714,10 @@ class SyntaxChecker : public AST::Visitor {
     return false;
   }
 
-  bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) {
-    if (node.function->type == AST::NodeType::IDENTIFIER) {
-      auto func = node.function->As<AST::IdentifierAccess>();
-      jdi::definition *def = func->def;
-      if (!def) {
-        node.RecursiveSubVisit(*this);
-        return false;
-      }
-      unsigned int min = 0;
-      unsigned int max = 0;
-      frontend->definition_parameter_bounds(def, min, max);
-      if (max != unsigned(-1)) {
-        // TODO(jdi2): warnings, not errors, while the bounds come from JDI1's
-        // engine parse, which miscounts qualified parameters (a lone
-        // `const unsigned int id` reads as two; likewise `const ::variant&`).
-        // Restore hard errors when the counts are trustworthy.
-        if (node.arguments.size() < min) {
-          herr->Warning(func->name) << "Too few arguments to function call";
-        } else if (node.arguments.size() > max) {
-          herr->Warning(func->name) << "Too many arguments to function call";
-        }
-      }
-    }
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
+  // Call argument checking is deliberately absent here: a callee's identity
+  // (and thus its arity) isn't knowable until the semantic layer resolves
+  // dot accesses and instance lookups, so validate_call lives on the
+  // SemanticAnnotator.
 
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) {
     // TODO: belongs in a dedicated semantic-validation pass, not interleaved

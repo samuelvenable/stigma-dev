@@ -31,10 +31,18 @@ namespace enigma::parsing {
 /// canonicalization lives here, never in the parser.
 class SemanticAnnotator : public AST::Visitor {
  public:
+  SemanticAnnotator(ErrorHandler *herr, const LanguageFrontend *frontend)
+      : herr_(herr), frontend_(frontend) {}
+
   bool VisitBinaryExpression(AST::BinaryExpression &node) final;
+  bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) final;
 
  private:
   static void classify_access(AST::BinaryExpression &node);
+  void validate_call(AST::FunctionCallExpression &node);
+
+  ErrorHandler *herr_;
+  const LanguageFrontend *frontend_;
 };
 
 }  // namespace enigma::parsing

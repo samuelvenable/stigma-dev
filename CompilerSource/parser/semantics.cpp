@@ -26,6 +26,35 @@ bool SemanticAnnotator::VisitBinaryExpression(AST::BinaryExpression &node) {
   return true;
 }
 
+bool SemanticAnnotator::VisitFunctionCallExpression(AST::FunctionCallExpression &node) {
+  validate_call(node);
+  return true;
+}
+
+// Relocated from the parse-time SyntaxChecker: a callee's identity (and thus
+// its arity) isn't knowable until dot accesses and instance lookups resolve,
+// so argument checking belongs here. Only globally-resolved named callees
+// are checkable today; member callees await the binder.
+void SemanticAnnotator::validate_call(AST::FunctionCallExpression &node) {
+  if (node.function->type != AST::NodeType::IDENTIFIER) return;
+  auto *func = node.function->As<AST::IdentifierAccess>();
+  jdi::definition *def = func->def;
+  if (!def) return;
+  unsigned int min = 0;
+  unsigned int max = 0;
+  frontend_->definition_parameter_bounds(def, min, max);
+  if (max == unsigned(-1)) return;
+  // TODO(jdi2): warnings, not errors, while the bounds come from JDI1's
+  // engine parse, which miscounts qualified parameters (a lone
+  // `const unsigned int id` reads as two; likewise `const ::variant&`).
+  // Restore hard errors when the counts are trustworthy.
+  if (node.arguments.size() < min) {
+    herr_->Warning(func->name) << "Too few arguments to function call";
+  } else if (node.arguments.size() > max) {
+    herr_->Warning(func->name) << "Too many arguments to function call";
+  }
+}
+
 // Named dot accesses classify syntactically for now: global./local. are
 // keywords in effect, and everything else routes through varaccess. The
 // binder will add the MEMBER arm (lhs is a local declared with a
@@ -51,7 +80,8 @@ void SemanticAnnotator::classify_access(AST::BinaryExpression &node) {
 namespace {
 
 void annotate(ParsedCode &code) {
-  enigma::parsing::SemanticAnnotator annotator;
+  enigma::parsing::SemanticAnnotator annotator(
+      &code.ast.herr, code.ast.lexer->GetContext().language_fe);
   code.ast.VisitNodes(annotator);
 }
 

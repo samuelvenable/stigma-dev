@@ -4530,7 +4530,7 @@ TEST(ParserTest, SemanticAnnotatorClassifiesDotAccess) {
       "a = global.foo; b = local.bar; c = p.q;");
   auto node = test->ParseCode();
   ASSERT_NE(node, nullptr);
-  SemanticAnnotator annotator;
+  SemanticAnnotator annotator(&test.herr, test.context->language_fe);
   node->RecurusiveVisit(annotator);
   auto *block = node->As<AST::CodeBlock>();
   ASSERT_EQ(block->statements.size(), 3u);
@@ -4541,6 +4541,18 @@ TEST(ParserTest, SemanticAnnotatorClassifiesDotAccess) {
     ASSERT_EQ(rhs->type, AST::NodeType::BINARY_EXPRESSION);
     EXPECT_EQ(rhs->As<AST::BinaryExpression>()->access_kind, expected[i]);
   }
+}
+
+// The GM-idiom collision special: `foo = bar (100001).baz = qux` could read
+// as a call or as `bar` followed by a parenthesized statement. Ruling: a
+// name followed by ( is ALWAYS a function call; no newline heuristics, no
+// known-function-type parse predicates. One statement, call in the chain.
+TEST(ParserTest, NameParenIsAlwaysACall) {
+  ParserTester test = ParserTester::CreateWithoutCpp("foo = bar (100001).baz = qux");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->As<AST::CodeBlock>()->statements.size(), 1u);
 }
 
 TEST(ParserTest, DotAccessParsesAsBinaryDot) {
