@@ -4460,6 +4460,87 @@ TEST(ParserTest, HexLiteralLexesUnderGmlCompat) {
   }
 }
 
+// ---- GML-dialect parsing under CreateWithoutCpp. The single-quote polarity
+// bug survived because this whole compatibility dimension had near-zero unit
+// coverage; these pin the dialect surface statement by statement.
+
+TEST(ParserTest, GmlSemicolonlessStatements) {
+  ParserTester test = ParserTester::CreateWithoutCpp("x = 1 y = 2 z = 3");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  ASSERT_EQ(node->As<AST::CodeBlock>()->statements.size(), 3u);
+}
+
+TEST(ParserTest, GmlBeginEndBlocks) {
+  ParserTester test = ParserTester::CreateWithoutCpp("if (a) begin b = 1 c = 2 end");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+}
+
+TEST(ParserTest, GmlIfThen) {
+  ParserTester test = ParserTester::CreateWithoutCpp("if (a == 1) then b = 2");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+}
+
+TEST(ParserTest, GmlWordOperators) {
+  ParserTester test = ParserTester::CreateWithoutCpp(
+      "if (a and b or not c xor d) e = 1");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+}
+
+TEST(ParserTest, GmlDoUntil) {
+  ParserTester test = ParserTester::CreateWithoutCpp("do x += 1 until (x > 3)");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+}
+
+TEST(ParserTest, GmlTwoDimensionalArrayIndex) {
+  ParserTester test = ParserTester::CreateWithoutCpp("a[1, 2] = 3;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+}
+
+TEST(ParserTest, GmlWithStatement) {
+  ParserTester test = ParserTester::CreateWithoutCpp("with (whatever) x = 1");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+}
+
+// ---- Dot access. Today every `a.b` parses as BinaryExpression('.') and the
+// printer lowers it to enigma::varaccess_b(a) regardless of what `a` is; the
+// uniform-access refactor keeps this shape and moves the lowering decision to
+// the semantic annotator (typed locals become plain a.b, vars keep varaccess).
+
+TEST(ParserTest, DotAccessParsesAsBinaryDot) {
+  ParserTester test = ParserTester::CreateWithoutCpp("result = p.x;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 1u);
+  auto *assign = block->statements[0]->As<AST::BinaryExpression>();
+  ASSERT_NE(assign, nullptr);
+  auto *rhs = assign->right.get();
+  ASSERT_EQ(rhs->type, AST::NodeType::BINARY_EXPRESSION);
+  EXPECT_EQ(rhs->As<AST::BinaryExpression>()->operation.type, TT_DOT);
+}
+
+// Struct DEFINITIONS are deliberately not EDL: definition pages (global C++
+// script resources parsed by JDI beside the engine) own that, keeping EDL
+// lean. What EDL must handle is dot access on a variable DECLARED with such
+// a struct type -- plain p.x member access, not a varaccess call. Pinning
+// that needs a definition-page mechanism in the test harness; tracked as the
+// typed-local arm of the dot-lowering work.
+
 // An argument of a NAMED function call is never a parameter-declaration --
 // only declarator-shaped callees keep the maybe-declarator dispatch. The
 // string_test SOG surfaced this: `gtest_assert_eq(string(my_str), ...)`
