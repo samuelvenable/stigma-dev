@@ -403,7 +403,7 @@ TEST(PrinterTest, test20) {
 // 0, so a flags-derived reconstruction would silently drop it.
 TEST(PrinterTest, DeclSpecSignednessFidelity) {
   std::string code = "signed char i = 'A';unsigned char j = 'B';char k = 'C';";
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
   auto *block = node->As<AST::CodeBlock>();
   AST::CppPrettyPrinter v;
@@ -416,7 +416,7 @@ TEST(PrinterTest, test21) {
       "for (char i = 'A'; i <= 'B'; ++i) {for (char j = '1'; j <= '2'; ++j) {for (char k = 'a'; k <= 'b'; ++k) {for "
       "(char l = 'X'; l <= 'Y'; ++l) {c++;}}}}";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -438,7 +438,7 @@ TEST(PrinterTest, test22) {
       "char i = 'A';do {char j = '1';while (j <= '2') {for (char k = 'a'; k <= 'b'; ++k) {char l = 'X';do {++l;} while "
       "(l <= 'Y');}++j;}++i;} while (i <= 'B');";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -461,7 +461,7 @@ TEST(PrinterTest, test23) {
       "'A':break;case 'B':break;default:break;}condition = (i == 'A' && j == '1') || (k == 'b' && l == 'Y');if "
       "(condition) {c++;}++l;} while (l <= 'Y');k--;k++;}++j;}++i;} while (i <= 'B');";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -559,7 +559,7 @@ TEST(PrinterTest, test27) {
       "int temp = display;int divisor = 10000;while (divisor > 0) {int digit = temp / divisor;temp = temp % "
       "divisor;divisor = divisor / 10;putchar('0' + digit);}putchar(   'c');return 0;}";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -726,7 +726,7 @@ TEST(PrinterTest, test31) {
       "const unsigned int n=12; bool x = (n>12); signed char c='s'; volatile int v=12; const volatile unsigned long "
       "long int f=12; const double l = 123; unsigned int u = 123; int *p = new (int)(22+3); const int * q ; ";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -1534,6 +1534,34 @@ TEST(PrinterTest, NestedRepeatLowering) {
   std::string expected =
       "{ int strange_name = (2); while(strange_name--) "
       "{ int strange_name1 = (3); while(strange_name1--) i++; } }";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// Prefixed-literal tokens hold bare digits; the printer restores a C++
+// spelling for each radix. GML $ hex and 0o octal have no C++ form, so
+// this is a translation, not an echo of the source.
+TEST(PrinterTest, RadixPrefixedLiterals) {
+  std::string code = "a = 0x5B; b = 0b101; c = 0o17; d = $F0;";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "a = 0x5B; b = 0b101; c = 017; d = 0xF0;";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// String bytes outside printable ASCII emit as three-octal-digit escapes:
+// unsigned (no sign extension on 0x80-0xFF) and fixed-width (a digit
+// character following the escape cannot extend it).
+TEST(PrinterTest, HighByteStringEscapes) {
+  std::string code = "x = \"\xE2\x9C\x93\"; y = \"\x01" "1\";";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "x = \"\\342\\234\\223\"; y = \"\\0011\";";
   ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
 }
 

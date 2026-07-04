@@ -439,10 +439,10 @@ Token Lexer::ReadRawToken() {
 
     case '\'': {
       const TokenType token_type =
-          options.use_char_literals ? TT_STRINGLIT : TT_CHARLIT;
+          options.use_char_literals ? TT_CHARLIT : TT_STRINGLIT;
       for (;; ++pos) {
         if (pos >= code.length()) {
-          herr->Error(Mark(spos, 1)) << "Unclosed double quote at this point";
+          herr->Error(Mark(spos, 1)) << "Unclosed single quote at this point";
           return Token(token_type, Mark(spos, pos - spos));
         }
         if (options.use_escapes && code[pos] == '\\') ++pos;
@@ -470,17 +470,20 @@ Token Lexer::ReadRawToken() {
     case '0': {
       if (pos >= code.length())
         return Token(TT_DECLITERAL, Mark(spos, pos - spos));
+      // Prefixed literals store only the digits; the radix lives in the
+      // token type. The GML $ form has no C++ spelling, so the printer
+      // re-emits the prefix either way.
       if (code[pos] == 'x' && options.use_hex_literals) {
         while (++pos < code.length() && is_nybble(code[pos]));
-        return Token(TT_HEXLITERAL, Mark(spos, pos - spos));
+        return Token(TT_HEXLITERAL, Mark(spos + 2, pos - spos - 2));
       }
       if (code[pos] == 'b' && options.use_bin_literals) {
         while (++pos < code.length() && is_bit(code[pos]));
-        return Token(TT_BINLITERAL, Mark(spos, pos - spos));
+        return Token(TT_BINLITERAL, Mark(spos + 2, pos - spos - 2));
       }
       if (code[pos] == 'o' && options.use_oct_literals) {
         while (++pos < code.length() && is_octal(code[pos]));
-        return Token(TT_OCTLITERAL, Mark(spos, pos - spos));
+        return Token(TT_OCTLITERAL, Mark(spos + 2, pos - spos - 2));
       }
       [[fallthrough]]; case '1': case '2': case '3': case '4': case '5':
                        case '6': case '7': case '8': case '9':

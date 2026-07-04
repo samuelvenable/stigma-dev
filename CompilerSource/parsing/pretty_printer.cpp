@@ -18,6 +18,8 @@
 #include <JDI/src/System/builtins.h>
 #include "ast.h"
 
+#include <iomanip>
+
 using namespace enigma::parsing;
 
 #define VISIT_AND_CHECK(node) \
@@ -127,8 +129,14 @@ bool AST::CppPrettyPrinter::VisitImplicitType(AST::ImplicitType &node) {
 bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
   std::string value = std::get<std::string>(node.value.value);
   if (node.value.type != TT_CHARLIT && node.value.type != TT_STRINGLIT) {
+    // Prefixed-literal tokens hold bare digits; restore the C++ spelling.
+    // Octal gets a plain leading zero: C++ has no 0o prefix.
     if (node.value.type == TT_HEXLITERAL) {
       print("0x");
+    } else if (node.value.type == TT_BINLITERAL) {
+      print("0b");
+    } else if (node.value.type == TT_OCTLITERAL) {
+      print("0");
     }
     print(value);
     return true;
@@ -142,6 +150,11 @@ bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
   for (char c : value) {
     if (c == '\\') {
       to_print += "\\\\";
+    } else if (c == '"' || c == '\'') {
+      // The literal's own delimiter must be escaped or it truncates the
+      // emitted string; escaping both quotes is valid C++ either way.
+      to_print += '\\';
+      to_print += c;
     } else if (c >= ' ' && c <= '~') {
       to_print += c;
     } else if (c == '\n') {
@@ -161,8 +174,12 @@ bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
     } else if (c == '\?') {
       to_print += "\\?";
     } else {
+      // Bytes, not (possibly signed) chars: 0x80-0xFF must stay three octal
+      // digits, and the fixed width keeps a following digit character from
+      // extending the escape.
       std::ostringstream oss;
-      oss << '\\' << std::oct << static_cast<int>(c);
+      oss << '\\' << std::setw(3) << std::setfill('0') << std::oct
+          << static_cast<int>(static_cast<unsigned char>(c));
       to_print += oss.str();
     }
   }
