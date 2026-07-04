@@ -20,6 +20,9 @@
 
 #include "parsing/ast.h"
 
+#include <string>
+#include <unordered_map>
+
 struct CompileState;
 
 namespace enigma::parsing {
@@ -36,13 +39,25 @@ class SemanticAnnotator : public AST::Visitor {
 
   bool VisitBinaryExpression(AST::BinaryExpression &node) final;
   bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) final;
+  bool VisitDeclarationStatement(AST::DeclarationStatement &node) final;
+
+  /// Register a name as a class-typed local ahead of the walk. The walk
+  /// itself records declarations it encounters; this is the seam for scopes
+  /// harvested elsewhere (and for tests).
+  void DeclareLocal(std::string_view name, jdi::definition *def) {
+    struct_locals_[std::string(name)] = def;
+  }
 
  private:
-  static void classify_access(AST::BinaryExpression &node);
+  void classify_access(AST::BinaryExpression &node);
   void validate_call(AST::FunctionCallExpression &node);
+  void record_locals(AST::DeclarationStatement &node);
 
   ErrorHandler *herr_;
   const LanguageFrontend *frontend_;
+  // Locals declared with a class type (definition pages) in this AST, in
+  // walk order. Flat per-event scoping for now; block scopes can refine it.
+  std::unordered_map<std::string, jdi::definition*> struct_locals_;
 };
 
 }  // namespace enigma::parsing

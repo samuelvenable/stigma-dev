@@ -4555,6 +4555,27 @@ TEST(ParserTest, NameParenIsAlwaysACall) {
   ASSERT_EQ(node->As<AST::CodeBlock>()->statements.size(), 1u);
 }
 
+// Locals declared with a class type (definition pages) get MEMBER access;
+// undeclared names keep instance varaccess. DeclareLocal is the seam the
+// binder feeds; here it stands in for a definition-page struct.
+TEST(ParserTest, SemanticAnnotatorMemberArm) {
+  using AccessKind = AST::BinaryExpression::AccessKind;
+  ParserTester test = ParserTester::CreateWithoutCpp("p.x = 3; q.x = 4;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  jdi::definition point_def("Point", nullptr, jdi::DEF_CLASS | jdi::DEF_TYPENAME);
+  SemanticAnnotator annotator(&test.herr, test.context->language_fe);
+  annotator.DeclareLocal("p", &point_def);
+  node->RecurusiveVisit(annotator);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 2u);
+  auto *p_dot = block->statements[0]->As<AST::BinaryExpression>()->left.get();
+  auto *q_dot = block->statements[1]->As<AST::BinaryExpression>()->left.get();
+  ASSERT_EQ(p_dot->type, AST::NodeType::BINARY_EXPRESSION);
+  EXPECT_EQ(p_dot->As<AST::BinaryExpression>()->access_kind, AccessKind::MEMBER);
+  EXPECT_EQ(q_dot->As<AST::BinaryExpression>()->access_kind, AccessKind::VARACCESS);
+}
+
 TEST(ParserTest, DotAccessParsesAsBinaryDot) {
   ParserTester test = ParserTester::CreateWithoutCpp("result = p.x;");
   auto node = test->ParseCode();

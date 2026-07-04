@@ -899,8 +899,11 @@ class AST {
   // If syntax errors were encountered, they are stored within the AST.
   static AST Parse(std::string_view code, const ParseContext* ctex);
 
+  // Full recursive walk: each node's Visit routine runs, and children are
+  // visited automatically when it returns true. Visitors that recurse
+  // manually (RecursiveSubVisit + return false) behave identically.
   void VisitNodes(Visitor &visitor) {
-    if (root_) root_->accept(visitor);
+    if (root_) root_->RecurusiveVisit(visitor);
   }
 
   // Get the node type as a string

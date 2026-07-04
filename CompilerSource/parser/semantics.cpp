@@ -55,10 +55,34 @@ void SemanticAnnotator::validate_call(AST::FunctionCallExpression &node) {
   }
 }
 
-// Named dot accesses classify syntactically for now: global./local. are
-// keywords in effect, and everything else routes through varaccess. The
-// binder will add the MEMBER arm (lhs is a local declared with a
-// definition-page struct type) and instance-id refinement.
+bool SemanticAnnotator::VisitDeclarationStatement(AST::DeclarationStatement &node) {
+  record_locals(node);
+  return true;
+}
+
+// Locals declared with a class type get plain member access; everything
+// else keeps instance semantics. var and variant are classes to JDI but are
+// EDL's instance-handle types, so they stay on the varaccess route.
+void SemanticAnnotator::record_locals(AST::DeclarationStatement &node) {
+  if (!node.clause || !node.clause->specifiers) return;
+  jdi::definition *def = node.clause->specifiers->Definition();
+  if (!def || !(def->flags & jdi::DEF_CLASS)) return;
+  if (def->name == "var" || def->name == "variant") return;
+  for (const auto &decl : node.clause->declarators) {
+    if (!decl || decl->name.content.empty()) continue;
+    // Only plain declarators: a pointer or array of the class type is not
+    // directly member-accessible through the dot.
+    if (!decl->declarator_expr ||
+        decl->declarator_expr->type != AST::NodeType::IDENTIFIER) {
+      continue;
+    }
+    struct_locals_[std::string(decl->name.content)] = def;
+  }
+}
+
+// Named dot accesses classify in three tiers: the global./local. keyword
+// prefixes, then locals declared with a definition-page class type (plain
+// member access), then everything else as an instance varaccess.
 void SemanticAnnotator::classify_access(AST::BinaryExpression &node) {
   using AccessKind = AST::BinaryExpression::AccessKind;
   if (node.left->type != AST::NodeType::IDENTIFIER ||
@@ -70,6 +94,8 @@ void SemanticAnnotator::classify_access(AST::BinaryExpression &node) {
     node.access_kind = AccessKind::GLOBAL;
   } else if (left == "local") {
     node.access_kind = AccessKind::LOCAL;
+  } else if (struct_locals_.count(left)) {
+    node.access_kind = AccessKind::MEMBER;
   } else {
     node.access_kind = AccessKind::VARACCESS;
   }
