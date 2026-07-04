@@ -634,9 +634,6 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
   edbg << "Annotating semantics" << flushl;
   annotate_semantics(state);
 
-  edbg << "Running Secondary Parse Passes" << flushl;
-  res = current_language->compile_parseSecondary(state);
-
   state.used_events = ListUsedEvents(state.parsed_objects, event_data());
 
   edbg << "Writing events" << flushl;

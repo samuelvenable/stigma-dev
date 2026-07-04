@@ -42,7 +42,6 @@ struct lang_CPP: language_adapter {
   int compile_parseAndLink(const GameData &game, CompileState &state) final;
   int link_globals(const GameData &game, CompileState &state) final;
   int link_ambiguous(const GameData &game, CompileState &state) final;
-  int compile_parseSecondary(CompileState &state) final;
 
   int compile_writeGlobals(const GameData &game, const ParsedScope* global, const DotLocalMap &dot_accessed_locals) final;
   int compile_writeObjectData(const GameData &game, const CompileState &state, int mode) final;

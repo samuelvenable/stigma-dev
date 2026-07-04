@@ -40,7 +40,6 @@ struct language_adapter : LanguageFrontend {
   virtual int compile_parseAndLink(const GameData &game, CompileState &state) = 0;
   virtual int link_globals(const GameData &game, CompileState &state) = 0;
   virtual int link_ambiguous(const GameData &game, CompileState &state) = 0;
-  virtual int compile_parseSecondary(CompileState &state) = 0;
 
   virtual int compile_writeGlobals(const GameData &game, const ParsedScope* global, const DotLocalMap &dot_accessed_locals) = 0;
   virtual int compile_writeObjectData(const GameData &game, const CompileState &state, int mode) = 0;

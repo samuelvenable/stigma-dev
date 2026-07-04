@@ -444,5 +444,18 @@ int lang_CPP::link_ambiguous(const GameData &/*game*/, CompileState &state)
     }
   }
 
+  // Wire parent-object pointers now that every object is parsed.
+  map<string, parsed_object*> po_by_name;
+  for (parsed_object* po : state.parsed_objects) po_by_name[po->name] = po;
+  for (parsed_object *obj : state.parsed_objects) {
+    auto parent_it = po_by_name.find(obj->parent_name);
+    if (parent_it != po_by_name.end()) {
+      obj->parent = parent_it->second;
+      parent_it->second->children.push_back(obj);
+      edbg << "Object " << obj->name << " (" << obj->id << ") is a child of "
+           << obj->parent->name << " (" << obj->parent->id << ")" << flushl;
+    }
+  }
+
   return 0;
 }
