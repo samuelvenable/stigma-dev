@@ -39,6 +39,11 @@
 #include <Storage/arg_key.h>
 #include <API/error_reporting.h>
 
+// JDI2 T1: a stable system header (libclang's C API), pinned regardless of
+// which population backend (JDI1's own parser vs. the clang adapter) is
+// active. See JDI2-DESIGN.md, "T1 seam".
+#include <clang-c/Index.h>
+
 namespace jdi {
 
 using std::deque;
@@ -59,6 +64,11 @@ struct definition {
   /// The definition of the scope in which this definition is declared.
   /// Except for the global scope of the context, this must be non-null.
   definition_scope* parent;
+  /// JDI2 T1: the libclang cursor this definition was populated from, if any.
+  /// Null under JDI1's own parser -- JDI1's constructors never set this; only
+  /// the clang-populator path (clang_adapter.cpp) does. Valid only while the
+  /// populating ClangContext (owner of the CXIndex/CXTranslationUnit) lives.
+  CXCursor cursor = clang_getNullCursor();
 
   /// Returns the kind of this definition; an identifier for the class.
   virtual string kind() const;
