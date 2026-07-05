@@ -190,6 +190,30 @@ TEST_F(ClangPopulatorTest, FunctionOverloads) {
   EXPECT_EQ(param_counts[1], 2u);
 }
 
+// Defaulted parameters carry JDI's presence sentinel so bounds minima count
+// them optional: greet(int, int = 5) must yield min 1, max 2 through the
+// same params[i].default_value read iterate_overloads performs.
+TEST_F(ClangPopulatorTest, DefaultedParameterSentinel) {
+  jdi::definition_scope* global = ctx.get_global();
+  ASSERT_NE(global, nullptr);
+  auto* greet_func =
+      dynamic_cast<jdi::definition_function*>(global->find_local("greet"));
+  ASSERT_NE(greet_func, nullptr);
+
+  bool saw_two_param_overload = false;
+  for (auto& entry : greet_func->overloads) {
+    ASSERT_FALSE(entry.second->referencers.empty());
+    auto& node = entry.second->referencers.top();
+    if (node.paramcount() != 2) continue;
+    saw_two_param_overload = true;
+    const jdi::ref_stack::parameter_ct& params =
+        ((jdi::ref_stack::node_func*)&node)->params;
+    EXPECT_EQ(params[0].default_value, nullptr);
+    EXPECT_NE(params[1].default_value, nullptr);
+  }
+  EXPECT_TRUE(saw_two_param_overload);
+}
+
 // C-style varargs mark the overload DEF_VARIADIC; non-variadic overloads
 // (greet's) never carry it. Parameter packs are deliberately NOT this flag.
 TEST_F(ClangPopulatorTest, CStyleVariadicFlag) {

@@ -1022,7 +1022,29 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     for (int i = 0; i < num_args; ++i) {
       CXType arg_type = clang_getArgType(func_type, i);
       jdi::full_type arg_ft(resolve_type_def(arg_type), jdi::ref_stack(), 0);
-      jdi::ref_stack::parameter p(arg_ft, /*default_value=*/nullptr);
+      // Defaulted parameters carry JDI's presence sentinel (an empty AST,
+      // matching JDI1's own convention) so parameter-bound minima count
+      // them optional. A ParmDecl with a default has the initializer
+      // expression among its children; type references are not expressions.
+      // The default's VALUE stays unevaluated -- that is thin-node
+      // territory, and bounds only need presence.
+      jdi::AST *default_sentinel = nullptr;
+      CXCursor arg_cursor = clang_Cursor_getArgument(cursor, i);
+      if (!clang_Cursor_isNull(arg_cursor)) {
+        bool has_default = false;
+        clang_visitChildren(
+            arg_cursor,
+            [](CXCursor child, CXCursor, CXClientData found) {
+              if (clang_isExpression(clang_getCursorKind(child))) {
+                *static_cast<bool*>(found) = true;
+                return CXChildVisit_Break;
+              }
+              return CXChildVisit_Continue;
+            },
+            &has_default);
+        if (has_default) default_sentinel = new jdi::AST();
+      }
+      jdi::ref_stack::parameter p(arg_ft, default_sentinel);
       params.throw_on(p);
     }
     jdi::ref_stack rf;

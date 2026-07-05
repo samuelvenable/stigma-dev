@@ -32,9 +32,11 @@ using namespace jdi;
  */
 static void visit_overload(
     definition_overload* d, unsigned &min, unsigned &max, definition *varargs_t) {
-  bool variadic = false;
+  // DEF_VARIADIC is the clang populator's C-style-varargs mark; JDI1's own
+  // parse marked a parameter instead. Honor both.
+  bool variadic = (d->flags & DEF_VARIADIC);
   unsigned int local_min=0,local_max=0;
-  
+
   const ref_stack &refs = ((definition_overload*)d)->referencers;
   const ref_stack::parameter_ct& params = ((ref_stack::node_func*)&refs.top())->params;
   for (size_t i = 0; i < params.size(); ++i)
