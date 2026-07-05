@@ -1028,15 +1028,19 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     jdi::ref_stack rf;
     rf.push_func(params);
 
+    // C-style varargs only: clang_isFunctionTypeVariadic never reports
+    // C++11 parameter packs (those are a per-parameter PackExpansionType,
+    // handled with the template work).
+    unsigned int addflags = 0;
     if (clang_isFunctionTypeVariadic(func_type)) {
-      // TODO(T2): variadic marking -- no natural home on the JDI structures yet.
+      addflags |= jdi::DEF_VARIADIC;
     }
 
     CXType return_type = clang_getResultType(func_type);
     jdi::definition* return_def = resolve_type_def(return_type);
 
     jdi::definition_overload* ovl = func_def->overload(
-        return_def, rf, /*typeflags=*/0, /*addflags=*/0,
+        return_def, rf, /*typeflags=*/0, addflags,
         /*implementation=*/nullptr, default_error_context());
     if (ovl) {
       ovl->cursor = cursor;

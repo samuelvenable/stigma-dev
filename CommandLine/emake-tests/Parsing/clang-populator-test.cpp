@@ -44,6 +44,9 @@ int global_counter;
 void greet(int x);
 void greet(int x, int y = 5);
 
+int printf_like(const char* fmt, ...);
+
+
 template <typename T>
 class Box {
  public:
@@ -185,6 +188,26 @@ TEST_F(ClangPopulatorTest, FunctionOverloads) {
   ASSERT_EQ(param_counts.size(), 2u);
   EXPECT_EQ(param_counts[0], 1u);
   EXPECT_EQ(param_counts[1], 2u);
+}
+
+// C-style varargs mark the overload DEF_VARIADIC; non-variadic overloads
+// (greet's) never carry it. Parameter packs are deliberately NOT this flag.
+TEST_F(ClangPopulatorTest, CStyleVariadicFlag) {
+  jdi::definition_scope* global = ctx.get_global();
+  ASSERT_NE(global, nullptr);
+
+  auto* variadic_func =
+      dynamic_cast<jdi::definition_function*>(global->find_local("printf_like"));
+  ASSERT_NE(variadic_func, nullptr);
+  ASSERT_EQ(variadic_func->overloads.size(), 1u);
+  EXPECT_TRUE(variadic_func->overloads.begin()->second->flags & jdi::DEF_VARIADIC);
+
+  auto* plain_func =
+      dynamic_cast<jdi::definition_function*>(global->find_local("greet"));
+  ASSERT_NE(plain_func, nullptr);
+  for (auto& entry : plain_func->overloads) {
+    EXPECT_FALSE(entry.second->flags & jdi::DEF_VARIADIC);
+  }
 }
 
 TEST_F(ClangPopulatorTest, ClassTemplate) {
