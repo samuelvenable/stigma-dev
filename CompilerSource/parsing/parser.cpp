@@ -1974,7 +1974,7 @@ std::unique_ptr<AST::Node> ParseExpression(int precedence, std::unique_ptr<AST::
   return std::make_unique<AST::SyntaxError>(origin);
 }
 
-std::unique_ptr<AST::BinaryExpression> TryParseBinaryExpression(int precedence, std::unique_ptr<AST::Node> operand) {
+std::unique_ptr<AST::Node> TryParseBinaryExpression(int precedence, std::unique_ptr<AST::Node> operand) {
   while (map_contains(Precedence::kBinaryPrec, token.type) &&
          precedence >= Precedence::kBinaryPrec[token.type].precedence && token.type != TT_ENDOFCODE) {
     Token oper = token;
@@ -1983,6 +1983,17 @@ std::unique_ptr<AST::BinaryExpression> TryParseBinaryExpression(int precedence, 
 
     if(token.type == TT_ENDOFCODE || token.type == TT_SEMICOLON){ // there are more cases
       herr->Error(token) << "Uncompleted binary expression";
+    }
+
+    // EDL's universal access operator builds the uniform access node, the
+    // same shape `::` produces in id-expressions: chains left-fold as
+    // ScopeAccess(ScopeAccess(a, b), c). The semantic annotator classifies
+    // each link; the parser only records the shape.
+    if (oper.type == TT_DOT) {
+      Token name = token;
+      require_token(TT_IDENTIFIER, "Expected identifier after member access");
+      operand = std::make_unique<AST::ScopeAccess>(std::move(operand), name, oper);
+      continue;
     }
 
     auto right = (rule.associativity == Associativity::LTR)
@@ -1995,7 +2006,7 @@ std::unique_ptr<AST::BinaryExpression> TryParseBinaryExpression(int precedence, 
     operand = std::make_unique<AST::BinaryExpression>(std::move(operand), std::move(right), op);
   }
 
-  return dynamic_unique_pointer_cast<AST::BinaryExpression>(std::move(operand));
+  return operand;
 }
 
 std::unique_ptr<AST::UnaryPostfixExpression> TryParseUnaryPostfixExpression(

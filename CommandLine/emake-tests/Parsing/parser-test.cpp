@@ -3240,18 +3240,13 @@ TEST(ParserTest, QualifiedExpressions_1) {
   auto *unary = if_stmt->condition->As<AST::UnaryPostfixExpression>();
   ASSERT_EQ(unary->operation.type, TT_DECREMENT);
   ASSERT_EQ(unary->operation.token, "--");
-  ASSERT_EQ(unary->operand->type, AST::NodeType::BINARY_EXPRESSION);
+  ASSERT_EQ(unary->operand->type, AST::NodeType::SCOPE_ACCESS);
 
-  auto *bin = unary->operand->As<AST::BinaryExpression>();
-  ASSERT_EQ(bin->operation.type, TT_DOT);
-  ASSERT_EQ(bin->left->type, AST::NodeType::IDENTIFIER);
-  ASSERT_EQ(bin->right->type, AST::NodeType::IDENTIFIER);
-
-  auto *left = bin->left->As<AST::IdentifierAccess>();
-  ASSERT_EQ(left->name.content, "a");
-
-  auto *right = bin->right->As<AST::IdentifierAccess>();
-  ASSERT_EQ(right->name.content, "b");
+  auto *access = unary->operand->As<AST::ScopeAccess>();
+  ASSERT_EQ(access->op.type, TT_DOT);
+  ASSERT_EQ(access->name.content, "b");
+  ASSERT_EQ(access->lhs->type, AST::NodeType::IDENTIFIER);
+  ASSERT_EQ(access->lhs->As<AST::IdentifierAccess>()->name.content, "a");
 
   auto *iden = if_stmt->true_branch->As<AST::IdentifierAccess>();
   ASSERT_EQ(iden->name.content, "l");
@@ -3998,9 +3993,15 @@ TEST(ParserTest, PostfixIncrementAfterMemberAccess) {
   auto node = test->TryParseStatement();
   ASSERT_NE(node, nullptr);
   EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
-  EXPECT_THAT(node.get(),
-              IsUnaryPostfixOperator(TT_INCREMENT,
-                  IsBinaryOperation(TT_DOT, IsIdentifier("a"), IsIdentifier("b"))));
+  ASSERT_EQ(node->type, AST::NodeType::UNARY_POSTFIX_EXPRESSION);
+  auto *unary = node->As<AST::UnaryPostfixExpression>();
+  EXPECT_EQ(unary->operation.type, TT_INCREMENT);
+  ASSERT_EQ(unary->operand->type, AST::NodeType::SCOPE_ACCESS);
+  auto *access = unary->operand->As<AST::ScopeAccess>();
+  EXPECT_EQ(access->op.type, TT_DOT);
+  EXPECT_EQ(access->name.content, "b");
+  ASSERT_EQ(access->lhs->type, AST::NodeType::IDENTIFIER);
+  EXPECT_EQ(access->lhs->As<AST::IdentifierAccess>()->name.content, "a");
 }
 
 // Torture case tying postfix binding to the boundary convention across
@@ -4522,10 +4523,10 @@ TEST(ParserTest, GmlWithStatement) {
 // the semantic annotator (typed locals become plain a.b, vars keep varaccess).
 
 // The semantic annotator classifies dot accesses after linking; the printer
-// reads the classification and only falls back to name heuristics on
+// reads the classification and only falls back to spelling heuristics on
 // UNRESOLVED. This drives the annotator directly over a bare parse tree.
 TEST(ParserTest, SemanticAnnotatorClassifiesDotAccess) {
-  using AccessKind = AST::BinaryExpression::AccessKind;
+  using AccessKind = AST::ScopeAccess::AccessKind;
   ParserTester test = ParserTester::CreateWithoutCpp(
       "a = global.foo; b = local.bar; c = p.q;");
   auto node = test->ParseCode();
@@ -4538,9 +4539,35 @@ TEST(ParserTest, SemanticAnnotatorClassifiesDotAccess) {
                                  AccessKind::VARACCESS};
   for (size_t i = 0; i < 3; ++i) {
     auto *rhs = block->statements[i]->As<AST::BinaryExpression>()->right.get();
-    ASSERT_EQ(rhs->type, AST::NodeType::BINARY_EXPRESSION);
-    EXPECT_EQ(rhs->As<AST::BinaryExpression>()->access_kind, expected[i]);
+    ASSERT_EQ(rhs->type, AST::NodeType::SCOPE_ACCESS);
+    EXPECT_EQ(rhs->As<AST::ScopeAccess>()->access_kind, expected[i]);
   }
+}
+
+// Chained dots left-fold into nested access nodes; every link classifies
+// (an instance-handle chain is varaccess at each step), and the printer
+// lowers the whole chain through nested accessors.
+TEST(ParserTest, DotChainsClassifyAndLower) {
+  using AccessKind = AST::ScopeAccess::AccessKind;
+  ParserTester test = ParserTester::CreateWithoutCpp("a.b.c = 1;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(test->current_token().type, TT_ENDOFCODE);
+  SemanticAnnotator annotator(&test.herr, test.context->language_fe);
+  node->RecurusiveVisit(annotator);
+  auto *block = node->As<AST::CodeBlock>();
+  ASSERT_EQ(block->statements.size(), 1u);
+  auto *outer = block->statements[0]->As<AST::BinaryExpression>()->left.get();
+  ASSERT_EQ(outer->type, AST::NodeType::SCOPE_ACCESS);
+  auto *chain = outer->As<AST::ScopeAccess>();
+  EXPECT_EQ(chain->access_kind, AccessKind::VARACCESS);
+  ASSERT_EQ(chain->lhs->type, AST::NodeType::SCOPE_ACCESS);
+  EXPECT_EQ(chain->lhs->As<AST::ScopeAccess>()->access_kind, AccessKind::VARACCESS);
+
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  EXPECT_THAT(v.GetPrintedCode(),
+              HasSubstr("enigma::varaccess_c(enigma::varaccess_b(a))"));
 }
 
 // The GM-idiom collision special: `foo = bar (100001).baz = qux` could read
@@ -4559,7 +4586,7 @@ TEST(ParserTest, NameParenIsAlwaysACall) {
 // undeclared names keep instance varaccess. DeclareLocal is the seam the
 // binder feeds; here it stands in for a definition-page struct.
 TEST(ParserTest, SemanticAnnotatorMemberArm) {
-  using AccessKind = AST::BinaryExpression::AccessKind;
+  using AccessKind = AST::ScopeAccess::AccessKind;
   ParserTester test = ParserTester::CreateWithoutCpp("p.x = 3; q.x = 4;");
   auto node = test->ParseCode();
   ASSERT_NE(node, nullptr);
@@ -4571,12 +4598,14 @@ TEST(ParserTest, SemanticAnnotatorMemberArm) {
   ASSERT_EQ(block->statements.size(), 2u);
   auto *p_dot = block->statements[0]->As<AST::BinaryExpression>()->left.get();
   auto *q_dot = block->statements[1]->As<AST::BinaryExpression>()->left.get();
-  ASSERT_EQ(p_dot->type, AST::NodeType::BINARY_EXPRESSION);
-  EXPECT_EQ(p_dot->As<AST::BinaryExpression>()->access_kind, AccessKind::MEMBER);
-  EXPECT_EQ(q_dot->As<AST::BinaryExpression>()->access_kind, AccessKind::VARACCESS);
+  ASSERT_EQ(p_dot->type, AST::NodeType::SCOPE_ACCESS);
+  EXPECT_EQ(p_dot->As<AST::ScopeAccess>()->access_kind, AccessKind::MEMBER);
+  EXPECT_EQ(q_dot->As<AST::ScopeAccess>()->access_kind, AccessKind::VARACCESS);
 }
 
-TEST(ParserTest, DotAccessParsesAsBinaryDot) {
+// EDL's dot emits the uniform access node -- the same shape :: produces --
+// with the operator's spelling on the node for the formatter.
+TEST(ParserTest, DotAccessParsesAsScopeAccess) {
   ParserTester test = ParserTester::CreateWithoutCpp("result = p.x;");
   auto node = test->ParseCode();
   ASSERT_NE(node, nullptr);
@@ -4586,8 +4615,9 @@ TEST(ParserTest, DotAccessParsesAsBinaryDot) {
   auto *assign = block->statements[0]->As<AST::BinaryExpression>();
   ASSERT_NE(assign, nullptr);
   auto *rhs = assign->right.get();
-  ASSERT_EQ(rhs->type, AST::NodeType::BINARY_EXPRESSION);
-  EXPECT_EQ(rhs->As<AST::BinaryExpression>()->operation.type, TT_DOT);
+  ASSERT_EQ(rhs->type, AST::NodeType::SCOPE_ACCESS);
+  EXPECT_EQ(rhs->As<AST::ScopeAccess>()->op.type, TT_DOT);
+  EXPECT_EQ(rhs->As<AST::ScopeAccess>()->name.content, "x");
 }
 
 // Struct DEFINITIONS are deliberately not EDL: definition pages (global C++

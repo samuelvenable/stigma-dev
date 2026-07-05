@@ -190,26 +190,6 @@ class DeclGatheringVisitor : public AST::Visitor {
     }
   }
 
-  bool AddGlobal(AST::BinaryExpression &node) {
-    if (node.left->type == AST::NodeType::IDENTIFIER) {
-      auto left = node.left->As<AST::IdentifierAccess>();
-      if (left->name.content == "global" && node.operation.type == enigma::parsing::TokenType::TT_DOT) {
-        auto right = node.right->As<AST::IdentifierAccess>();
-        parsed_scope->globals[right->name.content] = dectrip("var");
-        parsed_scope->locals[right->name.content] = dectrip("var");
-        cs->add_dot_accessed_local(right->As<AST::IdentifierAccess>()->name.content);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  void AddDot(AST::PNode &node) {
-    if (!node) return;
-    std::string name = CheckIfIdentifier(node);
-    if (name != "") parsed_scope->dots[name] = 0;
-    cs->add_dot_accessed_local(name);
-  }
 
   void AddFunction(AST::FunctionCallExpression &node) {
     std::string name = CheckIfIdentifier(node.function);
@@ -259,13 +239,27 @@ class DeclGatheringVisitor : public AST::Visitor {
   }
 
   bool VisitBinaryExpression(AST::BinaryExpression &node) {
-    bool added = AddGlobal(node);
-    if (!added) {
-      AddLocal(node.left);
-      if (node.operation.type == enigma::parsing::TokenType::TT_DOT) {
-        AddDot(node.right);
+    AddLocal(node.left);
+    AddLocal(node.right);
+    node.RecursiveSubVisit(*this);
+    return false;
+  }
+
+  // EDL dot accesses arrive as the uniform access node. global.<name>
+  // declares a global; any other dot marks <name> as a dot-accessed local
+  // so the accessor generator can reach it on every object.
+  bool VisitScopeAccess(AST::ScopeAccess &node) {
+    if (node.op.type == enigma::parsing::TokenType::TT_DOT) {
+      std::string name(node.name.content);
+      if (node.lhs && node.lhs->type == AST::NodeType::IDENTIFIER &&
+          node.lhs->As<AST::IdentifierAccess>()->name.content == "global") {
+        parsed_scope->globals[name] = dectrip("var");
+        parsed_scope->locals[name] = dectrip("var");
+        cs->add_dot_accessed_local(name);
       } else {
-        AddLocal(node.right);
+        AddLocal(node.lhs);
+        parsed_scope->dots[name] = 0;
+        cs->add_dot_accessed_local(name);
       }
     }
     node.RecursiveSubVisit(*this);

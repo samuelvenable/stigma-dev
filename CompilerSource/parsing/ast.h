@@ -180,12 +180,6 @@ class AST {
     PNode left, right;
     Operation operation;
 
-    /// Semantic classification of a TT_DOT access, written by the semantic
-    /// annotator after linking. Printers read it; UNRESOLVED trees (unit
-    /// harnesses, pre-annotation prints) fall back to legacy heuristics.
-    enum class AccessKind : char { UNRESOLVED, MEMBER, VARACCESS, GLOBAL, LOCAL };
-    AccessKind access_kind = AccessKind::UNRESOLVED;
-
     BASIC_NODE_ROUTINES(BinaryExpression);
 
     BinaryExpression(PNode left_, PNode right_, Operation operation_):
@@ -424,11 +418,22 @@ class AST {
     PNode lhs;   // scope id-expression; null = global scope (`::name`)
     Token name;  // trailing unqualified-id
     jdi::definition *def = nullptr;
+    // The access operator as written (:: or EDL's universal .). Formatting
+    // keeps the user's spelling; emission decides from access_kind.
+    Token op;
+
+    /// Semantic classification of a dot access, written by the semantic
+    /// annotator after linking. Printers read it; UNRESOLVED trees (unit
+    /// harnesses, pre-annotation prints) fall back to spelling heuristics.
+    enum class AccessKind : char { UNRESOLVED, MEMBER, VARACCESS, GLOBAL, LOCAL };
+    AccessKind access_kind = AccessKind::UNRESOLVED;
 
     BASIC_NODE_ROUTINES(ScopeAccess);
 
     ScopeAccess(PNode lhs_, Token name_, jdi::definition *def_ = nullptr):
         lhs(std::move(lhs_)), name(std::move(name_)), def(def_) {}
+    ScopeAccess(PNode lhs_, Token name_, Token op_):
+        lhs(std::move(lhs_)), name(std::move(name_)), op(std::move(op_)) {}
 
     jdi::definition *Definition() const override { return def; }
   };
@@ -793,7 +798,6 @@ class AST {
     std::string GetPrintedCode();
     bool VisitCode(CodeBlock &node);
     bool VisitCodeBlock(CodeBlock &node);
-    bool VisitDot(BinaryExpression &node);
     bool VisitBinaryExpression(BinaryExpression &node);
     bool VisitFunctionCallExpression(FunctionCallExpression &node);
     bool VisitUnaryPrefixExpression(UnaryPrefixExpression &node);

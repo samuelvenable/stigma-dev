@@ -91,9 +91,56 @@ bool AST::CppPrettyPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
 }
 
 bool AST::CppPrettyPrinter::VisitScopeAccess(AST::ScopeAccess &node) {
+  using AccessKind = AST::ScopeAccess::AccessKind;
+  std::string name(node.name.content);
+
+  // The annotator's classification wins. VARACCESS lowers chains naturally:
+  // the lhs visit emits its own lowering inside the accessor's argument.
+  switch (node.access_kind) {
+    case AccessKind::MEMBER:
+      if (node.lhs) VISIT_AND_CHECK(node.lhs);
+      print("." + name);
+      return true;
+    case AccessKind::LOCAL:
+      print(name);
+      return true;
+    case AccessKind::GLOBAL:
+      print("enigma::varaccess_" + name + "(int(global))");
+      return true;
+    case AccessKind::VARACCESS:
+      print("enigma::varaccess_" + name + "(");
+      if (node.lhs) VISIT_AND_CHECK(node.lhs);
+      print(")");
+      return true;
+    case AccessKind::UNRESOLVED:
+      break;
+  }
+
+  // Unannotated dot (unit harnesses, pre-annotation prints): the spelling
+  // heuristics the annotator supersedes.
+  if (node.op.type == TT_DOT) {
+    if (node.lhs && node.lhs->type == AST::NodeType::IDENTIFIER) {
+      std::string left(node.lhs->As<AST::IdentifierAccess>()->name.content);
+      if (left == "local") {
+        print(name);
+        return true;
+      }
+      if (left == "global") {
+        print("enigma::varaccess_" + name + "(int(global))");
+        return true;
+      }
+      print("enigma::varaccess_" + name + "(" + left + ")");
+      return true;
+    }
+    print("enigma::varaccess_" + name + "(");
+    if (node.lhs) VISIT_AND_CHECK(node.lhs);
+    print(")");
+    return true;
+  }
+
   if (node.lhs) VISIT_AND_CHECK(node.lhs);
   print("::");
-  print(node.name.content);
+  print(name);
   return true;
 }
 
@@ -258,54 +305,7 @@ bool AST::CppPrettyPrinter::VisitWithStatement(AST::WithStatement &node) {
   return true;
 }
 
-bool AST::CppPrettyPrinter::VisitDot(AST::BinaryExpression &node) {
-  using AccessKind = AST::BinaryExpression::AccessKind;
-  std::string left = node.left->As<AST::IdentifierAccess>()->name.content;
-  std::string right = node.right->As<AST::IdentifierAccess>()->name.content;
-
-  // The annotator's classification wins; UNRESOLVED trees (unit harnesses,
-  // pre-annotation prints) fall back to the name heuristics below.
-  switch (node.access_kind) {
-    case AccessKind::MEMBER:
-      print(left + "." + right);
-      return true;
-    case AccessKind::LOCAL:
-      print(right);
-      return true;
-    case AccessKind::GLOBAL:
-      print("enigma::varaccess_" + right + "(int(global))");
-      return true;
-    case AccessKind::VARACCESS:
-      print("enigma::varaccess_" + right + "(" + left + ")");
-      return true;
-    case AccessKind::UNRESOLVED:
-      break;
-  }
-
-  if (left == "local") {
-    print(right);
-    return true;
-  }
-
-  print("enigma::varaccess_");
-  print(right);
-  print("(");
-
-  if (left == "global") {
-    print("int(global)");
-  } else {
-    print(left);
-  }
-  print(")");
-  return true;
-}
-
 bool AST::CppPrettyPrinter::VisitBinaryExpression(AST::BinaryExpression &node) {
-  if (node.operation.type == TT_DOT && node.left->type == AST::NodeType::IDENTIFIER &&
-      node.right->type == AST::NodeType::IDENTIFIER) {
-    return VisitDot(node);
-  }
-
   VISIT_AND_CHECK(node.left);
 
   std::string operation = node.operation.token;

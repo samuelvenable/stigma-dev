@@ -37,7 +37,7 @@ class SemanticAnnotator : public AST::Visitor {
   SemanticAnnotator(ErrorHandler *herr, const LanguageFrontend *frontend)
       : herr_(herr), frontend_(frontend) {}
 
-  bool VisitBinaryExpression(AST::BinaryExpression &node) final;
+  bool VisitScopeAccess(AST::ScopeAccess &node) final;
   bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) final;
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) final;
 
@@ -49,7 +49,7 @@ class SemanticAnnotator : public AST::Visitor {
   }
 
  private:
-  void classify_access(AST::BinaryExpression &node);
+  void classify_access(AST::ScopeAccess &node);
   void validate_call(AST::FunctionCallExpression &node);
   void record_locals(AST::DeclarationStatement &node);
 

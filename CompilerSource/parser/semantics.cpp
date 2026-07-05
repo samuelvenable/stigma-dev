@@ -21,8 +21,8 @@
 
 namespace enigma::parsing {
 
-bool SemanticAnnotator::VisitBinaryExpression(AST::BinaryExpression &node) {
-  if (node.operation.type == TT_DOT) classify_access(node);
+bool SemanticAnnotator::VisitScopeAccess(AST::ScopeAccess &node) {
+  if (node.op.type == TT_DOT) classify_access(node);
   return true;
 }
 
@@ -80,16 +80,20 @@ void SemanticAnnotator::record_locals(AST::DeclarationStatement &node) {
   }
 }
 
-// Named dot accesses classify in three tiers: the global./local. keyword
+// Dot accesses classify in three tiers: the global./local. keyword
 // prefixes, then locals declared with a definition-page class type (plain
-// member access), then everything else as an instance varaccess.
-void SemanticAnnotator::classify_access(AST::BinaryExpression &node) {
-  using AccessKind = AST::BinaryExpression::AccessKind;
-  if (node.left->type != AST::NodeType::IDENTIFIER ||
-      node.right->type != AST::NodeType::IDENTIFIER) {
-    return;  // Chained or computed lhs: stays UNRESOLVED until the binder.
+// member access), then everything else as an instance varaccess. A chained
+// or computed lhs (a.b.c, f(x).y) is an instance handle under GML
+// semantics, so it lowers through varaccess too; struct-typed chains are
+// future binder work.
+void SemanticAnnotator::classify_access(AST::ScopeAccess &node) {
+  using AccessKind = AST::ScopeAccess::AccessKind;
+  if (!node.lhs) return;  // `::name` global-scope id: not a dot access.
+  if (node.lhs->type != AST::NodeType::IDENTIFIER) {
+    node.access_kind = AccessKind::VARACCESS;
+    return;
   }
-  const std::string &left = node.left->As<AST::IdentifierAccess>()->name.content;
+  const std::string &left = node.lhs->As<AST::IdentifierAccess>()->name.content;
   if (left == "global") {
     node.access_kind = AccessKind::GLOBAL;
   } else if (left == "local") {
