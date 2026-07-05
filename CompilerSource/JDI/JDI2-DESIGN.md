@@ -106,6 +106,32 @@ verified before acceptance.
   TU-lifetime plumbing to `jdi::definition`; retarget ClangContext's
   traversal to construct Storage structs. Standalone populate-and-dump
   test compares against JDI1's parse of the same headers.
+
+  **T1 seam (pinned 2026-07-05):**
+  - `jdi::definition` gains `CXCursor cursor` (null-cursor default);
+    `Storage/definition.h` includes `<clang-c/Index.h>` directly -- a
+    stable system C header, and JDI2 pins libclang regardless. JDI1's
+    own constructors never set it; population does.
+  - Lifetime rule: cursors are valid only while the populating
+    `ClangContext` (owner of `CXIndex` + `CXTranslationUnit`) lives.
+    Anything caching `definition*` must not outlive the context -- the
+    same discipline `definitionsModified`'s context swap already
+    imposes on `namespace_enigma`/`enigma_type__*`.
+  - Ownership: scopes own members via the existing
+    `defmap = map<string, unique_ptr<definition>>`; the populator
+    constructs with `make_unique` into the parent's map. No parallel
+    arena, no shared_ptr (the thin adapter's shared_ptr model retires
+    with its structs).
+  - Functions populate through `definition_function`'s existing
+    `overload(...)` API; parameters ride an `RT_FUNCTION` ref_stack
+    exactly as `walk_declarator_expr` (parsing/ast.cpp) builds them --
+    that function is the canonical in-tree exemplar.
+  - T1 skeleton scope: namespaces, classes, enums, typedefs, variables,
+    functions with overloads + parameters. Templates get the
+    DEF_TEMPLATE flag only (no definition_template construction --
+    that's T4 with the arg_key refresh). The T0-disabled
+    `jdi::builtin_type__int` assignments STAY disabled until T2: the
+    adapter must not mutate JDI1 globals while JDI1 is still primary.
 - **T2 (judgment, in-house):** cut lang_CPP over -- `main_context`
   becomes the clang-populated context; port their `jdi_utility.cpp`
   frontend impls (overload-aware parameter bounds); definitionsModified
