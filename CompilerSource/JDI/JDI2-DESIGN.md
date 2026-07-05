@@ -132,6 +132,28 @@ verified before acceptance.
     that's T4 with the arg_key refresh). The T0-disabled
     `jdi::builtin_type__int` assignments STAY disabled until T2: the
     adapter must not mutate JDI1 globals while JDI1 is still primary.
+
+  **Variadic taxonomy (pinned 2026-07-05).** Three distinct things;
+  never share a bit:
+  - **C-style varargs** (stdarg `...`): a per-overload boolean about the
+    signature's tail. Home: a `DEF_VARIADIC` flag bit on
+    `definition_overload`, set from `clang_isFunctionTypeVariadic` --
+    which reports exactly this and never packs, so clang keeps the
+    distinction for us.
+  - **C++11 parameter packs**: a per-PARAMETER property (one declaration
+    expanding to many), and packs can legally sit in non-terminal
+    positions (non-deduced function packs; partial-specialization
+    parameter lists). Clang models them as `PackExpansionType` on the
+    parameter, distinct from function-type variadicity. Representation
+    rides the parameter entry in the RT_FUNCTION ref_stack, deferred to
+    T4 with the template work. Until then the populator must simply
+    not misfile packs as DEF_VARIADIC (it cannot by construction, per
+    the clang API split above).
+  - **ENIGMA varargs** (`enigma::varargs`-typed parameter): an engine
+    convention, position-based -- `function_variadic_after` returns an
+    index, answered by scanning parameters for the varargs type. Stays
+    a lang_CPP-level scan, not a JDI struct fact; JDI-as-product does
+    not carry the ENIGMA-ism.
 - **T2 (judgment, in-house):** cut lang_CPP over -- `main_context`
   becomes the clang-populated context; port their `jdi_utility.cpp`
   frontend impls (overload-aware parameter bounds); definitionsModified
