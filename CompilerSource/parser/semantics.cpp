@@ -26,6 +26,13 @@ bool SemanticAnnotator::VisitScopeAccess(AST::ScopeAccess &node) {
   return true;
 }
 
+bool SemanticAnnotator::VisitBinaryExpression(AST::BinaryExpression &node) {
+  // EDL's / is real division regardless of operand types; div is the
+  // integer kind. C++ would truncate 1/4 to 0, so mark for lowering.
+  if (node.operation.type == TT_SLASH) node.lower_real_division = true;
+  return true;
+}
+
 bool SemanticAnnotator::VisitFunctionCallExpression(AST::FunctionCallExpression &node) {
   validate_call(node);
   return true;

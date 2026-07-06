@@ -38,6 +38,7 @@ class SemanticAnnotator : public AST::Visitor {
       : herr_(herr), frontend_(frontend) {}
 
   bool VisitScopeAccess(AST::ScopeAccess &node) final;
+  bool VisitBinaryExpression(AST::BinaryExpression &node) final;
   bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) final;
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) final;
 

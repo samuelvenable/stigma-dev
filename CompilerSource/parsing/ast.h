@@ -180,6 +180,11 @@ class AST {
     PNode left, right;
     Operation operation;
 
+    /// EDL's / is real division (div is the integer kind); the semantic
+    /// annotator marks divisions for lowering and the printer coerces.
+    /// Unannotated trees print verbatim.
+    bool lower_real_division = false;
+
     BASIC_NODE_ROUTINES(BinaryExpression);
 
     BinaryExpression(PNode left_, PNode right_, Operation operation_):

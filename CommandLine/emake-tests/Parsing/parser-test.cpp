@@ -4544,6 +4544,26 @@ TEST(ParserTest, SemanticAnnotatorClassifiesDotAccess) {
   }
 }
 
+// EDL's / is real division: the annotator marks it and the printer coerces
+// the divisor, so 1/4 emits 0.25's worth of arithmetic instead of C++'s 0.
+// Unannotated trees print verbatim (round-trip fidelity).
+TEST(ParserTest, RealDivisionLowering) {
+  ParserTester test = ParserTester::CreateWithoutCpp("r = 1 / 4;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  SemanticAnnotator annotator(&test.herr, test.context->language_fe);
+  node->RecurusiveVisit(annotator);
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*node->As<AST::CodeBlock>()));
+  EXPECT_THAT(v.GetPrintedCode(), HasSubstr("1 / (double) 4"));
+
+  ParserTester plain = ParserTester::CreateWithoutCpp("r = 1 / 4;");
+  auto unannotated = plain->ParseCode();
+  AST::CppPrettyPrinter v2;
+  ASSERT_TRUE(v2.VisitCode(*unannotated->As<AST::CodeBlock>()));
+  EXPECT_THAT(v2.GetPrintedCode(), Not(HasSubstr("(double)")));
+}
+
 // Chained dots left-fold into nested access nodes; every link classifies
 // (an instance-handle chain is varaccess at each step), and the printer
 // lowers the whole chain through nested accessors.

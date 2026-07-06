@@ -32,6 +32,10 @@ gtest_assert_eq(b1, 5);
 o1 = 0o17;
 gtest_assert_eq(o1, 15);
 
+// / is real division regardless of operand types; div is the integer kind.
+q = 1 / 4;
+gtest_assert_eq(q, 0.25);
+
 // GML word operators and repeat.
 m = 7 mod 4;
 gtest_assert_eq(m, 3);

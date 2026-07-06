@@ -323,6 +323,14 @@ bool AST::CppPrettyPrinter::VisitBinaryExpression(AST::BinaryExpression &node) {
   if (operation == ":=") operation = "=";
   print(" " + operation + " ");
 
+  // The annotator marks EDL divisions: / is real division regardless of
+  // operand types (1/4 is 0.25; div is the integer kind), so coerce.
+  // The rhs of / is never a lower-precedence subtree unparenthesized,
+  // so the cast binds to the whole printed operand.
+  if (node.lower_real_division && node.operation.type == TT_SLASH) {
+    print("(double) ");
+  }
+
   VISIT_AND_CHECK(node.right);
 
   if (is_multi_dim) {
