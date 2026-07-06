@@ -152,8 +152,18 @@ static jdi::ErrorContext default_error_context() {
 }
 
 // ClangContext implementation
+// One CXIndex for the process: repeated clang_createIndex/clang_disposeIndex
+// cycles trip once-only LLVM globals, and the SECOND parse in a process
+// nondeterministically populated an empty tree (caught by the test harness,
+// which rebuilds the context per settings change). The index leaks at
+// process exit by design.
+static CXIndex shared_index() {
+  static CXIndex index = clang_createIndex(0, 0);
+  return index;
+}
+
 ClangContext::ClangContext() : index_(nullptr), tu_(nullptr), namespace_filter_("") {
-  index_ = clang_createIndex(0, 0);
+  index_ = shared_index();
   // JDI2 T1 seam: mirror how jdi::Context builds its own global scope --
   // definition_scope's default constructor gives name "", null parent,
   // DEF_SCOPE (see JDI/src/Storage/definition.cpp and API/context.cpp).
@@ -192,9 +202,8 @@ ClangContext::~ClangContext() {
   if (tu_) {
     clang_disposeTranslationUnit(tu_);
   }
-  if (index_) {
-    clang_disposeIndex(index_);
-  }
+  // index_ is the process-wide shared index; never disposed (see
+  // shared_index above).
   // macro_token_strings_storage_ will be destroyed here, but any macros
   // that were returned by get_macros() should have been destroyed by then
 }
@@ -306,10 +315,12 @@ std::vector<const char*> ClangContext::build_args() {
         pipe = popen("g++ -E -x c++ -v /dev/null 2>&1", "r");
       }
 
-      // Add -stdlib=libc++ only if using clang
-      if (using_clang) {
-        system_include_strings.push_back("-stdlib=libc++");
-      }
+      // NOTE: do NOT pair -stdlib=libc++ with the include paths scraped
+      // below -- on Linux those are typically libstdc++ directories, and
+      // libc++ mode against libstdc++ headers half-breaks the TU (string
+      // reference errors in var4.h were the visible symptom). The scraped
+      // paths already imply the right standard library.
+      (void)using_clang;
 
       if (pipe) {
         char buffer[512];

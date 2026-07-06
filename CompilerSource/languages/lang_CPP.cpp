@@ -148,6 +148,17 @@ syntax_error *lang_CPP::definitionsModified(const char* wscode,
   extra_include_dirs.push_back((shell_dir / "Widget_Systems" / extensions::targetAPI.widgetSys / "Info").u8string());
   extra_include_dirs.push_back((shell_dir / "Networking_Systems" / extensions::targetAPI.networkSys / "Info").u8string());
   extra_include_dirs.push_back((shell_dir / "Universal_System" / "Info").u8string());
+  // The platform Makefiles add their fileio subdirectories; mirror them so
+  // "file_t.h" resolves (its absence was a fatal that truncated the TU).
+  std::filesystem::path general_fileio = shell_dir / "Platforms" / "General" / "fileio";
+  if (std::filesystem::exists(general_fileio)) {
+    extra_include_dirs.push_back(general_fileio.u8string());
+  }
+  std::filesystem::path platform_fileio =
+      shell_dir / "Platforms" / extensions::targetAPI.windowSys / "fileio";
+  if (std::filesystem::exists(platform_fileio)) {
+    extra_include_dirs.push_back(platform_fileio.u8string());
+  }
   std::filesystem::path platform_graphics_bridge =
       shell_dir / "Bridges" / (extensions::targetAPI.windowSys + "-" + extensions::targetAPI.graphicsSys);
   if (std::filesystem::exists(platform_graphics_bridge)) {
