@@ -151,6 +151,53 @@ static jdi::ErrorContext default_error_context() {
   return jdi::default_error_handler->at({"clang_adapter", 0, 0});
 }
 
+// Population diagnostics, gated by ENIGMA_POPULATE_DEBUG so the counters
+// cost nothing when unset. Investigates the second-parse flake: an identical
+// TU (byte-identical clang diagnostics) sometimes populates a near-empty
+// definition tree. Reports, per build_definitions() pass: cursors visited,
+// definitions created, cursors skipped (and why), and a canary that catches
+// the specific corruption under suspicion -- a definition* flagged
+// DEF_TYPED whose dynamic type is not actually definition_typed, which
+// would make arg_key::put_type's `(definition_typed*)` cast read past the
+// end of a smaller allocation.
+namespace {
+struct PopulateDebugStats {
+  long cursors_visited = 0;
+  long defs_created = 0;
+  long skipped_tu_or_unexposed = 0;
+  long skipped_using_decl = 0;
+  long skipped_zero_flags = 0;
+  long skipped_empty_name = 0;
+  long skipped_function_local = 0;
+  long type_mismatches = 0;
+} g_pop_stats;
+
+bool populate_debug_enabled() {
+  static const bool enabled = std::getenv("ENIGMA_POPULATE_DEBUG") != nullptr;
+  return enabled;
+}
+
+// Canary: flag (but do not alter) any resolved type definition* that claims
+// DEF_TYPED without actually being a definition_typed. Passing such a def to
+// arg_key::put_type is undefined behavior (it reads ->type/->referencers
+// past the real object) -- exactly the shape of the second-parse population
+// flake (see the dedup guard in process_cursor's DEF_TYPED branch). `context`
+// names the enclosing declaration being processed, for the rare case this
+// ever fires again. Returns `def` unchanged either way.
+jdi::definition* check_resolved_type(jdi::definition* def, const char* where,
+                                      const std::string& context) {
+  if (!populate_debug_enabled() || !def) return def;
+  if ((def->flags & jdi::DEF_TYPED) && !dynamic_cast<jdi::definition_typed*>(def)) {
+    ++g_pop_stats.type_mismatches;
+    std::cerr << "POPDBG: TYPE MISMATCH at " << where << " (" << context
+              << "): def=" << def << " name=\"" << def->name << "\" flags=0x"
+              << std::hex << def->flags << std::dec
+              << " -- DEF_TYPED set but dynamic_cast<definition_typed*> failed\n";
+  }
+  return def;
+}
+}  // namespace
+
 // ClangContext implementation
 // One CXIndex for the process: repeated clang_createIndex/clang_disposeIndex
 // cycles trip once-only LLVM globals, and the SECOND parse in a process
@@ -816,6 +863,8 @@ static enum CXChildVisitResult populate_ancestors_visitor(CXCursor cursor, CXCur
 void ClangContext::build_definitions() {
   if (!tu_) return;
 
+  if (populate_debug_enabled()) g_pop_stats = PopulateDebugStats{};
+
   CXCursor root = clang_getTranslationUnitCursor(tu_);
 
   // Create traversal state
@@ -833,11 +882,26 @@ void ClangContext::build_definitions() {
   // This ensures that referenced definitions exist when we process using declarations
   UsingDeclState using_state = {this, &state};
   clang_visitChildren(root, process_using_declarations_visitor, &using_state);
+
+  if (populate_debug_enabled()) {
+    std::cerr << "POPDBG build_definitions: cursors_visited=" << g_pop_stats.cursors_visited
+              << " defs_created=" << g_pop_stats.defs_created
+              << " skip[tu/unexposed]=" << g_pop_stats.skipped_tu_or_unexposed
+              << " skip[using_decl]=" << g_pop_stats.skipped_using_decl
+              << " skip[zero_flags]=" << g_pop_stats.skipped_zero_flags
+              << " skip[empty_name]=" << g_pop_stats.skipped_empty_name
+              << " skip[function_local]=" << g_pop_stats.skipped_function_local
+              << " type_mismatches=" << g_pop_stats.type_mismatches
+              << " global_members=" << (global_scope_ ? global_scope_->members.size() : 0)
+              << std::endl;
+  }
 }
 
 enum CXChildVisitResult ClangContext::visit_cursor(CXCursor cursor, CXCursor /* parent */, CXClientData client_data) {
   TraversalState* state = static_cast<TraversalState*>(client_data);
   ClangContext* ctx = state->ctx;
+
+  if (populate_debug_enabled()) ++g_pop_stats.cursors_visited;
 
   jdi::definition_scope* target_scope = state->current_scope();
 
@@ -939,12 +1003,14 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
   if (kind == CXCursor_TranslationUnit ||
       kind == CXCursor_UnexposedDecl ||
       kind == CXCursor_FirstInvalid) {
+    if (populate_debug_enabled()) ++g_pop_stats.skipped_tu_or_unexposed;
     return;
   }
 
   // Handle using declarations - these are now processed in a third pass after all definitions are built
   // Skip them here to avoid processing them before referenced definitions exist
   if (kind == CXCursor_UsingDeclaration) {
+    if (populate_debug_enabled()) ++g_pop_stats.skipped_using_decl;
     return;  // Don't process using declarations as regular definitions - handled in third pass
   }
 
@@ -955,6 +1021,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     // Not a definition we care about. Also covers TemplateTypeParameter/
     // NonTypeTemplateParameter cursors, which T1 skips outright (see
     // cursor_kind_to_flags).
+    if (populate_debug_enabled()) ++g_pop_stats.skipped_zero_flags;
     return;
   }
 
@@ -965,6 +1032,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     // Allow through only if it's a typed definition that might have special handling
     // But type aliases and typedefs (DEF_TYPENAME) must have names
     if (!(flags & jdi::DEF_TYPED) || (flags & jdi::DEF_TYPENAME)) {
+      if (populate_debug_enabled()) ++g_pop_stats.skipped_empty_name;
       return;
     }
   }
@@ -998,6 +1066,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
 
     scope->members[name] = std::move(def);
     register_usr(cursor, raw);
+    if (populate_debug_enabled()) ++g_pop_stats.defs_created;
 
     // Children are visited via the caller (visit_cursor), which pushes this
     // scope once it sees DEF_SCOPE and looks it back up from scope->members.
@@ -1019,6 +1088,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
       func_def = uf.get();
       dp.def = std::move(uf);
       register_usr(cursor, func_def);
+      if (populate_debug_enabled()) ++g_pop_stats.defs_created;
     } else {
       func_def = dynamic_cast<jdi::definition_function*>(dp.def.get());
       if (!func_def) {
@@ -1043,7 +1113,10 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     jdi::ref_stack::parameter_ct params;
     for (int i = 0; i < num_args; ++i) {
       CXType arg_type = clang_getArgType(func_type, i);
-      jdi::full_type arg_ft(resolve_type_def(arg_type), jdi::ref_stack(), 0);
+      jdi::full_type arg_ft(
+          check_resolved_type(resolve_type_def(arg_type), "function parameter",
+                               name + "#arg" + std::to_string(i)),
+          jdi::ref_stack(), 0);
       // Defaulted parameters carry JDI's presence sentinel (an empty AST,
       // matching JDI1's own convention) so parameter-bound minima count
       // them optional. A ParmDecl with a default has the initializer
@@ -1081,7 +1154,8 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     }
 
     CXType return_type = clang_getResultType(func_type);
-    jdi::definition* return_def = resolve_type_def(return_type);
+    jdi::definition* return_def =
+        check_resolved_type(resolve_type_def(return_type), "function return type", name);
 
     jdi::definition_overload* ovl = func_def->overload(
         return_def, rf, /*typeflags=*/0, addflags,
@@ -1108,6 +1182,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
             parent_kind == CXCursor_CXXMethod ||
             parent_kind == CXCursor_FunctionTemplate) {
           // This is a function-local variable (including loop variables), skip it
+          if (populate_debug_enabled()) ++g_pop_stats.skipped_function_local;
           return;
         }
 
@@ -1137,6 +1212,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
           }
           if (is_in_function) {
             // This variable is in a function body, skip it
+            if (populate_debug_enabled()) ++g_pop_stats.skipped_function_local;
             return;
           }
         }
@@ -1146,6 +1222,20 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     // Re-fetch scope before insertion
     scope = get_scope();
     if (!scope) {
+      return;
+    }
+
+    // A redeclaration of the same name in the same scope (a legitimate
+    // extern-then-definition pair, or a same-named member merged in from a
+    // second template instantiation via visit_cursor's scope-reuse -- see
+    // the DEF_SCOPE branch above) must not overwrite the existing entry.
+    // Unlike this branch, DEF_SCOPE and DEF_FUNCTION already dedup this way;
+    // an unconditional `scope->members[name] = ...` here destroys the prior
+    // definition_typed while defs_by_usr_ (or an already-resolved full_type
+    // elsewhere) may still hold its address, a use-after-free that only
+    // crashes when the freed memory is later reused with bits that happen
+    // to look like a definition's vtable/flags. First declaration wins.
+    if (!name.empty() && scope->members.find(name) != scope->members.end()) {
       return;
     }
 
@@ -1173,13 +1263,15 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
 
     // Create typed definition
     auto def = std::make_unique<jdi::definition_typed>(
-        name, scope, resolve_type_def(var_type), /*typeflags=*/0, flags);
+        name, scope, check_resolved_type(resolve_type_def(var_type), "variable/field type", name),
+        /*typeflags=*/0, flags);
     def->cursor = cursor;
     jdi::definition_typed* raw = def.get();
 
     if (!name.empty()) {
       scope->members[name] = std::move(def);
       register_usr(cursor, raw);
+      if (populate_debug_enabled()) ++g_pop_stats.defs_created;
 
       // Handle inline namespaces: if the current scope is an inline namespace,
       // also add the definition to the parent namespace
@@ -1202,6 +1294,15 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     // Re-fetch scope before insertion
     scope = get_scope();
     if (!scope) {
+      return;
+    }
+
+    // Same redeclaration hazard as the DEF_TYPED branch above (e.g. a
+    // forward-declared `enum class Foo;` later defined `enum class Foo {...};`
+    // -- two cursors, same name, same scope): first declaration wins rather
+    // than destroying-and-replacing, which would leave any already-captured
+    // pointer to the first object dangling.
+    if (!name.empty() && scope->members.find(name) != scope->members.end()) {
       return;
     }
 
