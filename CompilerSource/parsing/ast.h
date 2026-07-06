@@ -430,7 +430,7 @@ class AST {
     /// Semantic classification of a dot access, written by the semantic
     /// annotator after linking. Printers read it; UNRESOLVED trees (unit
     /// harnesses, pre-annotation prints) fall back to spelling heuristics.
-    enum class AccessKind : char { UNRESOLVED, MEMBER, VARACCESS, GLOBAL, LOCAL };
+    enum class AccessKind : char { UNRESOLVED, MEMBER, VARACCESS, GLOBAL, LOCAL, SHARED };
     AccessKind access_kind = AccessKind::UNRESOLVED;
 
     BASIC_NODE_ROUTINES(ScopeAccess);

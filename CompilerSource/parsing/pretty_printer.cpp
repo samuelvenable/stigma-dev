@@ -112,6 +112,13 @@ bool AST::CppPrettyPrinter::VisitScopeAccess(AST::ScopeAccess &node) {
       if (node.lhs) VISIT_AND_CHECK(node.lhs);
       print(")");
       return true;
+    case AccessKind::SHARED:
+      // Built-in tier locals: one generated accessor returns the tier
+      // pointer; the member access is direct.
+      print("enigma::glaccess(int(");
+      if (node.lhs) VISIT_AND_CHECK(node.lhs);
+      print("))->" + name);
+      return true;
     case AccessKind::UNRESOLVED:
       break;
   }

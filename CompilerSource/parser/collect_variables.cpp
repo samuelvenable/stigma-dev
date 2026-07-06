@@ -258,8 +258,12 @@ class DeclGatheringVisitor : public AST::Visitor {
         cs->add_dot_accessed_local(name);
       } else {
         AddLocal(node.lhs);
-        parsed_scope->dots[name] = 0;
-        cs->add_dot_accessed_local(name);
+        // Built-in tier locals route through the generated tier accessor,
+        // not a per-name varaccess; keep them out of the dot map.
+        if (!lang->is_shared_local(name)) {
+          parsed_scope->dots[name] = 0;
+          cs->add_dot_accessed_local(name);
+        }
       }
     }
     node.RecursiveSubVisit(*this);

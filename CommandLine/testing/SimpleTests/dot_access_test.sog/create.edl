@@ -33,4 +33,14 @@ if (instance_number(test_object) == 1)
   // Dot reads compose in expressions.
   total = self.hp + buddy.hp + global.team_score;
   gtest_assert_eq(total, 58);
+
+  // Built-in tier locals: dot access and bare access are the SAME storage
+  // (the tier accessor, not a varaccess shadow slot).
+  x = 64;
+  gtest_assert_eq(self.x, 64);
+  self.x = 32;
+  gtest_assert_eq(x, 32);
+  buddy.y = 16;
+  gtest_assert_eq(buddy.y, 16);
+  gtest_assert_eq(self.y, 0);
 }

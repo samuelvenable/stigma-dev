@@ -109,6 +109,11 @@ void SemanticAnnotator::classify_access(AST::ScopeAccess &node) {
     node.access_kind = AccessKind::LOCAL;
   } else if (struct_locals_.count(left)) {
     node.access_kind = AccessKind::MEMBER;
+  } else if (frontend_->is_shared_local(node.name.content)) {
+    // Built-in locals (x, y, speed...) are inherited by every instance
+    // through the object tiers; access goes through the generated tier
+    // accessor, never a per-name varaccess.
+    node.access_kind = AccessKind::SHARED;
   } else {
     node.access_kind = AccessKind::VARACCESS;
   }
