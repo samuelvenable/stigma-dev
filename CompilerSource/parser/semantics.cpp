@@ -41,7 +41,9 @@ bool SemanticAnnotator::VisitFunctionCallExpression(AST::FunctionCallExpression 
 // Relocated from the parse-time SyntaxChecker: a callee's identity (and thus
 // its arity) isn't knowable until dot accesses and instance lookups resolve,
 // so argument checking belongs here. Only globally-resolved named callees
-// are checkable today; member callees await the binder.
+// are checkable today; member callees await the binder. Hard errors: the
+// clang-populated bounds carry real parameters, defaults, and variadic
+// marks.
 void SemanticAnnotator::validate_call(AST::FunctionCallExpression &node) {
   if (node.function->type != AST::NodeType::IDENTIFIER) return;
   auto *func = node.function->As<AST::IdentifierAccess>();
@@ -51,14 +53,14 @@ void SemanticAnnotator::validate_call(AST::FunctionCallExpression &node) {
   unsigned int max = 0;
   frontend_->definition_parameter_bounds(def, min, max);
   if (max == unsigned(-1)) return;
-  // TODO(jdi2): warnings, not errors, while the bounds come from JDI1's
-  // engine parse, which miscounts qualified parameters (a lone
-  // `const unsigned int id` reads as two; likewise `const ::variant&`).
-  // Restore hard errors when the counts are trustworthy.
   if (node.arguments.size() < min) {
-    herr_->Warning(func->name) << "Too few arguments to function call";
+    herr_->Error(func->name)
+        << "Too few arguments to `" << func->name.content << "': wanted at least "
+        << min << ", got " << node.arguments.size();
   } else if (node.arguments.size() > max) {
-    herr_->Warning(func->name) << "Too many arguments to function call";
+    herr_->Error(func->name)
+        << "Too many arguments to `" << func->name.content << "': wanted at most "
+        << max << ", got " << node.arguments.size();
   }
 }
 
@@ -116,30 +118,45 @@ void SemanticAnnotator::classify_access(AST::ScopeAccess &node) {
 
 namespace {
 
-void annotate(ParsedCode &code) {
+// Annotates one AST; returns 1 if the pass left errors on it. Parse-phase
+// errors abort the compile before this pass runs, so any error present
+// afterward is semantic. `where` names the code for the diagnostic.
+int annotate(ParsedCode &code, const std::string &where) {
   enigma::parsing::SemanticAnnotator annotator(
       &code.ast.herr, code.ast.lexer->GetContext().language_fe);
   code.ast.VisitNodes(annotator);
+  if (!code.ast.HasError()) return 0;
+  std::cerr << "Semantic error in " << where << ":\n"
+            << code.ast.ErrorString() << std::endl;
+  return 1;
 }
 
 }  // namespace
 
-void annotate_semantics(CompileState &state) {
+int annotate_semantics(CompileState &state) {
+  int errors = 0;
   for (parsed_object *obj : state.parsed_objects)
-    for (ParsedEvent &event : obj->all_events) annotate(event);
+    for (ParsedEvent &event : obj->all_events)
+      errors += annotate(event, "object `" + obj->name + "'");
   for (ParsedScript *script : state.parsed_scripts) {
-    annotate(script->code);
-    if (script->global_code) annotate(*script->global_code);
+    errors += annotate(script->code, "script `" + script->name + "'");
+    if (script->global_code)
+      errors += annotate(*script->global_code, "script `" + script->name + "'");
   }
   for (ParsedScript *tline : state.parsed_tlines) {
-    annotate(tline->code);
-    if (tline->global_code) annotate(*tline->global_code);
+    errors += annotate(tline->code, "timeline `" + tline->name + "'");
+    if (tline->global_code)
+      errors += annotate(*tline->global_code, "timeline `" + tline->name + "'");
   }
   for (parsed_room *room : state.parsed_rooms) {
-    if (room->creation_code) annotate(*room->creation_code);
+    if (room->creation_code)
+      errors += annotate(*room->creation_code, "room `" + room->name + "' creation code");
     for (auto &[id, icc] : room->instance_create_codes)
-      if (icc.code) annotate(*icc.code);
+      if (icc.code)
+        errors += annotate(*icc.code, "instance creation code in room `" + room->name + "'");
     for (auto &[id, icc] : room->instance_precreate_codes)
-      if (icc.code) annotate(*icc.code);
+      if (icc.code)
+        errors += annotate(*icc.code, "instance precreation code in room `" + room->name + "'");
   }
+  return errors;
 }

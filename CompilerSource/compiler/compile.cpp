@@ -632,7 +632,12 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
   irrr();
 
   edbg << "Annotating semantics" << flushl;
-  annotate_semantics(state);
+  if (int semantic_errors = annotate_semantics(state)) {
+    user << "Compile failed: " << semantic_errors
+         << " semantic error(s); see log above." << flushl;
+    idpr("Semantic errors; see scrollback for details.", -1);
+    return E_ERROR_SYNTAX;
+  }
 
   state.used_events = ListUsedEvents(state.parsed_objects, event_data());
 

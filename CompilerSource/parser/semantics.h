@@ -64,7 +64,10 @@ class SemanticAnnotator : public AST::Visitor {
 }  // namespace enigma::parsing
 
 /// Annotate every parsed AST in the game: object events, scripts,
-/// timelines, and room creation code.
-void annotate_semantics(CompileState &state);
+/// timelines, and room creation code. Returns the number of ASTs that
+/// gained semantic errors; the compile sequence treats nonzero as fatal
+/// (parse-phase errors abort earlier, so any error present afterward is
+/// this pass's).
+int annotate_semantics(CompileState &state);
 
 #endif
