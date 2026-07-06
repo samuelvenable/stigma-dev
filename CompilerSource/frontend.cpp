@@ -42,6 +42,7 @@ using namespace std;
 
 #include <API/context.h>
 #include "languages/language_adapter.h"
+#include "languages/clang_adapter.h"
 
 string fc(const char* fn);
 

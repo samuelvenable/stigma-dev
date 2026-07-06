@@ -889,7 +889,18 @@ jdi::definition* ClangContext::resolve_type_def(CXType type) {
     return it == global_scope_->members.end() ? nullptr : it->second.get();
   }
 
-  CXCursor decl = clang_getTypeDeclaration(type);
+  // References and pointers have no declaring cursor; the pointee does.
+  // The varargs convention passes `const enigma::varargs&`, and the
+  // positional scan compares the parameter's def against the varargs
+  // class definition, so resolve through to the underlying record.
+  CXType resolved = canonical;
+  while (resolved.kind == CXType_LValueReference ||
+         resolved.kind == CXType_RValueReference ||
+         resolved.kind == CXType_Pointer) {
+    resolved = clang_getPointeeType(resolved);
+  }
+
+  CXCursor decl = clang_getTypeDeclaration(resolved);
   if (clang_Cursor_isNull(decl)) return nullptr;
 
   CXString usr = clang_getCursorUSR(decl);

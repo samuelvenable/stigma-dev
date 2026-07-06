@@ -71,7 +71,7 @@ extern map<string, language_adapter*> languages;
 extern language_adapter *current_language;
 extern string current_language_name;
 
-#include <API/context.h>
-extern jdi::Context *main_context;
+namespace clang_adapter { class ClangContext; }
+extern clang_adapter::ClangContext *main_context;
 
 #endif

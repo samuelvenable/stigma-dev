@@ -168,6 +168,11 @@ bool is_user_defined_type(const Token &tok) {
   switch (tok.type) {
     case TT_IDENTIFIER:
       if (auto def = frontend->look_up(tok.content); def != nullptr) {
+        // A function template is a function, not a type: DEF_TEMPLATE is in
+        // this mask for class templates (which carry no DEF_TYPENAME), and
+        // JDI1 never surfaced function templates here -- clang population
+        // does, flagged DEF_FUNCTION | DEF_TEMPLATE.
+        if (def->flags & jdi::DEF_FUNCTION) return false;
         // DEF_TYPED is set on every variable, so it can't be in this mask.
         return def->flags & (jdi::DEF_TYPENAME | jdi::DEF_CLASS | jdi::DEF_ENUM | jdi::DEF_TEMPLATE);
       }
