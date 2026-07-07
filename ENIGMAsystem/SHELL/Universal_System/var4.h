@@ -24,7 +24,7 @@
 #include <limits>
 #include <string>
 
-#ifdef JUST_DEFINE_IT_RUN
+#if defined(JUST_DEFINE_IT_RUN) && !defined(ENIGMA_DEFINITIONS_PARSE)
 #  include <stdint.h>
 #  define constexpr const
 #  define decltype(x) double

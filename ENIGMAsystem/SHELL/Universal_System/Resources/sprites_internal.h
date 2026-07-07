@@ -18,7 +18,7 @@
 **/
 
 //FIXME: this should be ifdef shellmain but enigmas in a sorry state
-#ifdef JUST_DEFINE_IT_RUN
+#if defined(JUST_DEFINE_IT_RUN) && !defined(ENIGMA_DEFINITIONS_PARSE)
 #error This file includes non-ENIGMA STL headers and should not be included from SHELLmain.
 #endif
 

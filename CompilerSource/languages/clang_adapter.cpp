@@ -278,10 +278,31 @@ std::vector<const char*> ClangContext::build_args() {
   // Add C++ standard
   std::vector<const char*> args;
   args.push_back("-std=c++17");
-  // Note: -stdlib=libc++ will be added conditionally based on detected compiler
+  // Report every diagnostic: the default cap both hides errors and can
+  // truncate population of everything past the limit.
+  args.push_back("-ferror-limit=0");
 
   // Get system include paths (only compute once)
   if (system_include_strings.empty()) {
+    // clang's builtin headers (stddef.h, feature-detection intrinsics) come
+    // from its resource directory; without it, libstdc++'s config macros
+    // misdetect and its own headers self-contradict (the constexpr
+    // redeclaration errors in <array>/<algorithmfwd>).
+    if (system_include_strings.empty()) {
+      FILE* rd = popen("clang -print-resource-dir 2>/dev/null", "r");
+      if (rd) {
+        char buffer[512];
+        if (fgets(buffer, sizeof(buffer), rd)) {
+          std::string dir = buffer;
+          while (!dir.empty() && (dir.back() == '\n' || dir.back() == ' ')) dir.pop_back();
+          if (!dir.empty()) {
+            system_include_strings.push_back("-resource-dir");
+            system_include_strings.push_back(dir);
+          }
+        }
+        pclose(rd);
+      }
+    }
     #ifdef __APPLE__
       // macOS always uses clang, so add -stdlib=libc++
       system_include_strings.push_back("-stdlib=libc++");

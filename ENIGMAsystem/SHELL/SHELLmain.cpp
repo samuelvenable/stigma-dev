@@ -89,11 +89,11 @@ namespace enigma_user {}
 
 using namespace enigma_user;
 
-#ifndef JUST_DEFINE_IT_RUN
+#if !defined(JUST_DEFINE_IT_RUN) && !defined(ENIGMA_DEFINITIONS_PARSE)
   #include "Preprocessor_Environment_Editable/IDE_EDIT_resourcenames.h"
 #endif
 #include "Preprocessor_Environment_Editable/IDE_EDIT_whitespace.h"
-  #ifndef JUST_DEFINE_IT_RUN
+  #if !defined(JUST_DEFINE_IT_RUN) && !defined(ENIGMA_DEFINITIONS_PARSE)
   #include "Universal_System/syntax_quirks.h"
 
   #include "Universal_System/Instances/with.h"

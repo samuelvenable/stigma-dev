@@ -130,6 +130,12 @@ syntax_error *lang_CPP::definitionsModified(const char* wscode,
   FILE *of = wscode ? fopen((codegen_directory/"Preprocessor_Environment_Editable/IDE_EDIT_whitespace.h").u8string().c_str(),"wb") : NULL;
   if (of) fputs(wscode,of), fclose(of);
 
+  // AssetEnum.h is game-independent (it enumerates the TreeNode proto's
+  // asset kinds), but the game compile generates it after this parse would
+  // need it; generate it here too so asset_index.h resolves.
+  extern void wite_asset_enum(const std::filesystem::path &fName);
+  wite_asset_enum(codegen_directory/"AssetEnum.h");
+
   cout << "Opening ENIGMA for parse..." << endl;
 
   DECLARE_TIME_TYPE ts, te;
@@ -187,11 +193,16 @@ syntax_error *lang_CPP::definitionsModified(const char* wscode,
     extra_include_dirs.push_back("/opt/homebrew/include/");  // macOS Homebrew
   }
 
-  // JUST_DEFINE_IT_RUN no longer hides unparseable code -- clang eats the
-  // real headers -- but the guards it drives also fence off per-game
-  // generated headers that do not exist at definitions time.
+  // JUST_DEFINE_IT_RUN carries two roles: parser-appeasement shims (var4's
+  // keyword rewrites -- poison to a real compiler) and the EDL-facing API
+  // presentation (GTest shows clean prototypes under it and stringizing
+  // variadic macros otherwise). Keep the macro for the API view and the
+  // generated-header fences; ENIGMA_DEFINITIONS_PARSE additionally marks
+  // this as the clang parse so the shim sites (conditioned on it) stay
+  // dormant and clang reads the real keywords.
   std::vector<std::string> defines;
   defines.push_back("JUST_DEFINE_IT_RUN");
+  defines.push_back("ENIGMA_DEFINITIONS_PARSE");
   {
     ey_data settree = parse_eyaml_str(targetYaml);
     if (settree.get("target-mode").toString() == "Debug") {
