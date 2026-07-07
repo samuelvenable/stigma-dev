@@ -6,6 +6,7 @@
 #include "clang_adapter.h"
 #include "parsing/macros.h"
 #include "parsing/lexer.h"
+#include <System/builtins.h>
 #include <clang-c/Index.h>
 #include <iostream>
 #include <sstream>
@@ -361,74 +362,21 @@ std::vector<const char*> ClangContext::build_args() {
         system_include_args.push_back(str.c_str());
       }
     #elif __linux__
-      // Auto-detect C++ include paths by querying the compiler
-      // Try clang++ first, then fall back to g++
-      bool using_clang = false;
-      FILE* pipe = popen("clang++ -E -x c++ -v /dev/null 2>&1", "r");
-      if (pipe) {
-        // Check if clang++ actually exists and works by reading a line
-        char test_buffer[256];
-        if (fgets(test_buffer, sizeof(test_buffer), pipe)) {
-          using_clang = true;
-          // Rewind - we need to read from the beginning
-          // Since we can't rewind a pipe, close and reopen
-          pclose(pipe);
-          pipe = popen("clang++ -E -x c++ -v /dev/null 2>&1", "r");
-        } else {
-          pclose(pipe);
-          pipe = nullptr;
-        }
-      }
-      if (!pipe) {
-        pipe = popen("g++ -E -x c++ -v /dev/null 2>&1", "r");
-      }
-
-      // NOTE: do NOT pair -stdlib=libc++ with the include paths scraped
-      // below -- on Linux those are typically libstdc++ directories, and
-      // libc++ mode against libstdc++ headers half-breaks the TU (string
-      // reference errors in var4.h were the visible symptom). The scraped
-      // paths already imply the right standard library.
-      (void)using_clang;
-
-      if (pipe) {
-        char buffer[512];
-        bool in_include_section = false;
-        while (fgets(buffer, sizeof(buffer), pipe)) {
-          std::string line(buffer);
-          // Look for the "#include <...> search starts here:" marker
-          if (line.find("#include <...> search starts here:") != std::string::npos) {
-            in_include_section = true;
-            continue;
-          }
-          // Look for the "End of search list." marker
-          if (line.find("End of search list.") != std::string::npos) {
-            break;
-          }
-          // Extract include paths
-          if (in_include_section) {
-            // Remove leading whitespace and newline
-            size_t start = line.find_first_not_of(" \t\n");
-            if (start != std::string::npos) {
-              size_t end = line.find_last_not_of(" \t\n");
-              if (end != std::string::npos) {
-                std::string include_path = line.substr(start, end - start + 1);
-                if (!include_path.empty()) {
-                  system_include_strings.push_back("-isystem");
-                  system_include_strings.push_back(include_path);
-                }
-              }
-            }
-          }
-        }
-        pclose(pipe);
-      }
-
-      // Fallback to common paths if auto-detection failed
-      if (system_include_strings.empty()) {
+      // System include directories come from the ACTIVE compiler descriptor
+      // (Compilers/Linux/<compiler>.ey's Parser-Vars: `searchdirs`/`defines`),
+      // not from an independent popen scrape here. gcc_backend.cpp's
+      // establish_bearings already runs that descriptor's `searchdirs`
+      // command and registers the resulting directories into
+      // jdi::builtin_context() (System/builtins.h) -- and it does so from
+      // parse_ide_settings, the first thing lang_CPP::definitionsModified
+      // does, always before main_context->parse_file() reaches build_args().
+      // Reading the established list here (instead of re-querying clang++/g++
+      // on our own) means one descriptor governs both the codegen pipeline
+      // and this parse: point the IDE at a different .ey and both follow.
+      jdi::Context &builtin = jdi::builtin_context();
+      for (size_t i = 0; i < builtin.search_dir_count(); ++i) {
         system_include_strings.push_back("-isystem");
-        system_include_strings.push_back("/usr/include/c++/11");
-        system_include_strings.push_back("-isystem");
-        system_include_strings.push_back("/usr/include");
+        system_include_strings.push_back(builtin.search_dir(i));
       }
 
       // Build the args vector from strings (strings persist in static storage)
