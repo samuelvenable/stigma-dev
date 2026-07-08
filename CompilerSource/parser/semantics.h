@@ -20,6 +20,7 @@
 
 #include "parsing/ast.h"
 
+#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -34,13 +35,22 @@ namespace enigma::parsing {
 /// canonicalization lives here, never in the parser.
 class SemanticAnnotator : public AST::Visitor {
  public:
-  SemanticAnnotator(ErrorHandler *herr, const LanguageFrontend *frontend)
-      : herr_(herr), frontend_(frontend) {}
+  SemanticAnnotator(ErrorHandler *herr, const LanguageFrontend *frontend,
+                    bool gml_equals = true)
+      : herr_(herr), frontend_(frontend), gml_equals_(gml_equals) {}
 
   bool VisitScopeAccess(AST::ScopeAccess &node) final;
   bool VisitBinaryExpression(AST::BinaryExpression &node) final;
   bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) final;
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) final;
+  // Statement-position holders: their expression children are the only
+  // places GML's = assigns (see mark_statement).
+  bool VisitCodeBlock(AST::CodeBlock &node) final;
+  bool VisitIfStatement(AST::IfStatement &node) final;
+  bool VisitForLoop(AST::ForLoop &node) final;
+  bool VisitWhileLoop(AST::WhileLoop &node) final;
+  bool VisitDoLoop(AST::DoLoop &node) final;
+  bool VisitWithStatement(AST::WithStatement &node) final;
 
   /// Register a name as a class-typed local ahead of the walk. The walk
   /// itself records declarations it encounters; this is the seam for scopes
@@ -53,9 +63,18 @@ class SemanticAnnotator : public AST::Visitor {
   void classify_access(AST::ScopeAccess &node);
   void validate_call(AST::FunctionCallExpression &node);
   void record_locals(AST::DeclarationStatement &node);
+  // Register a statement-position expression: if it is an = at its root,
+  // that = assigns. Parents visit before children, so the registration is
+  // in place before VisitBinaryExpression reaches the node.
+  void mark_statement(const AST::PNode &stmt);
 
   ErrorHandler *herr_;
   const LanguageFrontend *frontend_;
+  // GML dialect: = compares in value position. Off under C++ inheritance
+  // (CompatibilityOptions::use_gml_equals).
+  bool gml_equals_;
+  // Statement-position = nodes; every other = is a comparison.
+  std::set<const AST::Node*> statement_equals_;
   // Locals declared with a class type (definition pages) in this AST, in
   // walk order. Flat per-event scoping for now; block scopes can refine it.
   std::unordered_map<std::string, jdi::definition*> struct_locals_;

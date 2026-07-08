@@ -44,3 +44,13 @@ gtest_assert_eq(d, 3);
 t = 0;
 repeat (3) t += 5;
 gtest_assert_eq(t, 15);
+
+// GML =: compares in value position, assigns at statement position.
+eq = 3;
+hit = 0;
+if (eq = 3) hit = 1;
+gtest_assert_eq(hit, 1);
+chain = eq = 3;
+gtest_assert_eq(chain, 1);
+if (eq = 4) hit = 2;
+gtest_assert_eq(hit, 1);

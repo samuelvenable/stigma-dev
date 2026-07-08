@@ -186,6 +186,11 @@ class AST {
     /// Unannotated trees print verbatim.
     bool lower_real_division = false;
 
+    /// GML's = compares in value position (`if (a = 1)`); only a
+    /// statement-position = assigns. The annotator marks value-position
+    /// TT_EQUALS nodes and the printer emits ==.
+    bool lower_gml_equals = false;
+
     BASIC_NODE_ROUTINES(BinaryExpression);
 
     BinaryExpression(PNode left_, PNode right_, Operation operation_):

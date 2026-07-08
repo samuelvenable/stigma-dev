@@ -356,6 +356,11 @@ bool AST::CppPrettyPrinter::VisitBinaryExpression(AST::BinaryExpression &node) {
   }
 
   if (operation == ":=") operation = "=";
+  // GML value-position =. The operands print flat (no tree parens), so the
+  // == re-associates at C++ equality precedence -- which is GML's own
+  // grouping for =, regardless of how the assignment-precedence parse
+  // grouped the tree.
+  if (node.lower_gml_equals) operation = "==";
   print(" " + operation + " ");
 
   // The annotator marks EDL divisions: / is real division regardless of

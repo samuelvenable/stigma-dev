@@ -30,6 +30,55 @@ bool SemanticAnnotator::VisitBinaryExpression(AST::BinaryExpression &node) {
   // EDL's / is real division regardless of operand types; div is the
   // integer kind. C++ would truncate 1/4 to 0, so mark for lowering.
   if (node.operation.type == TT_SLASH) node.lower_real_division = true;
+  // GML's = compares except at statement position. The parser groups = at
+  // assignment precedence; the printer emits operands flat, so the printed
+  // == re-associates at C++ equality precedence, which is GML's grouping.
+  if (gml_equals_ && node.operation.type == TT_EQUALS &&
+      !statement_equals_.count(&node)) {
+    node.lower_gml_equals = true;
+  }
+  // An assignment's right-hand side is statement-like in GML only for the
+  // leftmost =; nested ones compare, which the set membership handles.
+  return true;
+}
+
+void SemanticAnnotator::mark_statement(const AST::PNode &stmt) {
+  if (!stmt) return;
+  if (stmt->type != AST::NodeType::BINARY_EXPRESSION) return;
+  auto *bin = stmt->As<AST::BinaryExpression>();
+  if (bin->operation.type == TT_EQUALS) statement_equals_.insert(bin);
+}
+
+bool SemanticAnnotator::VisitCodeBlock(AST::CodeBlock &node) {
+  for (auto &stmt : node.statements) mark_statement(stmt);
+  return true;
+}
+
+bool SemanticAnnotator::VisitIfStatement(AST::IfStatement &node) {
+  mark_statement(node.true_branch);
+  mark_statement(node.false_branch);
+  return true;
+}
+
+bool SemanticAnnotator::VisitForLoop(AST::ForLoop &node) {
+  mark_statement(node.assignment);
+  mark_statement(node.increment);
+  mark_statement(node.body);
+  return true;
+}
+
+bool SemanticAnnotator::VisitWhileLoop(AST::WhileLoop &node) {
+  mark_statement(node.body);
+  return true;
+}
+
+bool SemanticAnnotator::VisitDoLoop(AST::DoLoop &node) {
+  mark_statement(node.body);
+  return true;
+}
+
+bool SemanticAnnotator::VisitWithStatement(AST::WithStatement &node) {
+  mark_statement(node.body);
   return true;
 }
 
@@ -128,7 +177,8 @@ namespace {
 // afterward is semantic. `where` names the code for the diagnostic.
 int annotate(ParsedCode &code, const std::string &where) {
   enigma::parsing::SemanticAnnotator annotator(
-      &code.ast.herr, code.ast.lexer->GetContext().language_fe);
+      &code.ast.herr, code.ast.lexer->GetContext().language_fe,
+      code.ast.lexer->GetContext().compatibility_opts.use_gml_equals);
   code.ast.VisitNodes(annotator);
   if (!code.ast.HasError()) return 0;
   std::cerr << "Semantic error in " << where << ":\n"

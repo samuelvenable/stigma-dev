@@ -4544,6 +4544,38 @@ TEST(ParserTest, SemanticAnnotatorClassifiesDotAccess) {
   }
 }
 
+// GML's = compares in value position; only statement-position = assigns.
+// The annotator marks value-position = nodes and the printer emits ==.
+// The parse groups = at assignment precedence, but flat printing means the
+// emitted == re-associates at C++ equality precedence -- GML's grouping.
+TEST(ParserTest, GmlEqualsLowering) {
+  ParserTester test = ParserTester::CreateWithoutCpp(
+      "c = 0; if (a = 1 || b = 1) c = a = 4;");
+  auto node = test->ParseCode();
+  ASSERT_NE(node, nullptr);
+  SemanticAnnotator annotator(&test.herr, test.context->language_fe);
+  node->RecurusiveVisit(annotator);
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*node->As<AST::CodeBlock>()));
+  std::string out = v.GetPrintedCode();
+  // Condition operands compare; both statement-position ='s assign, and the
+  // nested = in the assigned value compares.
+  EXPECT_THAT(out, HasSubstr("a == 1 || b == 1"));
+  EXPECT_THAT(out, HasSubstr("c = a == 4"));
+  EXPECT_THAT(out, HasSubstr("c = 0"));
+
+  // C++ inheritance: = always assigns.
+  ParserTester cpp = ParserTester::CreateWithoutCpp("if (a = 1) b = 2;");
+  auto cpp_node = cpp->ParseCode();
+  ASSERT_NE(cpp_node, nullptr);
+  SemanticAnnotator cpp_annotator(&cpp.herr, cpp.context->language_fe,
+                                  /*gml_equals=*/false);
+  cpp_node->RecurusiveVisit(cpp_annotator);
+  AST::CppPrettyPrinter v2;
+  ASSERT_TRUE(v2.VisitCode(*cpp_node->As<AST::CodeBlock>()));
+  EXPECT_THAT(v2.GetPrintedCode(), Not(HasSubstr("==")));
+}
+
 // EDL's / is real division: the annotator marks it and the printer coerces
 // the divisor, so 1/4 emits 0.25's worth of arithmetic instead of C++'s 0.
 // Unannotated trees print verbatim (round-trip fidelity).
