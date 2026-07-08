@@ -232,7 +232,11 @@ std::string toString(double);
 #define string(...) toString(__VA_ARGS__)
 #endif
 
-using std::string;
+// A typedef rather than a using-declaration: the definitions parse skips
+// std headers, so a using-declaration has no populated target and EDL
+// would not see `string` as a type name. The typedef is its own
+// definition. The function-like macro above still claims `string(...)`.
+typedef std::string string;
 
 }
 
