@@ -29,6 +29,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -793,11 +794,20 @@ class AST {
     const LanguageFrontend *language_fe = nullptr;
     // Nesting depth of `repeat` lowerings; numbers each level's counter.
     int repeat_depth_ = 0;
+    // Names declared within the code being printed. They are C++ locals in
+    // the emitted function, so the script lowering must leave them alone
+    // (`var` names shadow instance variables, and GML hoists them).
+    std::set<std::string, std::less<>> declared_names_;
+    // Set while printing a declarator: its identifiers are declared names,
+    // never value reads, regardless of what the lowering knows about them.
+    bool in_declarator_ = false;
 
    public:
     CppPrettyPrinter();
     CppPrettyPrinter(const LanguageFrontend *lfe);
     CppPrettyPrinter(std::ofstream &ofs, const LanguageFrontend *lfe, bool is_script);
+    // Pre-pass: collect declared names from the tree about to be printed.
+    void CollectDeclaredNames(Node &root);
     void print(std::string code);
     void PrintSemiColon(PNode &node);
     std::string GetPrintedCode();

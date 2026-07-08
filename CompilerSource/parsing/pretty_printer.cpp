@@ -69,9 +69,37 @@ std::string AST::CppPrettyPrinter::GetPrintedCode() {
   return code;
 }
 
+namespace {
+// Collects every declared name in a code tree. The printer runs this before
+// printing a script: declared names are C++ locals in the emitted function
+// (GML `var` hoists and shadows instance variables), so the identifier
+// lowering must print them bare.
+struct DeclaredNameCollector : AST::Visitor {
+  std::set<std::string, std::less<>> *out;
+  explicit DeclaredNameCollector(std::set<std::string, std::less<>> *out): out(out) {}
+  bool VisitDeclarationStatement(AST::DeclarationStatement &node) final {
+    if (node.clause) {
+      for (auto &d : node.clause->declarators)
+        if (!d->name.content.empty()) out->insert(std::string(d->name.content));
+    }
+    node.RecursiveSubVisit(*this);
+    return false;
+  }
+};
+}  // namespace
+
+void AST::CppPrettyPrinter::CollectDeclaredNames(AST::Node &root) {
+  DeclaredNameCollector collector(&declared_names_);
+  root.accept(collector);
+}
+
 bool AST::CppPrettyPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
   if (print_type) print("auto ");
   std::string name = node.name.content;
+  if (in_declarator_ || declared_names_.count(name)) {
+    print(name);
+    return true;
+  }
   if (is_script && name != "self") {
     if (language_fe->is_shared_local(name)) {
       print("enigma::glaccess(int(self))->" + name);
@@ -338,7 +366,12 @@ bool AST::CppPrettyPrinter::VisitBinaryExpression(AST::BinaryExpression &node) {
     print("(double) ");
   }
 
+  // A subscript's index is a value expression even inside a declarator
+  // (`var x[count]`): only the spine declares.
+  bool saved_decl = in_declarator_;
+  if (node.operation.type == TT_BEGINBRACKET) in_declarator_ = false;
   VISIT_AND_CHECK(node.right);
+  in_declarator_ = saved_decl;
 
   if (is_multi_dim) {
     print(")");
@@ -663,7 +696,13 @@ bool AST::CppPrettyPrinter::VisitInitDeclarator(AST::InitDeclarator &node) {
   // a name-only declarator (no pointer/array/function modifiers); fall back to
   // the declared name. Abstract declarators have neither and print nothing.
   if (node.declarator_expr) {
-    VISIT_AND_CHECK(node.declarator_expr);
+    // Identifiers in the declarator are declared names, not value reads; the
+    // script lowering must not rewrite them.
+    bool saved = in_declarator_;
+    in_declarator_ = true;
+    bool ok = node.declarator_expr->accept(*this);
+    in_declarator_ = saved;
+    if (!ok) return false;
   } else if (!node.name.content.empty()) {
     print(std::string(node.name.content));
   }

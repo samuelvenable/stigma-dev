@@ -37,6 +37,7 @@ void AST::ApplyTo(int instance_id) {
 
 void AST::WriteCppToStream(std::ofstream &of, int base_indent, bool is_script) const {
   CppPrettyPrinter visitor(of, lexer->GetContext().language_fe, is_script);
+  if (root_) visitor.CollectDeclaredNames(*root_);
   if (apply_to_) {
     of << std::string(base_indent, ' ') << "with (" << *apply_to_ << ") {\n";
   }
