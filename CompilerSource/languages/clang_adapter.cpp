@@ -33,9 +33,12 @@ unsigned int cursor_kind_to_flags(CXCursorKind kind) {
       flags |= jdi::DEF_CLASS | jdi::DEF_SCOPE | jdi::DEF_TYPENAME;
       break;
     case CXCursor_ClassTemplate:
-      // T1: DEF_TEMPLATE only -- no definition_template/arg_key construction
-      // until T4. The definition still populates as a plain definition_class.
-      flags |= jdi::DEF_CLASS | jdi::DEF_SCOPE | jdi::DEF_TYPENAME | jdi::DEF_TEMPLATE;
+      // No DEF_TYPENAME on the template wrapper: the lexer retypes any
+      // DEF_TYPENAME definition to TT_TYPE_NAME, which bypasses the
+      // identifier path that parses `<args>`. Template names must lex as
+      // plain identifiers (the JDI contract); the pattern class inside the
+      // definition_template carries DEF_TYPENAME instead.
+      flags |= jdi::DEF_CLASS | jdi::DEF_SCOPE | jdi::DEF_TEMPLATE;
       break;
     case CXCursor_UnionDecl:
       flags |= jdi::DEF_UNION | jdi::DEF_SCOPE | jdi::DEF_TYPENAME;
@@ -234,7 +237,7 @@ void ClangContext::init_builtin_types() {
     // No originating cursor for these -- `cursor` stays null-cursor default.
     auto type_def = std::make_unique<jdi::definition>(
       type_name, global_scope_.get(), jdi::DEF_TYPENAME);
-    global_scope_->members[type_name] = std::move(type_def);
+    global_scope_->declare(type_name, std::move(type_def));
 
     // TODO(T2): adapter must not mutate JDI1 globals while JDI1 is primary.
     // (jdi::builtin_type__int is JDI1's own definition* global; wiring it to
@@ -777,7 +780,7 @@ static enum CXChildVisitResult process_using_declarations_visitor(CXCursor curso
   } else {
     using_def = std::make_unique<jdi::definition>(using_name, target_scope, ref_def->flags);
   }
-  target_scope->members[using_name] = std::move(using_def);
+  target_scope->declare(using_name, std::move(using_def));
 
   return CXChildVisit_Recurse;
 }
@@ -927,7 +930,40 @@ void ClangContext::register_usr(CXCursor cursor, jdi::definition* def) {
   clang_disposeString(usr);
 }
 
-jdi::definition* ClangContext::resolve_type_def(CXType type) {
+// libclang exposes no declaration for a dependent type (a field of type T
+// inside a class template resolves to CXType_Unexposed and
+// CXCursor_NoDeclFound), so USR lookup cannot reach the tempparam. The
+// canonical spelling encodes the coordinates instead:
+// `type-parameter-<depth>-<index>`, depth counting template-parameter lists
+// from the outermost. Map those onto the definition_templates enclosing
+// `scope`; instantiate()'s remap keys its substitution map on the returned
+// tempparam pointers.
+static jdi::definition* resolve_enclosing_tempparam(CXType resolved,
+                                                    jdi::definition_scope *scope) {
+  if (resolved.kind != CXType_Unexposed || !scope) return nullptr;
+  CXString ts = clang_getTypeSpelling(resolved);
+  const char *ts_c = clang_getCString(ts);
+  std::string spelling = ts_c ? ts_c : "";
+  clang_disposeString(ts);
+  for (std::string_view prefix : {"const ", "volatile "}) {
+    if (spelling.rfind(prefix, 0) == 0) spelling.erase(0, prefix.size());
+  }
+  unsigned depth, index;
+  if (sscanf(spelling.c_str(), "type-parameter-%u-%u", &depth, &index) != 2)
+    return nullptr;
+
+  std::vector<jdi::definition_template*> enclosing;  // innermost first
+  for (jdi::definition *s = scope; s; s = s->parent)
+    if (auto *t = dynamic_cast<jdi::definition_template*>(s))
+      enclosing.push_back(t);
+  if (depth >= enclosing.size()) return nullptr;
+  jdi::definition_template *t = enclosing[enclosing.size() - 1 - depth];
+  if (index >= t->params.size()) return nullptr;
+  return t->params[index].get();
+}
+
+jdi::definition* ClangContext::resolve_type_def(CXType type,
+                                                jdi::definition_scope *scope) {
   CXType canonical = clang_getCanonicalType(type);
 
   // Fundamental types have no declaring cursor/USR; resolve by the name
@@ -951,16 +987,17 @@ jdi::definition* ClangContext::resolve_type_def(CXType type) {
   }
 
   CXCursor decl = clang_getTypeDeclaration(resolved);
-  if (clang_Cursor_isNull(decl)) return nullptr;
+  if (clang_Cursor_isNull(decl)) return resolve_enclosing_tempparam(resolved, scope);
 
   CXString usr = clang_getCursorUSR(decl);
   const char* usr_c = clang_getCString(usr);
   std::string usr_str = usr_c ? usr_c : "";
   clang_disposeString(usr);
-  if (usr_str.empty()) return nullptr;
+  if (usr_str.empty()) return resolve_enclosing_tempparam(resolved, scope);
 
   auto it = defs_by_usr_.find(usr_str);
-  return it == defs_by_usr_.end() ? nullptr : it->second;
+  if (it != defs_by_usr_.end()) return it->second;
+  return resolve_enclosing_tempparam(resolved, scope);
 }
 
 void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition_scope*()> get_scope) {
@@ -1036,10 +1073,12 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
       tmpl->def = std::make_unique<jdi::definition_class>(
           name, tmpl.get(), jdi::DEF_CLASS | jdi::DEF_TYPENAME);
       tmpl->def->cursor = cursor;
+      struct ParamVisit { ClangContext *ctx; jdi::definition_template *tmpl; };
+      ParamVisit pv{this, tmpl.get()};
       clang_visitChildren(
           cursor,
           [](CXCursor child, CXCursor, CXClientData data) {
-            auto *t = static_cast<jdi::definition_template*>(data);
+            auto *v = static_cast<ParamVisit*>(data);
             CXCursorKind ck = clang_getCursorKind(child);
             if (ck == CXCursor_TemplateTypeParameter ||
                 ck == CXCursor_NonTypeTemplateParameter) {
@@ -1047,13 +1086,17 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
               if (ck == CXCursor_TemplateTypeParameter)
                 pflags |= jdi::DEF_TYPENAME;
               auto param = std::make_unique<jdi::definition_tempparam>(
-                  get_cursor_name(child), t, pflags);
+                  get_cursor_name(child), v->tmpl, pflags);
               param->cursor = child;
-              t->params.push_back(std::move(param));
+              // Register the parameter so dependent member types (a field of
+              // type T, a T& return) resolve to the tempparam; instantiate()'s
+              // remap keys the substitution map on those pointers.
+              v->ctx->register_usr(child, param.get());
+              v->tmpl->params.push_back(std::move(param));
             }
             return CXChildVisit_Continue;
           },
-          tmpl.get());
+          &pv);
       def = std::move(tmpl);
     } else if (flags & jdi::DEF_CLASS) {
       def = std::make_unique<jdi::definition_class>(name, scope, flags);
@@ -1069,7 +1112,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
       return;
     }
 
-    scope->members[name] = std::move(def);
+    scope->declare(name, std::move(def));
     register_usr(cursor, raw);
     if (populate_debug_enabled()) ++g_pop_stats.defs_created;
 
@@ -1119,7 +1162,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     for (int i = 0; i < num_args; ++i) {
       CXType arg_type = clang_getArgType(func_type, i);
       jdi::full_type arg_ft(
-          check_resolved_type(resolve_type_def(arg_type), "function parameter",
+          check_resolved_type(resolve_type_def(arg_type, scope), "function parameter",
                                name + "#arg" + std::to_string(i)),
           jdi::ref_stack(), 0);
       // Defaulted parameters carry JDI's presence sentinel (an empty AST,
@@ -1160,7 +1203,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
 
     CXType return_type = clang_getResultType(func_type);
     jdi::definition* return_def =
-        check_resolved_type(resolve_type_def(return_type), "function return type", name);
+        check_resolved_type(resolve_type_def(return_type, scope), "function return type", name);
 
     jdi::definition_overload* ovl = func_def->overload(
         return_def, rf, /*typeflags=*/0, addflags,
@@ -1258,7 +1301,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
            type_name == "short" || type_name == "long")) {
         auto type_def = std::make_unique<jdi::definition>(
             type_name, global_scope_.get(), jdi::DEF_TYPENAME);
-        global_scope_->members[type_name] = std::move(type_def);
+        global_scope_->declare(type_name, std::move(type_def));
 
         // TODO(T2): adapter must not mutate JDI1 globals while JDI1 is
         // primary (see init_builtin_types(); jdi::builtin_type__int is
@@ -1268,13 +1311,13 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
 
     // Create typed definition
     auto def = std::make_unique<jdi::definition_typed>(
-        name, scope, check_resolved_type(resolve_type_def(var_type), "variable/field type", name),
+        name, scope, check_resolved_type(resolve_type_def(var_type, scope), "variable/field type", name),
         /*typeflags=*/0, flags);
     def->cursor = cursor;
     jdi::definition_typed* raw = def.get();
 
     if (!name.empty()) {
-      scope->members[name] = std::move(def);
+      scope->declare(name, std::move(def));
       register_usr(cursor, raw);
       if (populate_debug_enabled()) ++g_pop_stats.defs_created;
 
@@ -1290,7 +1333,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
           } else {
             parent_def = std::make_unique<jdi::definition>(name, scope->parent, flags);
           }
-          scope->parent->members[name] = std::move(parent_def);
+          scope->parent->declare(name, std::move(parent_def));
         }
       }
     }
@@ -1315,7 +1358,7 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     auto def = std::make_unique<jdi::definition>(name, scope, flags);
     def->cursor = cursor;
     jdi::definition* raw = def.get();
-    scope->members[name] = std::move(def);
+    scope->declare(name, std::move(def));
     register_usr(cursor, raw);
   }
 }

@@ -51,6 +51,9 @@ template <typename T>
 class Box {
  public:
   T value;
+  int count;
+  int size() { return count; }
+  T& at(int i);
 };
 )cpp";
 
@@ -241,8 +244,11 @@ TEST_F(ClangPopulatorTest, ClassTemplate) {
   jdi::definition* box_def = global->find_local("Box");
   ASSERT_NE(box_def, nullptr);
   EXPECT_TRUE(box_def->flags & jdi::DEF_TEMPLATE);
-  EXPECT_EQ(box_def->flags & (jdi::DEF_CLASS | jdi::DEF_SCOPE | jdi::DEF_TYPENAME),
-            (unsigned)(jdi::DEF_CLASS | jdi::DEF_SCOPE | jdi::DEF_TYPENAME));
+  EXPECT_EQ(box_def->flags & (jdi::DEF_CLASS | jdi::DEF_SCOPE),
+            (unsigned)(jdi::DEF_CLASS | jdi::DEF_SCOPE));
+  // No DEF_TYPENAME on the wrapper: the lexer retypes DEF_TYPENAME names to
+  // TT_TYPE_NAME, which skips the identifier path that parses `<args>`.
+  EXPECT_FALSE(box_def->flags & jdi::DEF_TYPENAME);
 
   // T4: a real definition_template -- the parser casts to it, reads params,
   // and calls instantiate(). One type parameter carrying DEF_TYPENAME (the
@@ -256,6 +262,52 @@ TEST_F(ClangPopulatorTest, ClassTemplate) {
   ASSERT_NE(pattern, nullptr);
   EXPECT_NE(pattern->find_local("value"), nullptr);
   EXPECT_EQ(tmpl->find_local("value"), nullptr);
+}
+
+// The parser's TryParseTemplateArgs endgame: build an arg_key the way it
+// does (sized ctor + mirror_types + put_final_type) and instantiate().
+// The result must be a cached definition_class clone of the pattern with
+// its members intact.
+TEST_F(ClangPopulatorTest, ClassTemplateInstantiate) {
+  jdi::definition_scope* global = ctx.get_global();
+  ASSERT_NE(global, nullptr);
+  auto* tmpl = dynamic_cast<jdi::definition_template*>(global->find_local("Box"));
+  ASSERT_NE(tmpl, nullptr);
+
+  jdi::definition* color = global->find_local("Color");
+  ASSERT_NE(color, nullptr);
+
+  jdi::arg_key key(tmpl->params.size());
+  key.mirror_types(tmpl);
+  key.put_final_type(0, jdi::full_type(color));
+
+  jdi::ErrorContext errc(jdi::default_error_handler,
+                         jdi::SourceLocation{"test", 0, 0});
+  jdi::definition* inst = tmpl->instantiate(key, errc);
+  ASSERT_NE(inst, nullptr);
+
+  auto* inst_class = dynamic_cast<jdi::definition_class*>(inst);
+  ASSERT_NE(inst_class, nullptr);
+  EXPECT_EQ(inst_class->instance_of, tmpl);
+  EXPECT_NE(inst_class->find_local("value"), nullptr);
+  EXPECT_NE(inst_class->find_local("count"), nullptr);
+  EXPECT_NE(inst_class->find_local("size"), nullptr);
+
+  // The dependent member's type must be remapped to the parameter alias
+  // (a typedef-style definition_typed the instantiation owns) whose type
+  // is the argument.
+  auto* value_member =
+      dynamic_cast<jdi::definition_typed*>(inst_class->find_local("value"));
+  ASSERT_NE(value_member, nullptr);
+  auto* subst = dynamic_cast<jdi::definition_typed*>(value_member->type);
+  ASSERT_NE(subst, nullptr);
+  EXPECT_EQ(subst->type, color);
+
+  // Same key, same instantiation (the cache the parser relies on).
+  jdi::arg_key key2(tmpl->params.size());
+  key2.mirror_types(tmpl);
+  key2.put_final_type(0, jdi::full_type(color));
+  EXPECT_EQ(tmpl->instantiate(key2, errc), inst);
 }
 
 // One-time manual probe, not part of the default suite (SHELLmain.cpp is a

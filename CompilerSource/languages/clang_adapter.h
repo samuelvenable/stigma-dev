@@ -111,9 +111,12 @@ private:
 
   // Best-effort lookup of the jdi::definition already populated for a clang
   // type: fundamental types resolve by name in the global scope; other types
-  // resolve via the declaring cursor's USR (see defs_by_usr_). Returns
-  // nullptr if the traversal hasn't (yet) populated a definition for it.
-  jdi::definition* resolve_type_def(CXType type);
+  // resolve via the declaring cursor's USR (see defs_by_usr_). Dependent
+  // types have no declaring cursor; when `scope` is given they resolve by
+  // spelling against enclosing template parameters. Returns nullptr if the
+  // traversal hasn't (yet) populated a definition for it.
+  jdi::definition* resolve_type_def(CXType type,
+                                    jdi::definition_scope *scope = nullptr);
 
   // Extract macros from translation unit
   void extract_macros();

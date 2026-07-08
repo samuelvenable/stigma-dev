@@ -383,10 +383,19 @@ static bool is_edl_visible_global(jdi::definition *d) {
 jdi::definition* lang_CPP::look_up(std::string_view n) const {
   // TODO: FIXME: slow-ass conversion still exists...
   std::string name(n);
+  // EDL_LOOKUP_DEBUG=<name> traces each stage of that name's lookup.
+  const char *dbg = getenv("EDL_LOOKUP_DEBUG");
+  bool trace = dbg && n == dbg;
   auto builtin = jdi::builtin_declarators.find(name);
-  if (builtin != jdi::builtin_declarators.end()) return builtin->second->def;
+  if (builtin != jdi::builtin_declarators.end()) {
+    if (trace) fprintf(stderr, "[lookup] %s: builtin_declarators hit (def=%p)\n", name.c_str(), (void*)builtin->second->def);
+    return builtin->second->def;
+  }
   if (namespace_enigma_user) {
-    if (jdi::definition *d = namespace_enigma_user->find_local(name)) return d;
+    if (jdi::definition *d = namespace_enigma_user->find_local(name)) {
+      if (trace) fprintf(stderr, "[lookup] %s: enigma_user hit flags=%zx\n", name.c_str(), (size_t)d->flags);
+      return d;
+    }
   }
   // Definition pages land at global scope (SHELLmain includes them under
   // `using namespace enigma_user`), so user definitions resolve here. JDI1
@@ -395,8 +404,12 @@ jdi::definition* lang_CPP::look_up(std::string_view n) const {
   if (main_context && main_context->get_global() &&
       main_context->get_global() != namespace_enigma_user) {
     jdi::definition *d = main_context->get_global()->find_local(name);
+    if (trace) fprintf(stderr, "[lookup] %s: global find_local=%p visible=%d flags=%zx\n",
+                       name.c_str(), (void*)d, d ? (int)is_edl_visible_global(d) : -1,
+                       d ? (size_t)d->flags : 0);
     if (d && is_edl_visible_global(d)) return d;
   }
+  if (trace) fprintf(stderr, "[lookup] %s: MISS\n", name.c_str());
   return nullptr;
 }
 

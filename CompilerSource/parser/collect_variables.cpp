@@ -83,7 +83,8 @@ std::string GetFullType(const jdi::full_type &ft, std::string_view declared_name
 
   for (std::size_t i = 0; i < flags_values.size(); i++) {
     if ((ft.flags & flags_masks[i]) == flags_values[i]) {
-      if (flags_names[i] != "signed" || (flags_names[i] == "signed" && ft.def->name == "char")) {
+      // ft.def may be null: an unresolved type defers to the semantic phase.
+      if (flags_names[i] != "signed" || (ft.def && ft.def->name == "char")) {
         type += flags_names[i] + " ";
       }
     }
