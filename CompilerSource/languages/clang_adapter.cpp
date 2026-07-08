@@ -894,6 +894,12 @@ enum CXChildVisitResult ClangContext::visit_cursor(CXCursor cursor, CXCursor /* 
         auto it = target_scope->members.find(name);
         if (it != target_scope->members.end() && it->second) {
           auto* new_scope = dynamic_cast<jdi::definition_scope*>(it->second.get());
+          // Class-template members belong in the pattern class (the `def`
+          // instantiate() duplicates), not the template's own scope.
+          if (kind == CXCursor_ClassTemplate) {
+            if (auto* t = dynamic_cast<jdi::definition_template*>(it->second.get()))
+              new_scope = dynamic_cast<jdi::definition_scope*>(t->def.get());
+          }
           if (new_scope) {
             state->push_scope(new_scope);
 
@@ -1019,7 +1025,37 @@ void ClangContext::process_cursor(CXCursor cursor, std::function<jdi::definition
     }
 
     std::unique_ptr<jdi::definition> def;
-    if (flags & jdi::DEF_CLASS) {
+    if (kind == CXCursor_ClassTemplate) {
+      // Class templates get the real definition_template: the parser's
+      // TryParseTemplateArgs casts to it, reads params, and calls
+      // instantiate() -- a plain definition_class there is an out-of-bounds
+      // read. `def` holds the pattern class the members populate into and
+      // instantiate() duplicates; params come from the parameter cursors
+      // (type params carry DEF_TYPENAME, the kind test the parser uses).
+      auto tmpl = std::make_unique<jdi::definition_template>(name, scope, flags);
+      tmpl->def = std::make_unique<jdi::definition_class>(
+          name, tmpl.get(), jdi::DEF_CLASS | jdi::DEF_TYPENAME);
+      tmpl->def->cursor = cursor;
+      clang_visitChildren(
+          cursor,
+          [](CXCursor child, CXCursor, CXClientData data) {
+            auto *t = static_cast<jdi::definition_template*>(data);
+            CXCursorKind ck = clang_getCursorKind(child);
+            if (ck == CXCursor_TemplateTypeParameter ||
+                ck == CXCursor_NonTypeTemplateParameter) {
+              unsigned pflags = jdi::DEF_TEMPPARAM | jdi::DEF_DEPENDENT;
+              if (ck == CXCursor_TemplateTypeParameter)
+                pflags |= jdi::DEF_TYPENAME;
+              auto param = std::make_unique<jdi::definition_tempparam>(
+                  get_cursor_name(child), t, pflags);
+              param->cursor = child;
+              t->params.push_back(std::move(param));
+            }
+            return CXChildVisit_Continue;
+          },
+          tmpl.get());
+      def = std::move(tmpl);
+    } else if (flags & jdi::DEF_CLASS) {
       def = std::make_unique<jdi::definition_class>(name, scope, flags);
     } else {
       def = std::make_unique<jdi::definition_scope>(name, scope, flags);

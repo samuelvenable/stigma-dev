@@ -244,10 +244,18 @@ TEST_F(ClangPopulatorTest, ClassTemplate) {
   EXPECT_EQ(box_def->flags & (jdi::DEF_CLASS | jdi::DEF_SCOPE | jdi::DEF_TYPENAME),
             (unsigned)(jdi::DEF_CLASS | jdi::DEF_SCOPE | jdi::DEF_TYPENAME));
 
-  // T1 scope: DEF_TEMPLATE flag only -- no definition_template/arg_key
-  // construction (that's T4). The definition is a plain definition_class.
-  EXPECT_EQ(dynamic_cast<jdi::definition_template*>(box_def), nullptr);
-  EXPECT_NE(dynamic_cast<jdi::definition_class*>(box_def), nullptr);
+  // T4: a real definition_template -- the parser casts to it, reads params,
+  // and calls instantiate(). One type parameter carrying DEF_TYPENAME (the
+  // parser's type-vs-value kind test), and the member lives in the pattern
+  // class that instantiate() duplicates, not the template's own scope.
+  auto* tmpl = dynamic_cast<jdi::definition_template*>(box_def);
+  ASSERT_NE(tmpl, nullptr);
+  ASSERT_EQ(tmpl->params.size(), 1u);
+  EXPECT_TRUE(tmpl->params[0]->flags & jdi::DEF_TYPENAME);
+  auto* pattern = dynamic_cast<jdi::definition_class*>(tmpl->def.get());
+  ASSERT_NE(pattern, nullptr);
+  EXPECT_NE(pattern->find_local("value"), nullptr);
+  EXPECT_EQ(tmpl->find_local("value"), nullptr);
 }
 
 // One-time manual probe, not part of the default suite (SHELLmain.cpp is a
