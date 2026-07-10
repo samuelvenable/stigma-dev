@@ -24,8 +24,6 @@
 
 */
 
-#define _WIN32_IE 0x0900
-
 #include <cstdlib>
 #include <cstdio>
 #include <cwchar>
