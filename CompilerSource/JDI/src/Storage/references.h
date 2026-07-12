@@ -185,11 +185,11 @@ namespace jdi {
         friend iterator ref_stack::begin() const; ///< Let the begin() function use this constructor.
         friend iterator ref_stack::end() const; ///< Let the end() function use this constructor.
       public:
-        node* operator*(); ///< Get the current node pointer.
-        node* operator->(); ///< Treat iterator as current node pointer.
+        node* operator*() const; ///< Get the current node pointer.
+        node* operator->() const; ///< Treat iterator as current node pointer.
         iterator operator++(int); ///< Increment iterator; move to next element on the stack. @return Return copy of iterator before call.
         iterator &operator++(); ///< Increment iterator; move to next element on the stack. @return Returns self.
-        operator bool(); ///< Allow quick checking for invalidity; this iterator class does not use sentinel nodes.
+        operator bool() const; ///< Allow quick checking for invalidity; this iterator class does not use sentinel nodes.
     };
     
     string name; ///< The name of the object with the contained referencers.

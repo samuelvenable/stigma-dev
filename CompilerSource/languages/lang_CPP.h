@@ -42,7 +42,6 @@ struct lang_CPP: language_adapter {
   int compile_parseAndLink(const GameData &game, CompileState &state) final;
   int link_globals(const GameData &game, CompileState &state) final;
   int link_ambiguous(const GameData &game, CompileState &state) final;
-  int compile_parseSecondary(CompileState &state) final;
 
   int compile_writeGlobals(const GameData &game, const ParsedScope* global, const DotLocalMap &dot_accessed_locals) final;
   int compile_writeObjectData(const GameData &game, const CompileState &state, int mode) final;
@@ -97,6 +96,10 @@ struct lang_CPP: language_adapter {
   void quickmember_integer(jdi::definition_scope* scope, string name) final {
     return quickmember_variable(scope, jdi::builtin_type__int, name);
   }
+  /// Create a class template in the given scope: `type_params` type
+  /// parameters followed by `value_params` int non-type parameters.
+  void quickmember_template(jdi::definition_scope* scope, string name,
+                            size_t type_params, size_t value_params) final;
   /// Look up an enigma_user definition by its name.
   jdi::definition* look_up(std::string_view name) const final;
 

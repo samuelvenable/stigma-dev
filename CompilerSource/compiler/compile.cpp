@@ -56,6 +56,7 @@ using namespace std;
 #include "backend/JavaCallbacks.h"
 #include "compile_includes.h"
 #include "compile_common.h"
+#include "parser/semantics.h"
 #include "System/builtins.h"
 
 #include "settings-parse/crawler.h"
@@ -630,8 +631,13 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
   res = current_language->link_ambiguous(game, state);
   irrr();
 
-  edbg << "Running Secondary Parse Passes" << flushl;
-  res = current_language->compile_parseSecondary(state);
+  edbg << "Annotating semantics" << flushl;
+  if (int semantic_errors = annotate_semantics(state)) {
+    user << "Compile failed: " << semantic_errors
+         << " semantic error(s); see log above." << flushl;
+    idpr("Semantic errors; see scrollback for details.", -1);
+    return E_ERROR_SYNTAX;
+  }
 
   state.used_events = ListUsedEvents(state.parsed_objects, event_data());
 

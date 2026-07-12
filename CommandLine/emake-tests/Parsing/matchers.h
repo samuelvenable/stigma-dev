@@ -24,6 +24,34 @@ using namespace ::testing;
 
 extern std::string ExpectedMsg;
 
+// Crawl a declarator-expression-tree into its JDI-bridge ref_stack and report
+// whether it carries no `* & [] ()` modifiers -- i.e. a plain/abstract base
+// type. Shared replacement for the old Declarator::components.size()==0 /
+// has_nested_declarator bridge assertions.
+inline bool declarator_is_unqualified(AST::Node *declarator_expr) {
+  jdi::ref_stack rs;
+  return walk_declarator_expr(declarator_expr, rs) && rs.empty();
+}
+
+// Same check over every declarator in a clause (e.g. a cast/type-id whose
+// abstract declarator should be modifier-free).
+inline bool clause_is_unqualified(AST::DeclaratorClause *clause) {
+  for (auto &id : clause->declarators)
+    if (!declarator_is_unqualified(id->declarator_expr.get())) return false;
+  return true;
+}
+
+// Whether every declarator in a clause is unnamed (abstract): the declarator-id
+// name is empty. Distinct from clause_is_unqualified (which checks the `* & [] ()`
+// modifiers): an abstract type-id is both unqualified AND unnamed. Replaces the
+// old `FullType::decl.name.content == ""` bridge assertion -- the name now lives
+// on each InitDeclarator, not on a Declarator embedded in the FullType.
+inline bool clause_is_unnamed(AST::DeclaratorClause *clause) {
+  for (auto &id : clause->declarators)
+    if (!id->name.content.empty()) return false;
+  return true;
+}
+
 MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   if (arg->type != AST::NodeType::DECLARATION) {
     ExpectedMsg = "From IsDeclaration Matcher: NodeType = DECLARATION\n";
@@ -39,7 +67,7 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
   }
 
   bool b1 = decl->storage_class == AST::DeclarationStatement::StorageClass::TEMPORARY,
-       b2 = decl->declarations.size() == decls.size();
+       b2 = decl->clause->declarators.size() == decls.size();
 
   if (!b1 || !b2) {
     ExpectedMsg = "From IsDeclaration Matcher: ";
@@ -51,30 +79,48 @@ MATCHER_P2(IsDeclaration, decls, decl_type, "") {
     }
     if (!b2) {
       ExpectedMsg += "DeclarationsSize = " + to_string(decls.size()) + "\n";
-      *result_listener << "got DeclarationsSize = " << to_string(decl->declarations.size()) << "\n";
+      *result_listener << "got DeclarationsSize = " << to_string(decl->clause->declarators.size()) << "\n";
     }
   }
 
   bool b3 = true;
+  auto *expected_def = static_cast<jdi::definition*>(decl_type);
+  // Base type + cv/sign/length flags live on the shared spec-seq now, not a
+  // per-declarator FullType: `specifiers->Definition()` is the resolved base
+  // type (read from the id-expression tree) and `declspecs->flags` is the same
+  // bitmask the deleted `declarator->flags` carried. The per-name declarator
+  // modifiers are on `declarator_expr`.
+  auto *spec = decl->clause->specifiers.get();
+  auto *parsed_def = spec->Definition();
   for (size_t i = 0; i < decls.size(); i++) {
-    auto &decli = decl->declarations[i].declarator->decl;
-    b3 = b3 && decl->declarations[i].init != nullptr;
-    b3 = b3 && decl->declarations[i].declarator->def == decl_type;
-    b3 = b3 && decl->declarations[i].declarator->flags == 0;
-    b3 = b3 && decli.name.content == decls[i];
-    b3 = b3 && decli.components.size() == 0;
+    auto &init_decl = *decl->clause->declarators[i];
+    b3 = b3 && init_decl.init != nullptr;
+    // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
+    // Otherwise, compare pointers OR compare by name for builtin types
+    bool type_matches = (expected_def == nullptr) ||
+                        (parsed_def == expected_def) ||
+                        (parsed_def && expected_def && parsed_def->name == expected_def->name);
+    b3 = b3 && type_matches;
+    b3 = b3 && (!spec->declspecs || spec->declspecs->flags == 0);
+    b3 = b3 && init_decl.name.content == decls[i];
+    // These matcher uses are all plain-name declarators (`int x, y;`): the
+    // declarator-expression-tree carries no pointer/array/function modifiers.
+    b3 = b3 && declarator_is_unqualified(init_decl.declarator_expr.get());
     if (!b3) {
       if (ExpectedMsg == "") ExpectedMsg = "From IsDeclaration Matcher: ";
+      std::string expected_type = expected_def ? expected_def->name : "any";
+      std::string got_type = parsed_def ? parsed_def->name : "nullptr";
       ExpectedMsg +=
           "Declaration [" + to_string(i) +
-          "] has init != nullptr, def = jdi::builtin_type__int, flags = 0, name.content = " +  // modify type here
-          decls[i] + ", components.size() = 0\n";
+          "] has init != nullptr, def = " + expected_type + ", flags = 0, name.content = " +
+          decls[i] + ", empty ref_stack\n";
       *result_listener << " got Declaration [" << to_string(i) << "] has init "
-                       << ((decl->declarations[i].init) ? "!=" : "=")
-                       << " nullptr, def = jdi::builtin_type__int, flags = "  // and here
-                       << to_string(decl->declarations[i].declarator->flags)
-                       << ", name.content = " << decli.name.content
-                       << ", components.size() = " << to_string(decli.components.size()) << "\n";
+                       << ((init_decl.init) ? "!=" : "=")
+                       << " nullptr, def = " << got_type << ", flags = "
+                       << to_string(spec->declspecs ? spec->declspecs->flags : 0)
+                       << ", name.content = " << init_decl.name.content
+                       << ", unqualified = " << to_string(declarator_is_unqualified(init_decl.declarator_expr.get()))
+                       << "\n";
     }
   }
 
@@ -102,31 +148,47 @@ MATCHER_P3(IsCast, cast_kind, expr_type, type, "") {
     return false;
   }
 
-  bool b1 = cast->ft.def == type, b2 = cast->ft.flags == 0, b3 = cast->ft.decl.components.size() == 0,
-       b4 = cast->ft.decl.name.content == "", b5 = cast->ft.decl.has_nested_declarator == false,
+  // cast->type is a PNode wrapping a DeclaratorClause; the cast's type is its
+  // `specifiers` (a TypeSpecifierSeq), whose `Definition()`/`flags` are the
+  // resolved base type and cv/sign/length bitmask. The clause's abstract declarator (the
+  // `*`/`&`/`[]` chain) is checked for emptiness via clause_is_unqualified /
+  // clause_is_unnamed below, since these are simple-type cast tests.
+  auto *clause = cast->type ? cast->type->template As<AST::DeclaratorClause>() : nullptr;
+  auto *typeid_node = clause ? clause->specifiers.get() : nullptr;
+  if (!typeid_node) {
+    ExpectedMsg += "From IsCast Matcher: cast->type is a DeclaratorClause with specifiers\n";
+    *result_listener << "got cast->type = "
+                     << (cast->type ? AST::NodeToString(cast->type->type) : std::string{"nullptr"}) << "\n";
+    return false;
+  }
+  auto &ft = *typeid_node;
+  // Type comparison: if expected_def is nullptr, skip the check (any type is OK)
+  // Otherwise, compare pointers OR compare by name for builtin types
+  auto *parsed_def = ft.Definition();
+  auto *expected_def = static_cast<jdi::definition*>(type);
+  bool b1 = (expected_def == nullptr) || (parsed_def == expected_def) ||
+            (parsed_def && expected_def && parsed_def->name == expected_def->name);
+  // These casts are all simple-type (`(int)x`, `static_cast<int>(...)`): the
+  // abstract declarator carries no `* & [] ()` modifiers (b3) and no name (b4).
+  bool b2 = ft.flags == 0, b3 = clause_is_unqualified(clause), b4 = clause_is_unnamed(clause),
        b6 = cast->kind == cast_kind, b7 = expr->type == expr_type;
 
-  bool res = b1 && b2 && b3 && b4 && b5 && b6 && b7;
+  bool res = b1 && b2 && b3 && b4 && b6 && b7;
 
   if (!res) {
     ExpectedMsg = "From IsCast Matcher: ";
 
     if (!b2) {
       ExpectedMsg += "ft.flags = 0\n";
-      *result_listener << "got ft.flags = " << to_string(cast->ft.flags) << "\n";
+      *result_listener << "got ft.flags = " << to_string(ft.flags) << "\n";
     }
     if (!b3) {
-      ExpectedMsg += "ft.decl.components.size() = 0\n";
-      *result_listener << "got ft.decl.components.size() = " << to_string(cast->ft.decl.components.size()) << "\n";
+      ExpectedMsg += "cast type-id has no declarator modifiers (empty ref_stack)\n";
+      *result_listener << "got a non-empty declarator ref_stack on the cast type-id\n";
     }
     if (!b4) {
-      ExpectedMsg += "ft.decl.name.content = \"\"\n";
-      *result_listener << "got ft.decl.name.content = " << cast->ft.decl.name.content << "\n";
-    }
-    if (!b5) {
-      ExpectedMsg += "ft.decl.has_nested_declarator = false\n";
-      *result_listener << "got ft.decl.has_nested_declarator = " << to_string(cast->ft.decl.has_nested_declarator)
-                       << "\n";
+      ExpectedMsg += "cast type-id is unnamed (abstract declarator)\n";
+      *result_listener << "got a named declarator on the cast type-id\n";
     }
     if (!b6) {
       ExpectedMsg += "cast->kind = " + AST::CastExpression::KindToString(cast_kind) + "\n";
@@ -269,6 +331,23 @@ MATCHER_P2(IsUnaryPrefixOperator, op, M1, "") {
   }
 
   return res;
+}
+
+MATCHER_P(IsParenthetical, M1, "") {
+  if (arg->type != AST::NodeType::PARENTHETICAL) {
+    ExpectedMsg = "From IsParenthetical Matcher: NodeType = PARENTHETICAL\n";
+    *result_listener << "got NodeType = " << AST::NodeToString(arg->type) << "\n";
+    return false;
+  }
+
+  auto *paren = arg->template As<AST::Parenthetical>();
+  if (!paren) {
+    ExpectedMsg += "From IsParenthetical Matcher: paren isn't nullptr\n";
+    *result_listener << "got paren = nullptr\n";
+    return false;
+  }
+
+  return ExplainMatchResult(M1, paren->expression, result_listener);
 }
 
 MATCHER_P(IsStatementBlock, stateSize, "") {

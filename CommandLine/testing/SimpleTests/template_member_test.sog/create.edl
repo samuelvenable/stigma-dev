@@ -1,0 +1,23 @@
+// Declaring a variable of a definition-page template type: the template-id
+// must parse as a type, instantiate, and expose its members to the dot.
+// `string` names a type (enigma_user typedef) while `string(...)` stays the
+// conversion macro -- a function-like macro only fires before a `(`.
+map<string, double> scores;
+scores.count = 0;
+gtest_assert_eq(scores.size(), 0);
+
+scores["a"] = 1.5;
+gtest_assert_eq(scores.size(), 1);
+gtest_assert_eq(scores.at("a"), 1.5);
+
+// A second instantiation with a different key arrives independently.
+map<int, int> hits;
+hits.count = 5;
+gtest_assert_eq(hits.size(), 5);
+
+// The type name and the conversion coexist.
+string greeting = "hi";
+gtest_assert_eq(greeting, "hi");
+gtest_assert_eq(string(5), "5");
+
+game_end();

@@ -27,8 +27,14 @@
 #include "Platforms/General/PFwindow.h"
 
 #include <X11/Xlib.h>
+
+// RandR/Xinerama refine multi-monitor geometry; without their headers the
+// getters fall back to core Xlib screen metrics (single-monitor answer).
+#if __has_include(<X11/extensions/Xrandr.h>) && __has_include(<X11/extensions/Xinerama.h>)
+#define ENIGMA_XLIB_HAS_XRANDR 1
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xinerama.h>
+#endif
 
 static int displayX            = -1;
 static int displayY            = -1;
@@ -40,9 +46,11 @@ static int displayYGetter      = -1;
 static int displayWidthGetter  = -1;
 static int displayHeightGetter = -1;
 
+#ifdef ENIGMA_XLIB_HAS_XRANDR
+
 static void display_get_position(bool i, int *result) {
   Display *display = XOpenDisplay(NULL);
-  *result = 0; Rotation original_rotation; 
+  *result = 0; Rotation original_rotation;
   Window root = XDefaultRootWindow(display);
   XRRScreenConfiguration *conf = XRRGetScreenInfo(display, root);
   SizeID original_size_id = XRRConfigCurrentConfiguration(conf, &original_rotation);
@@ -57,7 +65,7 @@ static void display_get_position(bool i, int *result) {
 
 static void display_get_size(bool i, int *result) {
   Display *display = XOpenDisplay(NULL);
-  *result = 0; int num_sizes; Rotation original_rotation; 
+  *result = 0; int num_sizes; Rotation original_rotation;
   Window root = XDefaultRootWindow(display);
   int screen = XDefaultScreen(display);
   XRRScreenConfiguration *conf = XRRGetScreenInfo(display, root);
@@ -70,6 +78,21 @@ static void display_get_size(bool i, int *result) {
   else if (i) *result = XDisplayHeight(display, screen);
   XCloseDisplay(display);
 }
+
+#else  // core-Xlib fallback
+
+static void display_get_position(bool, int *result) {
+  *result = 0;
+}
+
+static void display_get_size(bool i, int *result) {
+  Display *display = XOpenDisplay(NULL);
+  int screen = XDefaultScreen(display);
+  *result = i ? XDisplayHeight(display, screen) : XDisplayWidth(display, screen);
+  XCloseDisplay(display);
+}
+
+#endif  // ENIGMA_XLIB_HAS_XRANDR
 
 namespace enigma_user {
 

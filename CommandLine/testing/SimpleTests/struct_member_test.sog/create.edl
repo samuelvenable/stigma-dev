@@ -1,0 +1,27 @@
+// Definition pages are global C++ parsed by JDI beside the engine; EDL code
+// declares variables with those types and accesses members with the dot.
+// The semantic annotator must classify these MEMBER (plain p.x), never
+// varaccess -- struct types cannot round-trip through an instance lookup.
+Point p;
+p.x = 3;
+p.y = 4;
+gtest_assert_eq(p.x, 3);
+gtest_assert_eq(p.y, 4);
+
+// Member function calls through the dot.
+gtest_assert_eq(p.sum(), 7);
+
+// Struct members and instance variables coexist. (Built-in locals like x
+// make poor instance-side probes here: varaccess_<name> cannot return a
+// var& to the builtin double, so it silently reads the vmap shadow slot --
+// an engine quirk of the same-type assertion, found writing this test.)
+count = 100;
+gtest_assert_eq(count, 100);
+gtest_assert_eq(self.count, 100);
+gtest_assert_eq(p.x, 3);
+
+// with() swaps the current instance: functions called inside are global,
+// and bare names bind to the with-target instance.
+with (self) {
+  gtest_assert_eq(count, 100);
+}

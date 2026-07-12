@@ -53,20 +53,16 @@ namespace enigma
     gs_scalar polygon_angle;
 
     //Bounding box
-      #ifdef JUST_DEFINE_IT_RUN
-        int bbox_left, bbox_right, bbox_top, bbox_bottom;
-      #else
-        int $bbox_left()   const;
-        int $bbox_right()  const;
-        int $bbox_top()    const;
-        int $bbox_bottom() const;
-        const BoundingBox $bbox_relative() const;
-        const BoundingBox& $bbox() const;
-        #define bbox_left   $bbox_left()
-        #define bbox_right  $bbox_right()
-        #define bbox_top    $bbox_top()
-        #define bbox_bottom $bbox_bottom()
-      #endif
+      int $bbox_left()   const;
+      int $bbox_right()  const;
+      int $bbox_top()    const;
+      int $bbox_bottom() const;
+      const BoundingBox $bbox_relative() const;
+      const BoundingBox& $bbox() const;
+      #define bbox_left   $bbox_left()
+      #define bbox_right  $bbox_right()
+      #define bbox_top    $bbox_top()
+      #define bbox_bottom $bbox_bottom()
       
     //Constructors
       object_collisions();

@@ -66,6 +66,7 @@ static TokenTrie token_lookup {
   { "%=",  TT_ASSOP        },
   { "&",   TT_AMPERSAND    },
   { "&&",  TT_AND          },
+  { "&=",  TT_ASSOP        },
   { "(",   TT_BEGINPARENTH },
   { ")",   TT_ENDPARENTH   },
   { "+",   TT_PLUS         },
@@ -109,6 +110,7 @@ static TokenTrie token_lookup {
   { "^^",  TT_XOR          },
   { "{",   TT_BEGINBRACE   },
   { "|",   TT_PIPE         },
+  { "|=",  TT_ASSOP        },
   { "||",  TT_OR           },
   { "}",   TT_ENDBRACE     },
   { "~",   TT_TILDE        },
@@ -127,7 +129,9 @@ static std::map<std::string, TokenType, std::less<>> keyword_lookup {
   { "do",       TT_S_DO      },
   { "else",     TT_S_ELSE    },
   { "enum",     TT_ENUM      },
+  { "true",     TT_BOOLLITERAL },
   { "exit",     TT_EXIT      },
+  { "false",    TT_BOOLLITERAL },
   { "for",      TT_S_FOR     },
   { "if",       TT_S_IF      },
   { "new",      TT_S_NEW     },
@@ -157,18 +161,18 @@ static std::map<std::string, TokenType, std::less<>> keyword_lookup {
   { "reinterpret_cast", TT_REINTERPRET_CAST },
   { "const_cast",       TT_CONST_CAST       },
 
-  { "const",        TT_CONST        },
+  { "const",        TT_DECLSPEC     },
   { "constexpr",    TT_CONSTEXPR    },
   { "constinit",    TT_CONSTINIT    },
   { "consteval",    TT_CONSTEVAL    },
   { "extern",       TT_EXTERN       },
   { "inline",       TT_INLINE       },
   { "mutable",      TT_MUTABLE      },
-  { "signed",       TT_SIGNED       },
+  { "signed",       TT_DECLSPEC     },
   { "static",       TT_STATIC       },
   { "thread_local", TT_THREAD_LOCAL },
-  { "unsigned",     TT_UNSIGNED     },
-  { "volatile",     TT_VOLATILE     },
+  { "unsigned",     TT_DECLSPEC     },
+  { "volatile",     TT_DECLSPEC     },
 
   { "char",     TT_TYPE_NAME },
   { "char8_t",  TT_TYPE_NAME },
@@ -211,6 +215,7 @@ class NullLanguageFrontend : public LanguageFrontend {
   PURE_VIRTUAL(void, definition_parameter_bounds(jdi::definition *, unsigned &, unsigned &) const);
   PURE_VIRTUAL(void, quickmember_script(jdi::definition_scope*, string));
   PURE_VIRTUAL(void, quickmember_integer(jdi::definition_scope*, string));
+  PURE_VIRTUAL(void, quickmember_template(jdi::definition_scope*, string, size_t, size_t));
 
   bool global_exists(string) const final { return false; }
   const MacroMap &builtin_macros() const final { return kNoMacros; }
@@ -434,10 +439,10 @@ Token Lexer::ReadRawToken() {
 
     case '\'': {
       const TokenType token_type =
-          options.use_char_literals ? TT_STRINGLIT : TT_CHARLIT;
+          options.use_char_literals ? TT_CHARLIT : TT_STRINGLIT;
       for (;; ++pos) {
         if (pos >= code.length()) {
-          herr->Error(Mark(spos, 1)) << "Unclosed double quote at this point";
+          herr->Error(Mark(spos, 1)) << "Unclosed single quote at this point";
           return Token(token_type, Mark(spos, pos - spos));
         }
         if (options.use_escapes && code[pos] == '\\') ++pos;
@@ -451,20 +456,34 @@ Token Lexer::ReadRawToken() {
       }
     }
 
+    case '.': {
+      // A dot starts a fractional literal (`.5`) only when a digit follows.
+      // Otherwise it's the member-access / pointer-to-member / ellipsis
+      // operator, resolved by the operator trie below.
+      if (pos < code.length() && is_digit(code[pos])) {
+        while (pos < code.length() && is_digit(code[pos])) ++pos;
+        return Token(TT_DECLITERAL, Mark(spos, pos - spos));
+      }
+      break;
+    }
+
     case '0': {
       if (pos >= code.length())
         return Token(TT_DECLITERAL, Mark(spos, pos - spos));
+      // Prefixed literals store only the digits; the radix lives in the
+      // token type. The GML $ form has no C++ spelling, so the printer
+      // re-emits the prefix either way.
       if (code[pos] == 'x' && options.use_hex_literals) {
         while (++pos < code.length() && is_nybble(code[pos]));
-        return Token(TT_HEXLITERAL, Mark(spos, pos - spos));
+        return Token(TT_HEXLITERAL, Mark(spos + 2, pos - spos - 2));
       }
       if (code[pos] == 'b' && options.use_bin_literals) {
         while (++pos < code.length() && is_bit(code[pos]));
-        return Token(TT_BINLITERAL, Mark(spos, pos - spos));
+        return Token(TT_BINLITERAL, Mark(spos + 2, pos - spos - 2));
       }
       if (code[pos] == 'o' && options.use_oct_literals) {
         while (++pos < code.length() && is_octal(code[pos]));
-        return Token(TT_OCTLITERAL, Mark(spos, pos - spos));
+        return Token(TT_OCTLITERAL, Mark(spos + 2, pos - spos - 2));
       }
       [[fallthrough]]; case '1': case '2': case '3': case '4': case '5':
                        case '6': case '7': case '8': case '9':
@@ -617,9 +636,13 @@ Lexer::Lexer(TokenVector tokens, const ParseContext *ctex, ErrorHandler *herr_):
 Lexer::Options::Options(const ParseContext *ctex):
     use_escapes(ctex->compatibility_opts.use_cpp_escapes),
     use_char_literals(ctex->compatibility_opts.use_cpp_strings),
-    use_hex_literals(ctex->compatibility_opts.use_cpp_literals),
-    use_oct_literals(ctex->compatibility_opts.use_cpp_literals),
-    use_bin_literals(ctex->compatibility_opts.use_cpp_literals),
+    // Literal prefixes are additive syntax: a digit cannot begin a GML
+    // identifier, so 0x/0b/0o conflict with nothing in any compatibility
+    // mode (GM's own $ hex stays available via use_gml_style_hex). The
+    // cpp-literals bit governs quirks that change meaning, not these.
+    use_hex_literals(true),
+    use_oct_literals(true),
+    use_bin_literals(true),
     use_gml_style_hex(true),
     use_preprocessor_tokens(false) {}
 

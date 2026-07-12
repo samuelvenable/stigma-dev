@@ -382,16 +382,20 @@ void definition_tempparam::remap(remap_set&, const ErrorContext &errc) {
 }
 
 void definition_typed::remap(remap_set &n, const ErrorContext &errc) {
-  remap_set::const_iterator ex = n.find(type);
-  if (ex != n.end())
-    type = ex->second;
-  /*else {
-    type->remap(n, errc);
-    if ((ex = n.find(type)) != n.end())
+  // The clang populator leaves `type` null when the referent is outside the
+  // EDL-visible surface; there is nothing to substitute then.
+  if (type) {
+    remap_set::const_iterator ex = n.find(type);
+    if (ex != n.end())
       type = ex->second;
-  }*/
-  if (!(type->flags & DEF_DEPENDENT))
-    flags &= ~DEF_DEPENDENT;
+    /*else {
+      type->remap(n, errc);
+      if ((ex = n.find(type)) != n.end())
+        type = ex->second;
+    }*/
+    if (!(type->flags & DEF_DEPENDENT))
+      flags &= ~DEF_DEPENDENT;
+  }
   definition::remap(n, errc);
 }
 

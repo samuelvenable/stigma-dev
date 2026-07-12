@@ -77,6 +77,13 @@ class LanguageFrontend {
   /// Create a standard integer variable member in the given scope.
   virtual void quickmember_integer(jdi::definition_scope* scope,
                                    std::string name) = 0;
+  /// Create a class template member in the given scope, with the given
+  /// numbers of type parameters (T0, T1, ...) then integer non-type
+  /// parameters (N0, N1, ...), none defaulted. Primarily a testing hook:
+  /// gives the parser a resolvable template without a JDI engine parse.
+  virtual void quickmember_template(jdi::definition_scope* scope,
+                                    std::string name, size_t type_params,
+                                    size_t value_params) = 0;
   /// Look up an enigma_user definition by its name.
   virtual jdi::definition* look_up(std::string_view name) const = 0;
 

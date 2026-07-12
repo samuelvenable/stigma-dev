@@ -77,6 +77,10 @@ namespace enigma
 	void scene_end() {}
 	void delete_tiles() {}
 	void load_tiles() {}
+
+	// Draw-side state normally owned by General/GSfont.cpp; the resource
+	// system pokes it when the active font is deleted.
+	int currentfont = -1;
 }
 
 namespace enigma_user
@@ -98,7 +102,24 @@ namespace enigma_user
 	int surface_create_msaa(int width, int height, int samples){return -1;}
 	void surface_set_target(int id){}
 	void surface_reset_target(void){}
+	// Draw-API coverage for extensions that debug-draw (Paths,
+	// MotionPlanning): primitives, splines, and color state.
+	void draw_primitive_begin(int kind, int format){}
+	void draw_primitive_end(){}
+	void draw_vertex(gs_scalar x, gs_scalar y){}
+	void draw_vertex_color(gs_scalar x, gs_scalar y, int color, float alpha){}
+	void draw_spline_begin(int mode){}
+	void draw_spline_vertex(gs_scalar x, gs_scalar y){}
+	void draw_bezier_quadratic_spline_end(){}
+	void draw_set_color(int col){}
+	void draw_set_color_rgba(unsigned char red, unsigned char green, unsigned char blue, float alpha){}
+	int draw_get_color(){return 0;}
+	int merge_color(int col1, int col2, double amount){return 0;}
+
 	int surface_get_target(){return -1;}
+	int surface_get_texture(int id){return -1;}
+	int surface_get_width(int id){return 0;}
+	int surface_get_height(int id){return 0;}
 	void surface_free(int id){}
 
 	int draw_get_msaa_maxlevel(){return 0;}

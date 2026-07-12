@@ -211,3 +211,21 @@ TEST(LexerTest, Literals_2) {
   EXPECT_EQ(t.type, TT_STRINGLIT);
   EXPECT_EQ(t.content, "\n");
 }
+
+TEST(LexerTest, SingleQuoteIsStringInGml) {
+  LexerTester lex("y = ' ' ", false);
+  EXPECT_EQ(lex->ReadToken().type, TT_IDENTIFIER);
+  EXPECT_EQ(lex->ReadToken().type, TT_EQUALS);
+  Token t = lex->ReadToken();
+  EXPECT_EQ(t.type, TT_STRINGLIT);
+  EXPECT_EQ(t.content, " ");
+}
+
+TEST(LexerTest, SingleQuoteIsCharInCpp) {
+  LexerTester lex("y = 'a' ", true);
+  EXPECT_EQ(lex->ReadToken().type, TT_IDENTIFIER);
+  EXPECT_EQ(lex->ReadToken().type, TT_EQUALS);
+  Token t = lex->ReadToken();
+  EXPECT_EQ(t.type, TT_CHARLIT);
+  EXPECT_EQ(t.content, "a");
+}

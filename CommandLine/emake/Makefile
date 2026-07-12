@@ -24,7 +24,10 @@ ifeq ($(TESTS), TRUE)
 	SOURCES := $(filter-out ../emake-tests/asan_stubs.cpp,$(call rwildcard,../emake-tests,*.cpp)) \
 	           $(call rwildcard,../emake-tests/Extensions/Json,*.cpp) \
 	           ../emake-tests/asan_stubs.cpp
-	LDFLAGS += -lpthread -lgtest_main -lgtest
+	# -lclang: clang-populator-test.cpp (JDI2 T1) calls libclang functions
+	# (clang_Cursor_isNull, ...) directly. libcompileEGMf.so already depends
+	# on libclang, but the test binary references its symbols itself too.
+	LDFLAGS += -lpthread -lgtest_main -lgtest -lclang
 else
 	TARGET = ../../emake
 	SOURCES := $(call rwildcard,$(SRC_DIR),*.cpp)

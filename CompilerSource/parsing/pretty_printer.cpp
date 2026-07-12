@@ -18,6 +18,8 @@
 #include <JDI/src/System/builtins.h>
 #include "ast.h"
 
+#include <iomanip>
+
 using namespace enigma::parsing;
 
 #define VISIT_AND_CHECK(node) \
@@ -67,15 +69,43 @@ std::string AST::CppPrettyPrinter::GetPrintedCode() {
   return code;
 }
 
+namespace {
+// Collects every declared name in a code tree. The printer runs this before
+// printing a script: declared names are C++ locals in the emitted function
+// (GML `var` hoists and shadows instance variables), so the identifier
+// lowering must print them bare.
+struct DeclaredNameCollector : AST::Visitor {
+  std::set<std::string, std::less<>> *out;
+  explicit DeclaredNameCollector(std::set<std::string, std::less<>> *out): out(out) {}
+  bool VisitDeclarationStatement(AST::DeclarationStatement &node) final {
+    if (node.clause) {
+      for (auto &d : node.clause->declarators)
+        if (!d->name.content.empty()) out->insert(std::string(d->name.content));
+    }
+    node.RecursiveSubVisit(*this);
+    return false;
+  }
+};
+}  // namespace
+
+void AST::CppPrettyPrinter::CollectDeclaredNames(AST::Node &root) {
+  DeclaredNameCollector collector(&declared_names_);
+  root.accept(collector);
+}
+
 bool AST::CppPrettyPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
   if (print_type) print("auto ");
   std::string name = node.name.content;
+  if (in_declarator_ || declared_names_.count(name)) {
+    print(name);
+    return true;
+  }
   if (is_script && name != "self") {
     if (language_fe->is_shared_local(name)) {
       print("enigma::glaccess(int(self))->" + name);
     } else if (language_fe->global_exists(name)) {
       print(name);
-    } else if (std::holds_alternative<jdi::definition *>(node.type) && std::get<jdi::definition *>(node.type)) {
+    } else if (node.def) {
       print(name);
     } else if (name.substr(0, 8) == "argument") {
       print(name);
@@ -88,11 +118,107 @@ bool AST::CppPrettyPrinter::VisitIdentifierAccess(AST::IdentifierAccess &node) {
   return true;
 }
 
+bool AST::CppPrettyPrinter::VisitScopeAccess(AST::ScopeAccess &node) {
+  using AccessKind = AST::ScopeAccess::AccessKind;
+  std::string name(node.name.content);
+
+  // The annotator's classification wins. VARACCESS lowers chains naturally:
+  // the lhs visit emits its own lowering inside the accessor's argument.
+  switch (node.access_kind) {
+    case AccessKind::MEMBER:
+      if (node.lhs) VISIT_AND_CHECK(node.lhs);
+      print("." + name);
+      return true;
+    case AccessKind::LOCAL:
+      print(name);
+      return true;
+    case AccessKind::GLOBAL:
+      print("enigma::varaccess_" + name + "(int(global))");
+      return true;
+    case AccessKind::VARACCESS:
+      print("enigma::varaccess_" + name + "(");
+      if (node.lhs) VISIT_AND_CHECK(node.lhs);
+      print(")");
+      return true;
+    case AccessKind::SHARED:
+      // Built-in tier locals: one generated accessor returns the tier
+      // pointer; the member access is direct.
+      print("enigma::glaccess(int(");
+      if (node.lhs) VISIT_AND_CHECK(node.lhs);
+      print("))->" + name);
+      return true;
+    case AccessKind::UNRESOLVED:
+      break;
+  }
+
+  // Unannotated dot (unit harnesses, pre-annotation prints): the spelling
+  // heuristics the annotator supersedes.
+  if (node.op.type == TT_DOT) {
+    if (node.lhs && node.lhs->type == AST::NodeType::IDENTIFIER) {
+      std::string left(node.lhs->As<AST::IdentifierAccess>()->name.content);
+      if (left == "local") {
+        print(name);
+        return true;
+      }
+      if (left == "global") {
+        print("enigma::varaccess_" + name + "(int(global))");
+        return true;
+      }
+      print("enigma::varaccess_" + name + "(" + left + ")");
+      return true;
+    }
+    print("enigma::varaccess_" + name + "(");
+    if (node.lhs) VISIT_AND_CHECK(node.lhs);
+    print(")");
+    return true;
+  }
+
+  if (node.lhs) VISIT_AND_CHECK(node.lhs);
+  print("::");
+  print(name);
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitTemplateId(AST::TemplateId &node) {
+  VISIT_AND_CHECK(node.name);
+  print("<");
+  for (std::size_t i = 0; i < node.args.size(); i++) {
+    if (i) print(", ");
+    VISIT_AND_CHECK(node.args[i]);
+  }
+  print(">");
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitDecltype(AST::Decltype &node) {
+  print("decltype(");
+  VISIT_AND_CHECK(node.operand);
+  print(")");
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitImplicitType(AST::ImplicitType &node) {
+  // Implied `int` prints nothing: the user didn't write it, and C++ accepts
+  // the bare sign/length run (`unsigned x`). The untyped fallback (var/variant)
+  // MUST print -- `const x` is not valid C++ -- using the resolved definition's
+  // name. An unresolved fallback (header-less harness) prints nothing.
+  if (node.kind == AST::ImplicitType::Kind::UNTYPED && node.def) {
+    print(node.def->name);
+  }
+  return true;
+}
+
 bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
   std::string value = std::get<std::string>(node.value.value);
   if (node.value.type != TT_CHARLIT && node.value.type != TT_STRINGLIT) {
+    // Prefixed-literal tokens hold bare digits; restore the C++ spelling.
+    // Octal gets a plain leading zero: C++ has no 0o prefix.
     if (node.value.type == TT_HEXLITERAL) {
       print("0x");
+    } else if (node.value.type == TT_BINLITERAL) {
+      print("0b");
+    } else if (node.value.type == TT_OCTLITERAL) {
+      print("0");
     }
     print(value);
     return true;
@@ -106,6 +232,11 @@ bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
   for (char c : value) {
     if (c == '\\') {
       to_print += "\\\\";
+    } else if (c == '"' || c == '\'') {
+      // The literal's own delimiter must be escaped or it truncates the
+      // emitted string; escaping both quotes is valid C++ either way.
+      to_print += '\\';
+      to_print += c;
     } else if (c >= ' ' && c <= '~') {
       to_print += c;
     } else if (c == '\n') {
@@ -125,8 +256,12 @@ bool AST::CppPrettyPrinter::VisitLiteral(AST::Literal &node) {
     } else if (c == '\?') {
       to_print += "\\?";
     } else {
+      // Bytes, not (possibly signed) chars: 0x80-0xFF must stay three octal
+      // digits, and the fixed width keeps a following digit character from
+      // extending the escape.
       std::ostringstream oss;
-      oss << '\\' << std::oct << static_cast<int>(c);
+      oss << '\\' << std::setw(3) << std::setfill('0') << std::oct
+          << static_cast<int>(static_cast<unsigned char>(c));
       to_print += oss.str();
     }
   }
@@ -153,15 +288,7 @@ bool AST::CppPrettyPrinter::VisitUnaryPostfixExpression(AST::UnaryPostfixExpress
 
 bool AST::CppPrettyPrinter::VisitUnaryPrefixExpression(AST::UnaryPrefixExpression &node) {
   print(node.operation.token);
-  if (node.operation.type == TT_STAR && node.operand->type != AST::NodeType::PARENTHETICAL) {
-    print("(");
-  }
-
   VISIT_AND_CHECK(node.operand);
-
-  if (node.operation.type == TT_STAR && node.operand->type != AST::NodeType::PARENTHETICAL) {
-    print(")");
-  }
   return true;
 }
 
@@ -213,33 +340,7 @@ bool AST::CppPrettyPrinter::VisitWithStatement(AST::WithStatement &node) {
   return true;
 }
 
-bool AST::CppPrettyPrinter::VisitDot(AST::BinaryExpression &node) {
-  std::string left = node.left->As<AST::IdentifierAccess>()->name.content;
-  std::string right = node.right->As<AST::IdentifierAccess>()->name.content;
-  if (left == "local") {
-    print(right);
-    return true;
-  }
-
-  print("enigma::varaccess_");
-  print(right);
-  print("(");
-
-  if (left == "global") {
-    print("int(global)");
-  } else {
-    print(left);
-  }
-  print(")");
-  return true;
-}
-
 bool AST::CppPrettyPrinter::VisitBinaryExpression(AST::BinaryExpression &node) {
-  if (node.operation.type == TT_DOT && node.left->type == AST::NodeType::IDENTIFIER &&
-      node.right->type == AST::NodeType::IDENTIFIER) {
-    return VisitDot(node);
-  }
-
   VISIT_AND_CHECK(node.left);
 
   std::string operation = node.operation.token;
@@ -255,9 +356,27 @@ bool AST::CppPrettyPrinter::VisitBinaryExpression(AST::BinaryExpression &node) {
   }
 
   if (operation == ":=") operation = "=";
+  // GML value-position =. The operands print flat (no tree parens), so the
+  // == re-associates at C++ equality precedence -- which is GML's own
+  // grouping for =, regardless of how the assignment-precedence parse
+  // grouped the tree.
+  if (node.lower_gml_equals) operation = "==";
   print(" " + operation + " ");
 
+  // The annotator marks EDL divisions: / is real division regardless of
+  // operand types (1/4 is 0.25; div is the integer kind), so coerce.
+  // The rhs of / is never a lower-precedence subtree unparenthesized,
+  // so the cast binds to the whole printed operand.
+  if (node.lower_real_division && node.operation.type == TT_SLASH) {
+    print("(double) ");
+  }
+
+  // A subscript's index is a value expression even inside a declarator
+  // (`var x[count]`): only the spine declares.
+  bool saved_decl = in_declarator_;
+  if (node.operation.type == TT_BEGINBRACKET) in_declarator_ = false;
   VISIT_AND_CHECK(node.right);
+  in_declarator_ = saved_decl;
 
   if (is_multi_dim) {
     print(")");
@@ -275,17 +394,18 @@ bool AST::CppPrettyPrinter::VisitFunctionCallExpression(AST::FunctionCallExpress
   int variadic_index = 0;
   if (node.function->type == AST::NodeType::IDENTIFIER && language_fe) {
     auto fn = node.function->As<AST::IdentifierAccess>();
-    jdi::definition *def = nullptr;
-    if (std::holds_alternative<jdi::definition *>(fn->type)) def = std::get<jdi::definition *>(fn->type);
+    jdi::definition *def = fn->def;
     if (def && language_fe->is_variadic_function(def)) {
       is_variadic = true;
       variadic_index = language_fe->function_variadic_after((jdi::definition_function *)def);
     }
   }
 
+  bool varargs_opened = false;
   for (std::size_t i = 0; i < node.arguments.size(); i++) {
     if (is_variadic && i == std::size_t(variadic_index)) {
       print("(enigma::varargs(),");
+      varargs_opened = true;
     }
     VISIT_AND_CHECK(node.arguments[i]);
     if (i < node.arguments.size() - 1) {
@@ -293,7 +413,9 @@ bool AST::CppPrettyPrinter::VisitFunctionCallExpression(AST::FunctionCallExpress
     }
   }
 
-  if (is_variadic) print(")");
+  // Close the varargs wrapper only if it opened: a variadic function called
+  // with no variadic arguments never reaches the opening index.
+  if (varargs_opened) print(")");
 
   print(")");
   return true;
@@ -346,146 +468,101 @@ bool AST::CppPrettyPrinter::VisitReturnStatement(AST::ReturnStatement &node) {
   return true;
 }
 
-bool AST::CppPrettyPrinter::VisitFullType(FullType &ft, bool print_type) {
-  if (print_type) {
-    std::vector<std::size_t> flags_values = {jdi::builtin_flag__const->value,    jdi::builtin_flag__static->value,
-                                             jdi::builtin_flag__volatile->value, jdi::builtin_flag__mutable->value,
-                                             jdi::builtin_flag__register->value, jdi::builtin_flag__inline->value,
-                                             jdi::builtin_flag__Complex->value,  jdi::builtin_flag__unsigned->value,
-                                             jdi::builtin_flag__signed->value,   jdi::builtin_flag__short->value,
-                                             jdi::builtin_flag__long->value,     jdi::builtin_flag__long_long->value,
-                                             jdi::builtin_flag__restrict->value, jdi::builtin_typeflag__override->value,
-                                             jdi::builtin_typeflag__final->value};
-
-    std::vector<std::size_t> flags_masks = {
-        jdi::builtin_flag__const->mask,    jdi::builtin_flag__static->mask,       jdi::builtin_flag__volatile->mask,
-        jdi::builtin_flag__mutable->mask,  jdi::builtin_flag__register->mask,     jdi::builtin_flag__inline->mask,
-        jdi::builtin_flag__Complex->mask,  jdi::builtin_flag__unsigned->mask,     jdi::builtin_flag__signed->mask,
-        jdi::builtin_flag__short->mask,    jdi::builtin_flag__long->mask,         jdi::builtin_flag__long_long->mask,
-        jdi::builtin_flag__restrict->mask, jdi::builtin_typeflag__override->mask, jdi::builtin_typeflag__final->mask};
-
-    std::vector<std::string> flags_names = {"const",  "static",    "volatile", "mutable",  "register",
-                                            "inline", "complex",   "unsigned", "signed",   "short",
-                                            "long",   "long long", "restrict", "override", "final"};
-
-    for (std::size_t i = 0; i < flags_values.size(); i++) {
-      if ((ft.flags & flags_masks[i]) == flags_values[i]) {
-        if (flags_names[i] != "signed" || (flags_names[i] == "signed" && ft.def->name == "char")) {
-          print(flags_names[i] + " ");
-        }
-      }
-    }
-
-    print(ft.def->name + " ");
-  }
-
-  std::string name = std::string(ft.decl.name.content);
-  if (name != "" && !ft.decl.components.size()) {
-    print(name + " ");
-  }
-
-  jdi::ref_stack stack;
-  ft.decl.to_jdi_refstack(stack);
-  auto first = stack.begin();
-
-  std::string ref;
-  bool flag = false;
-  bool print_name = true;
-
-  for (auto it = first; it != stack.end(); it++) {
-    if (it->type == jdi::ref_stack::RT_POINTERTO) {
-      flag = true;
-      ref = '*' + ref;
-    } else if (it->type == jdi::ref_stack::RT_REFERENCE) {
-      flag = true;
-      ref = '&' + ref;
-    } else {
-      if (it->type == jdi::ref_stack::RT_ARRAYBOUND) {
-        if (flag) {
-          ref = '(' + ref + ')';
-        }
-
-        std::size_t arr_size = it->arraysize();
-        if (arr_size != 0) {
-          ref += '[' + std::to_string(arr_size) + ']';
-        } else {
-          ref += "[]";
-        }
-      } else {
-        print("RT_MEMBER_POINTER");
-      }
-
-      // TODO: RT_MEMBER_POINTER
-
-      flag = false;
-    }
-
-    if (print_name) {
-      std::string name = std::string(ft.decl.name.content);
-      if (name != "") {
-        if (it->type == jdi::ref_stack::RT_ARRAYBOUND) {
-          ref = name + ref;
-        } else {
-          ref += name;
-        }
-      }
-      print_name = false;
-    }
-  }
-
-  print(ref);
-  return true;
-}
-
 bool AST::CppPrettyPrinter::VisitSizeofExpression(AST::SizeofExpression &node) {
+  // `sizeof expr` takes no parens; `sizeof(type)` and `sizeof...(pack)` require
+  // them. A redundantly-parenthesised operand (`sizeof(x)`) round-trips via the
+  // operand's own Parenthetical node, so EXPR never synthesises parens.
   print("sizeof");
-
-  if (node.kind == AST::SizeofExpression::Kind::EXPR) {
-    print(" ");
-    auto &arg = std::get<AST::PNode>(node.argument);
-    VISIT_AND_CHECK(arg);
-  } else if (node.kind == AST::SizeofExpression::Kind::VARIADIC) {
-    print("...(");
-    std::string arg = std::get<std::string>(node.argument);
-    print(arg + ")");
-  } else {
-    print("(");
-
-    FullType &ft = std::get<FullType>(node.argument);
-    if (!VisitFullType(ft)) return false;
-
-    print(")");
+  switch (node.kind) {
+    case AST::SizeofExpression::Kind::EXPR:
+      print(" ");
+      if (node.argument) VISIT_AND_CHECK(node.argument);
+      break;
+    case AST::SizeofExpression::Kind::VARIADIC:
+      print("...(");
+      if (node.argument) VISIT_AND_CHECK(node.argument);
+      print(")");
+      break;
+    case AST::SizeofExpression::Kind::TYPE:
+      print("(");
+      if (node.argument) VISIT_AND_CHECK(node.argument);
+      print(")");
+      break;
   }
-
   return true;
 }
 
 bool AST::CppPrettyPrinter::VisitAlignofExpression(AST::AlignofExpression &node) {
   print("alignof(");
-  if (!VisitFullType(node.ft)) return false;
+  if (node.type) {
+    VISIT_AND_CHECK(node.type);
+  }
   print(")");
   return true;
 }
 
+bool AST::CppPrettyPrinter::VisitDeclSpecList(AST::DeclSpecList &node) {
+  // Source-order replay; consumers expect "unsigned long const" to print as it
+  // was written (or as the parser normalized it).
+  for (std::size_t i = 0; i < node.specs.size(); ++i) {
+    if (i > 0) print(" ");
+    print(std::string{node.specs[i].content});
+  }
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitTypeSpecifierSeq(AST::TypeSpecifierSeq &node) {
+  // Prints the shared part of a type — decl-specs + base type name. Per-
+  // declaration declarator chains (`*x`, `[10]`) are printed by their
+  // owning Declaration via VisitFullType with print_type=false.
+  if (node.declspecs && !node.declspecs->specs.empty()) {
+    if (!node.declspecs->accept(*this)) return false;
+    print(" ");
+  }
+  // The base type is the id-expression tree (type-name leaf, qualified-id,
+  // template-id, ...); printing it preserves qualification/template-args the
+  // bare definition name would drop. An inferred base type is an ImplicitType
+  // leaf: implied `int` renders nothing (the user didn't write it, and C++
+  // accepts the bare spec run), the untyped var/variant fallback renders its
+  // definition's name.
+  if (node.id_expression) {
+    VISIT_AND_CHECK(node.id_expression);
+  }
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitDeclaratorClause(AST::DeclaratorClause &node) {
+  // type-specifier-seq, then each declarator as an expression tree. An abstract
+  // declarator's tree bottoms out in an empty-name leaf, which prints as
+  // nothing, so a bare type-id (`int`) renders just its specifiers.
+  if (node.specifiers && !node.specifiers->accept(*this)) return false;
+  for (std::size_t i = 0; i < node.declarators.size(); ++i) {
+    if (i > 0) print(",");
+    auto &decl = *node.declarators[i];
+    if (decl.declarator_expr) {
+      print(" ");
+      if (!decl.declarator_expr->accept(*this)) return false;
+    }
+    if (decl.init && !decl.init->accept(*this)) return false;
+  }
+  return true;
+}
+
 bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
-  if (node.kind == AST::CastExpression::Kind::FUNCTIONAL) {
-    if (!VisitFullType(node.ft)) return false;
+  // Functional casts now live in Initializer (with a TypeSpecifierSeq target); not handled here.
+  if (node.kind == AST::CastExpression::Kind::C_STYLE) {
     print("(");
-  } else if (node.kind == AST::CastExpression::Kind::C_STYLE) {
-    print("(");
-    if (!VisitFullType(node.ft)) return false;
+    if (node.type) VISIT_AND_CHECK(node.type);
     print(")");
   } else {
-    if (node.kind == AST::CastExpression::Kind::STATIC) {
-      print("static_cast<");
-    } else if (node.kind == AST::CastExpression::Kind::DYNAMIC) {
-      print("dynamic_cast<");
-    } else if (node.kind == AST::CastExpression::Kind::CONST) {
-      print("const_cast<");
-    } else if (node.kind == AST::CastExpression::Kind::REINTERPRET) {
-      print("reinterpret_cast<");
+    switch (node.kind) {
+      case AST::CastExpression::Kind::STATIC:      print("static_cast<");      break;
+      case AST::CastExpression::Kind::DYNAMIC:     print("dynamic_cast<");     break;
+      case AST::CastExpression::Kind::CONST:       print("const_cast<");       break;
+      case AST::CastExpression::Kind::REINTERPRET: print("reinterpret_cast<"); break;
+      default: break;
     }
-    if (!VisitFullType(node.ft)) return false;
+    if (node.type) VISIT_AND_CHECK(node.type);
     print(">(");
   }
 
@@ -493,9 +570,7 @@ bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
     VISIT_AND_CHECK(node.expr);
   }
 
-  if (node.kind == AST::CastExpression::Kind::FUNCTIONAL) {
-    print(")");
-  } else if (node.kind != AST::CastExpression::Kind::C_STYLE) {
+  if (node.kind != AST::CastExpression::Kind::C_STYLE) {
     print(")");
   }
 
@@ -504,68 +579,46 @@ bool AST::CppPrettyPrinter::VisitCastExpression(AST::CastExpression &node) {
 
 bool AST::CppPrettyPrinter::VisitArray(AST::Array &node) {
   print("[");
-  if (node.elements.size()) {
-    VISIT_AND_CHECK(node.elements[0]);
+  for (std::size_t i = 0; i < node.elements.size(); ++i) {
+    if (i > 0) print(", ");
+    VISIT_AND_CHECK(node.elements[i]);
   }
   print("]");
   return true;
 }
 
-bool AST::CppPrettyPrinter::VisitBraceOrParenInitializer(AST::BraceOrParenInitializer &node) {
-  if (node.kind == AST::BraceOrParenInitializer::Kind::PAREN_INIT) {
-    print("(");
-  } else {
-    print("{");
-  }
-
-  for (auto &val : node.values) {
-    if (node.kind == AST::BraceOrParenInitializer::Kind::DESIGNATED_INIT) {
-      print(".");
-    }
-
-    if (val.first != "") {
-      print(val.first + "=");
-    }
-
-    if (!VisitInitializer(*val.second)) return false;
-
-    if (&val != &node.values.back()) {
-      print(", ");
-    }
-  }
-
-  if (node.kind == AST::BraceOrParenInitializer::Kind::PAREN_INIT) {
-    print(")");
-  } else {
-    print("}");
-  }
-
-  return true;
-}
-
-bool AST::CppPrettyPrinter::VisitAssignmentInitializer(AST::AssignmentInitializer &node) {
-  if (node.kind == AST::AssignmentInitializer::Kind::BRACE_INIT) {
-    if (!VisitBraceOrParenInitializer(*std::get<AST::BraceOrParenInitNode>(node.initializer))) return false;
-  } else {
-    auto &expr = std::get<AST::PNode>(node.initializer);
-    VISIT_AND_CHECK(expr);
-  }
-  return true;
-}
-
 bool AST::CppPrettyPrinter::VisitInitializer(AST::Initializer &node) {
-  if (node.kind == AST::Initializer::Kind::BRACE_INIT || node.kind == AST::Initializer::Kind::PLACEMENT_NEW) {
-    auto &init = std::get<AST::BraceOrParenInitNode>(node.initializer);
-    if (!VisitBraceOrParenInitializer(*init)) return false;
-  } else if (node.kind == AST::Initializer::Kind::ASSIGN_EXPR) {
-    auto &init = std::get<AST::AssignmentInitNode>(node.initializer);
-    if (!VisitAssignmentInitializer(*init)) return false;
+  if (node.kind == AST::Initializer::Kind::ASSIGN) {
+    // target is the optional designator (`.name`); values[0] is the value.
+    if (node.target) {
+      print(".");
+      VISIT_AND_CHECK(node.target);
+    }
+    print(" = ");
+    if (!node.values.empty()) {
+      VISIT_AND_CHECK(node.values[0]);
+    }
+    return true;
   }
 
-  if (node.is_variadic) {
-    print("...");
+  if (node.kind == AST::Initializer::Kind::EXPR) {
+    if (!node.values.empty()) {
+      VISIT_AND_CHECK(node.values[0]);
+    }
+    return true;
   }
 
+  // BRACE or PAREN. A non-null target represents a functional-cast / temporary
+  // construction: TypeSpecifierSeq( values... ) or TypeSpecifierSeq{ values... }.
+  if (node.target) {
+    VISIT_AND_CHECK(node.target);
+  }
+  print(node.kind == AST::Initializer::Kind::PAREN ? "(" : "{");
+  for (std::size_t i = 0; i < node.values.size(); ++i) {
+    if (i > 0) print(", ");
+    VISIT_AND_CHECK(node.values[i]);
+  }
+  print(node.kind == AST::Initializer::Kind::PAREN ? ")" : "}");
   return true;
 }
 
@@ -576,13 +629,24 @@ bool AST::CppPrettyPrinter::VisitNewExpression(AST::NewExpression &node) {
 
   print("new ");
 
-  if (node.placement) {
-    if (!VisitInitializer(*node.placement)) return false;
-    print(" ");
+  if (!node.placement_args.empty()) {
+    print("(");
+    for (size_t i = 0; i < node.placement_args.size(); ++i) {
+      if (i > 0) print(", ");
+      VISIT_AND_CHECK(node.placement_args[i]);
+    }
+    print(") ");
   }
 
+  // Parenthesised type-id (`new (int*)`): VisitDeclaratorClause prints the
+  // type-specifier-seq + the declarator as its expression tree (abstract leaf
+  // prints as nothing, ptr-ops/array bounds as `*`/`[n]`).
   print("(");
-  if (!VisitFullType(node.ft)) return false;
+  if (node.type) {
+    // Identical to VISIT_AND_CHECK modulo PNode covariance issue: node.type is a
+    // unique_ptr<DeclaratorClause>, which won't bind to Visit(PNode&).
+    if (!node.type->accept(*this)) return false;
+  }
   print(")");
 
   if (node.initializer) {
@@ -596,31 +660,63 @@ bool AST::CppPrettyPrinter::VisitDeclarationStatement(AST::DeclarationStatement 
   bool is_global = node.storage_class == DeclarationStatement::StorageClass::GLOBAL;
   bool is_local = node.storage_class == DeclarationStatement::StorageClass::LOCAL;
   if (is_global || is_local) {
+    // GLOBAL/LOCAL print the access-shim assignment, not the declaration form
+    // itself — so this fork doesn't go through VisitInitDeclarator.
     bool printed = false;
-    for (std::size_t i = 0; i < node.declarations.size(); i++) {
-      if (node.declarations[i].init) {
+    for (auto &entry : node.clause->declarators) {
+      if (entry->init) {
         if (printed) print(", ");
-        std::string name = node.declarations[i].declarator->decl.name.content;
+        std::string name(entry->name.content);
         if (is_global)
-          print("enigma::varaccess_" + name + "(int(global)) =");
+          print("enigma::varaccess_" + name + "(int(global))");
         else
-          print(name + " = ");
-        if (!VisitInitializer(*node.declarations[i].init)) return false;
+          print(name);
+        // The Initializer owns the separator (ASSIGN prints " = v").
+        if (!VisitInitializer(*entry->init)) return false;
         printed = true;
       }
     }
     return true;
   }
 
-  for (std::size_t i = 0; i < node.declarations.size(); i++) {
-    if (!VisitFullType(*node.declarations[i].declarator, !i)) return false;
-    if (node.declarations[i].init) {
-      print(" = ");  // TODO: corner case: int x {}, maybe we need extra flag in the AST?
-      if (!VisitInitializer(*node.declarations[i].init)) return false;
-    }
-    if (i != node.declarations.size() - 1) {
+  // The shared type (declspecs + base type name) prints once via VisitTypeSpecifierSeq.
+  // Each init-declarator then contributes its own declarator chain + init via
+  // VisitInitDeclarator.
+  if (node.clause && node.clause->specifiers) {
+    // Identical to VISIT_AND_CHECK modulo PNode covariance issue
+    if (!node.clause->specifiers->accept(*this)) return false;
+    print(" ");
+  }
+  for (std::size_t i = 0; i < node.clause->declarators.size(); i++) {
+    if (!VisitInitDeclarator(*node.clause->declarators[i])) return false;
+    if (i != node.clause->declarators.size() - 1) {
       print(", ");
     }
+  }
+  return true;
+}
+
+bool AST::CppPrettyPrinter::VisitInitDeclarator(AST::InitDeclarator &node) {
+  // Print the declarator from the AST-layer expression-tree. A null tree means
+  // a name-only declarator (no pointer/array/function modifiers); fall back to
+  // the declared name. Abstract declarators have neither and print nothing.
+  if (node.declarator_expr) {
+    // Identifiers in the declarator are declared names, not value reads; the
+    // script lowering must not rewrite them.
+    bool saved = in_declarator_;
+    in_declarator_ = true;
+    bool ok = node.declarator_expr->accept(*this);
+    in_declarator_ = saved;
+    if (!ok) return false;
+  } else if (!node.name.content.empty()) {
+    print(std::string(node.name.content));
+  }
+  if (node.init) {
+    // The Initializer owns its full rendering, including any separator: ASSIGN
+    // prints " = v", brace/paren print "{...}"/"(...)" with no '='. Copy-list-init
+    // ("= {...}") round-tripping the literal '=' requires recording copy-vs-direct
+    // on the node, which is tracked separately as init-form fidelity.
+    if (!VisitInitializer(*node.init)) return false;
   }
   return true;
 }
@@ -678,13 +774,14 @@ bool AST::CppPrettyPrinter::VisitIfStatement(AST::IfStatement &node) {
 bool AST::CppPrettyPrinter::VisitForLoop(AST::ForLoop &node) {
   print("for(");
 
-  VISIT_AND_CHECK(node.assignment);
+  // Omitted clauses are null.
+  if (node.assignment) VISIT_AND_CHECK(node.assignment);
   print("; ");
 
-  VISIT_AND_CHECK(node.condition);
+  if (node.condition) VISIT_AND_CHECK(node.condition);
   print("; ");
 
-  VISIT_AND_CHECK(node.increment);
+  if (node.increment) VISIT_AND_CHECK(node.increment);
   print(") ");
 
   if (node.body) {
@@ -729,34 +826,44 @@ bool AST::CppPrettyPrinter::VisitSwitchStatement(AST::SwitchStatement &node) {
 
 bool AST::CppPrettyPrinter::VisitWhileLoop(AST::WhileLoop &node) {
   if (node.kind == AST::WhileLoop::Kind::REPEAT) {
-    print("int strange_name = ");
-  } else {
-    print("while");
-    if (node.condition->type != AST::NodeType::PARENTHETICAL) {
-      print("(");
-    }
+    // Lower `repeat (N) body` to a counted while. The pair is braced so it
+    // acts as ONE statement wherever the repeat sits (an unbraced loop or if
+    // body would otherwise detach the while), and the block scopes the
+    // counter; nesting levels get numbered counters so an inner repeat's
+    // condition can still read outer locals without shadowing surprises.
+    std::string counter = "strange_name";
+    if (repeat_depth_ > 0) counter += std::to_string(repeat_depth_);
+    ++repeat_depth_;
+    print("{ int " + counter + " = ");
+    VISIT_AND_CHECK(node.condition);
+    print("; while(" + counter + "--) ");
+    VISIT_AND_CHECK(node.body);
+    PrintSemiColon(node.body);
+    print(" }");
+    --repeat_depth_;
+    return true;
+  }
 
-    if (node.kind == AST::WhileLoop::Kind::UNTIL) {
-      if (node.condition->type == AST::NodeType::PARENTHETICAL) {
-        print("(!");
-      } else {
-        print("!(");
-      }
+  print("while");
+  if (node.condition->type != AST::NodeType::PARENTHETICAL) {
+    print("(");
+  }
+
+  if (node.kind == AST::WhileLoop::Kind::UNTIL) {
+    if (node.condition->type == AST::NodeType::PARENTHETICAL) {
+      print("(!");
+    } else {
+      print("!(");
     }
   }
 
   VISIT_AND_CHECK(node.condition);
 
-  if (node.kind != AST::WhileLoop::Kind::REPEAT) {
-    if (node.kind == AST::WhileLoop::Kind::UNTIL) {
-      print(")");
-    }
-
-    if (node.condition->type != AST::NodeType::PARENTHETICAL) {
-      print(")");
-    }
-  } else {
-    print("; while(strange_name--)");
+  if (node.kind == AST::WhileLoop::Kind::UNTIL) {
+    print(")");
+  }
+  if (node.condition->type != AST::NodeType::PARENTHETICAL) {
+    print(")");
   }
 
   print(" ");

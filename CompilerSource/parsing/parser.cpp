@@ -1,6 +1,24 @@
 #include "parser.h"
 
+#include <JDI/src/Parser/context_parser.h>
+
+#include <charconv>
+
 namespace enigma::parsing {
+
+// RAII guard: set a bool for the duration of a scope, restore the prior value
+// on exit. Used to push/pop parser-production state (e.g. allow_abstract_operand_)
+// around the productions that establish it, without threading a parameter
+// through the whole expression-parsing call graph.
+struct ScopedFlag {
+  bool &flag;
+  bool saved;
+  ScopedFlag(bool &flag, bool value) : flag(flag), saved(flag) { flag = value; }
+  ~ScopedFlag() { flag = saved; }
+  ScopedFlag(const ScopedFlag &) = delete;
+  ScopedFlag &operator=(const ScopedFlag &) = delete;
+};
+
 class AstBuilder: public AstBuilderTestAPI {
 public:
 
@@ -34,40 +52,39 @@ bool require_token(TokenType tt, Messages &&...messages) {
   return require_any_of({tt}, std::forward<Messages>(messages)...);
 }
 
-bool is_class_key(const Token &tok) {
-  switch (tok.type) {
+bool is_class_key(TokenType tok) {
+  switch (tok) {
     case TT_CLASS:
     case TT_STRUCT:
     case TT_UNION:
       return true;
-
     default:
       return false;
   }
 }
 
 bool next_is_class_key() {
-  return is_class_key(token);
+  return is_class_key(token.type);
 }
 
 bool is_cv_qualifier(const Token &tok) {
-  return tok.type == TT_CONST || tok.type == TT_VOLATILE;
+  return tok.type == TT_DECLSPEC && (tok.content == "const" || tok.content == "volatile");
 }
 
 bool next_is_cv_qualifier() {
   return is_cv_qualifier(token);
 }
 
-bool is_ref_qualifier(const Token &tok) {
-  return tok.type == TT_AMPERSAND || tok.type == TT_AND;
+bool is_ref_qualifier(TokenType tok) {
+  return tok == TT_AMPERSAND || tok == TT_AND;
 }
 
 bool next_is_ref_qualifier() {
-  return is_ref_qualifier(token);
+  return is_ref_qualifier(token.type);
 }
 
 std::string read_required_operatorkw() {
-  if (next_is_operatorkw()) {
+  if (next_is_any_operator()) {
     if (token.type == TT_S_NEW || token.type == TT_S_DELETE) {
       TokenType type = token.type;
       token = lexer->ReadToken();
@@ -97,42 +114,45 @@ std::string read_required_operatorkw() {
   }
 }
 
-bool is_operatorkw(const Token &tok) {
-  switch (tok.type) {
-    case TT_S_NEW:
-    case TT_S_DELETE:
-    case TT_CO_AWAIT:
-    case TT_BEGINPARENTH:
-    case TT_BEGINBRACKET:
+/// Returns true iff the given token type can appear after the `operator`
+/// keyword to name an operator function (used by the above routine).
+bool is_any_operator(TokenType tok) {
+  switch (tok) {
+    case TT_COMMA:
+    case TT_ASSIGN:
+    case TT_ASSOP:
+    case TT_EQUALS:
     case TT_ARROW:
     case TT_ARROW_STAR:
-    case TT_TILDE:
-    case TT_BANG:
     case TT_PLUS:
     case TT_MINUS:
     case TT_STAR:
-    case TT_DIV:
+    case TT_SLASH:
     case TT_PERCENT:
     case TT_AMPERSAND:
-    case TT_CARET:
     case TT_PIPE:
-    case TT_EQUALS:
-    case TT_EQUALTO:
-    case TT_NOTEQUAL:
-    case TT_LESS:
-    case TT_LESSEQUAL:
-    case TT_GREATER:
-    case TT_GREATEREQUAL:
-    case TT_THREEWAY:
+    case TT_CARET:
     case TT_AND:
     case TT_OR:
     case TT_XOR:
-    case TT_LSH:
-    case TT_RSH:
+    case TT_DIV:
+    case TT_EQUALTO:
+    case TT_NOTEQUAL:
+    case TT_BANG:
+    case TT_TILDE:
     case TT_INCREMENT:
     case TT_DECREMENT:
-    case TT_COMMA:
-      // TODO: compound assignment operators
+    case TT_LESS:
+    case TT_GREATER:
+    case TT_LESSEQUAL:
+    case TT_GREATEREQUAL:
+    case TT_THREEWAY:
+    case TT_LSH:
+    case TT_RSH:
+    case TT_S_NEW:
+    case TT_S_DELETE:
+    case TT_BEGINPARENTH:
+    case TT_BEGINBRACKET:
       return true;
 
     default:
@@ -140,15 +160,21 @@ bool is_operatorkw(const Token &tok) {
   }
 }
 
-bool next_is_operatorkw() {
-  return is_operatorkw(token);
+bool next_is_any_operator() {
+  return is_any_operator(token.type);
 }
 
 bool is_user_defined_type(const Token &tok) {
   switch (tok.type) {
     case TT_IDENTIFIER:
       if (auto def = frontend->look_up(tok.content); def != nullptr) {
-        return def->flags & (jdi::DEF_TYPENAME | jdi::DEF_CLASS | jdi::DEF_ENUM | jdi::DEF_TYPED | jdi::DEF_TEMPLATE);
+        // A function template is a function, not a type: DEF_TEMPLATE is in
+        // this mask for class templates (which carry no DEF_TYPENAME), and
+        // JDI1 never surfaced function templates here -- clang population
+        // does, flagged DEF_FUNCTION | DEF_TEMPLATE.
+        if (def->flags & jdi::DEF_FUNCTION) return false;
+        // DEF_TYPED is set on every variable, so it can't be in this mask.
+        return def->flags & (jdi::DEF_TYPENAME | jdi::DEF_CLASS | jdi::DEF_ENUM | jdi::DEF_TEMPLATE);
       }
 
       [[fallthrough]];
@@ -161,47 +187,22 @@ bool next_is_user_defined_type() {
   return is_user_defined_type(token);
 }
 
-bool is_type_specifier(const Token &tok) {
-  switch (tok.type) {
+bool is_type_specifier(TokenType tok) {
+  switch (tok) {
     case TT_TYPE_NAME:
     case TT_TYPENAME:
-    case TT_SCOPEACCESS:
     case TT_DECLTYPE:
     case TT_ENUM:
-    case TT_SIGNED:
-    case TT_UNSIGNED:
+    case TT_DECLSPEC:
       return true;
 
-    // case TT_IDENTIFIER:
-    //   return is_user_defined_type(tok);
-
     default:
-      return is_cv_qualifier(tok) || is_class_key(tok);
+      return is_class_key(tok);
   }
 }
 
 bool next_is_type_specifier() {
-  return is_type_specifier(token);
-}
-
-bool maybe_nested_name(const Token &tok) {
-  switch (tok.type) {
-    case TT_SCOPEACCESS:
-    case TT_DECLTYPE:
-      return true;
-
-    case TT_IDENTIFIER: {
-      auto *def = frontend->look_up(tok.content);
-      return def != nullptr && (def->flags & (jdi::DEF_CLASS | jdi::DEF_SCOPE));
-    }
-
-    default:
-      return false;
-  }
-}
-
-bool next_maybe_nested_name() {
-  return maybe_nested_name(token);
+  return is_type_specifier(token.type);
 }
 
 bool is_template_type(const Token &tok) {
@@ -219,16 +220,8 @@ bool next_is_template_type() {
   return is_template_type(token);
 }
 
-bool maybe_ptr_decl_operator(const Token &tok) {
-  return tok.type == TT_STAR || is_ref_qualifier(tok) || maybe_nested_name(tok);
-}
-
-bool next_maybe_ptr_decl_operator() {
-  return maybe_ptr_decl_operator(token);
-}
-
-bool is_decl_specifier(const Token &tok) {
-  switch (tok.type) {
+bool is_decl_specifier(TokenType tok) {
+  switch (tok) {
     case TT_TYPEDEF:
     case TT_CONSTEXPR:
     case TT_CONSTINIT:
@@ -268,33 +261,50 @@ std::size_t sizeof_builtin_type(std::string_view type) {
   }
 }
 
-static std::pair<std::size_t, std::size_t> jdi_decflag_bitmask(std::string_view tok) {
-  static const std::unordered_map<std::string_view, std::pair<std::size_t, std::size_t>> bitmasks{
-    { "volatile",  {jdi::builtin_flag__volatile->mask,  jdi::builtin_flag__volatile->value}  },
-    { "static",    {jdi::builtin_flag__static->mask,    jdi::builtin_flag__static->value}    },
-    { "const",     {jdi::builtin_flag__const->mask,     jdi::builtin_flag__const->value}     },
-    { "mutable",   {jdi::builtin_flag__mutable->mask,   jdi::builtin_flag__mutable->value}   },
-    { "register",  {jdi::builtin_flag__register->mask,  jdi::builtin_flag__register->value}  },
-    { "inline",    {jdi::builtin_flag__inline->mask,    jdi::builtin_flag__inline->value}    },
-    { "_Complex",  {jdi::builtin_flag__Complex->mask,   jdi::builtin_flag__Complex->value}   },
-    { "restrict",  {jdi::builtin_flag__restrict->mask,  jdi::builtin_flag__restrict->value}  },
-    { "unsigned",  {jdi::builtin_flag__unsigned->mask,  jdi::builtin_flag__unsigned->value}  },
-    { "long",      {jdi::builtin_flag__long->mask,      jdi::builtin_flag__long->value}      },
-    { "signed",    {jdi::builtin_flag__signed->mask,    jdi::builtin_flag__signed->value}    },
-    { "short",     {jdi::builtin_flag__short->mask,     jdi::builtin_flag__short->value}     },
-    { "long long", {jdi::builtin_flag__long_long->mask, jdi::builtin_flag__long_long->value} },
-    { "virtual",   {jdi::builtin_flag__virtual->mask,   jdi::builtin_flag__virtual->value}   },
-    { "explicit",  {jdi::builtin_flag__explicit->mask,  jdi::builtin_flag__explicit->value}  },
-    { "throw",     {128,  128}    },
-    { "override",  {512,  512}    },
-    { "final",     {1024, 1024}   },
+// Resolve a decl-specifier spelling to its JDI typeflag. This is the only
+// name-keyed step: it runs once per specifier *token*; all repeated flag
+// *checks* test the typeflag globals directly -- JDI's flags are bitmasks
+// designed for mask compares, not string-map probes. The map stores the
+// *address* of each jdi global flag pointer, not its dereferenced value: the
+// globals are null until JDI builtins are initialized, and this static map is
+// built on first call, so dereferencing at build time crashes if the first
+// call precedes init (e.g. a test harness that never ran the full JDI setup).
+static const jdi::typeflag *lookup_decflag(std::string_view tok) {
+  static const std::unordered_map<std::string_view, jdi::typeflag *const *> flags{
+    { "volatile",  &jdi::builtin_flag__volatile  },
+    { "static",    &jdi::builtin_flag__static    },
+    { "const",     &jdi::builtin_flag__const     },
+    { "mutable",   &jdi::builtin_flag__mutable   },
+    { "register",  &jdi::builtin_flag__register  },
+    { "inline",    &jdi::builtin_flag__inline    },
+    { "_Complex",  &jdi::builtin_flag__Complex   },
+    { "restrict",  &jdi::builtin_flag__restrict  },
+    { "unsigned",  &jdi::builtin_flag__unsigned  },
+    { "long",      &jdi::builtin_flag__long      },
+    { "signed",    &jdi::builtin_flag__signed    },
+    { "short",     &jdi::builtin_flag__short     },
+    { "virtual",   &jdi::builtin_flag__virtual   },
+    { "explicit",  &jdi::builtin_flag__explicit  },
   };
 
-  if (auto bitmask = bitmasks.find(tok); bitmask != bitmasks.end()) {
-    return bitmask->second;
-  } else {
-    return {-1, -1};
-  }
+  if (auto it = flags.find(tok); it != flags.end()) return *it->second;
+  return nullptr;
+}
+
+// Null-tolerant typeflag tests/reads, for use both with lookup_decflag results
+// and with the jdi::builtin_flag__* globals directly (null before builtins
+// init). NB: `signed` cannot be tested this way -- JDI encodes it as
+// mask=<the unsigned bit>, value=0, i.e. the *absence* of unsigned, so its
+// Matches() accepts every non-unsigned flag set. Detect a written `signed`
+// from the spec list's tokens instead (see specs_imply_int).
+static bool flag_matches(std::size_t flags, const jdi::typeflag *flag) {
+  return flag != nullptr && flag->Matches(flags);
+}
+static std::size_t flag_value(const jdi::typeflag *flag) {
+  return flag != nullptr ? flag->value : 0;
+}
+static std::size_t flag_mask(const jdi::typeflag *flag) {
+  return flag != nullptr ? flag->mask : 0;
 }
 
 jdi::definition *require_defined_type(const Token &tok) {
@@ -330,8 +340,8 @@ void MaybeConsumeSemicolon(){
     token = lexer->ReadToken();
 }
 
-bool is_start_of_initializer(const Token &tok) {
-  switch (tok.type) {
+bool is_start_of_initializer(TokenType tok) {
+  switch (tok) {
     case TT_EQUALS:
     case TT_BEGINBRACE:
     case TT_BEGINPARENTH:
@@ -343,29 +353,11 @@ bool is_start_of_initializer(const Token &tok) {
 }
 
 bool next_is_start_of_initializer() {
-  return is_start_of_initializer(token);
+  return is_start_of_initializer(token.type);
 }
 
-bool is_start_of_id_expression(const Token &tok) {
-  switch (tok.type) {
-    case TT_TILDE:
-    case TT_IDENTIFIER:
-    case TT_OPERATOR:
-    case TT_SCOPEACCESS:
-    case TT_DECLTYPE:
-      return true;
-
-    default:
-      return false;
-  }
-}
-
-bool next_is_start_of_id_expression() {
-  return is_start_of_id_expression(token);
-}
-
-bool maybe_functional_cast(const Token &tok) {
-  switch (tok.type) {
+bool maybe_functional_cast(TokenType tok) {
+  switch (tok) {
     case TT_SCOPEACCESS:
     case TT_TYPENAME:
     case TT_TYPE_NAME:
@@ -381,17 +373,36 @@ bool maybe_functional_cast(const Token &tok) {
 }
 
 bool next_maybe_functional_cast() {
-  return maybe_functional_cast(token);
+  // A resolvable user-defined type (class/enum/template) lexes as a plain
+  // TT_IDENTIFIER when its definition lacks DEF_TYPENAME (class templates
+  // carry only DEF_TEMPLATE), so the token-type test alone misses it.
+  return maybe_functional_cast(token.type) || next_is_user_defined_type();
 }
 
 std::unique_ptr<AST::DeclarationStatement> parse_declarations(
-    AST::DeclarationStatement::StorageClass sc, FullType &ft, AST::DeclaratorType decl_type, bool parse_unbounded,
-    std::vector<AST::DeclarationStatement::Declaration> decls, bool already_parsed_first = false) {
+    AST::DeclarationStatement::StorageClass sc,
+    std::unique_ptr<AST::DeclSpecList> declspecs, AST::PNode id_expression,
+    AST::DeclaratorType decl_type, bool parse_unbounded,
+    std::vector<std::unique_ptr<AST::InitDeclarator>> decls, bool already_parsed_first = false) {
   while (true) {
     if (!already_parsed_first) {
-      TryParseDeclarator(&ft, decl_type);
-      decls.emplace_back(std::move(ft), next_is_start_of_initializer() ? TryParseInitializer() : nullptr);
-      declarations[decls.back().declarator->decl.name.content] = decls.back().declarator.get();
+      // Parse the declarator through the unified expression parser (types-as-
+      // trees): prefix `* &` and the tighter-binding postfix `[] ()` build the
+      // declarator-expression-tree directly, no legacy Declarator/components/
+      // to_expression bridge. The name is recovered structurally from the tree
+      // spine. allow_abstract_operand_ is set only when this production permits
+      // an unnamed declarator (parameter / type-id contexts).
+      AST::PNode declarator_expr;
+      {
+        ScopedFlag allow_abstract(allow_abstract_operand_,
+                                  decl_type != AST::DeclaratorType::NON_ABSTRACT);
+        declarator_expr = ParseExpression(Precedence::kUnaryPrefix);
+      }
+      const Token *namep = find_declarator_name(declarator_expr.get());
+      Token name = namep ? *namep : Token{};
+      decls.emplace_back(std::make_unique<AST::InitDeclarator>(
+          name, std::move(declarator_expr),
+          next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
     }
     if (token.type == TT_COMMA && parse_unbounded) {
       token = lexer->ReadToken();
@@ -400,19 +411,61 @@ std::unique_ptr<AST::DeclarationStatement> parse_declarations(
     }
   }
 
-  return std::make_unique<AST::DeclarationStatement>(sc, ft.def, std::move(decls));
+  auto type_node = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
+  auto clause = std::make_unique<AST::DeclaratorClause>(std::move(type_node), std::move(decls));
+  register_declarations(clause.get());
+  return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
 }
 
-void maybe_infer_int(FullType &type) {
-  // This is a pretty hacky way to implicitly infer int, but it is the only way I can think of to prevent `int int x`
-  // from being legal
-  if (type.def == nullptr && (contains_decflag_bitmask(type.flags, "long")
-                              || contains_decflag_bitmask(type.flags, "short")
-                              || contains_decflag_bitmask(type.flags, "long long")
-                              || contains_decflag_bitmask(type.flags, "signed")
-                              || contains_decflag_bitmask(type.flags, "unsigned"))) {
-    type.def = jdi::builtin_type__int;
+// Record each declared name's owning clause so later id-expressions can
+// resolve it (the base type lives on clause->specifiers; the per-name
+// declarator modifiers on its InitDeclarator). Borrowed pointer, valid for
+// the parse -- the clause is heap-stable across its move into the statement.
+// Abstract declarators have no name and register nothing.
+void register_declarations(AST::DeclaratorClause *clause) {
+  for (auto &id : clause->declarators)
+    if (!id->name.content.empty())
+      declarations[id->name.content] = clause;
+}
+
+// True when this spec run carries a length/sign specifier, which names C's
+// implied `int`. The sign and length families own disjoint bit ranges of the
+// flag word, and `long`'s mask spans the whole length field (long, long long,
+// and short all write within it), so one combined-mask presence test covers
+// the lot -- the same `flags & flag->mask` idiom JDI uses (e.g. AST.cpp's
+// unsigned checks). `signed` is the exception: its JDI encoding
+// (mask=<the unsigned bit>, value=0) writes no bits, so a written `signed` is
+// only detectable in the spec list's retained source tokens.
+static bool specs_imply_int(const AST::DeclSpecList &declspecs) {
+  const std::size_t sign_or_length =
+      flag_mask(jdi::builtin_flag__unsigned) | flag_mask(jdi::builtin_flag__long);
+  if (declspecs.flags & sign_or_length) return true;
+  for (const Token &spec : declspecs.specs)
+    if (spec.content == "signed") return true;
+  return false;
+}
+
+// Build a TypeSpecifierSeq from a fully-consumed type-specifier run -- the one
+// place a parsed spec run becomes a node, so every construction site funnels
+// through here. When the user wrote a (non-empty) specifier run but no
+// type-name, the base type is inferred and materialized as a token-free
+// ImplicitType leaf (mirroring JDI's read_type, which fixes the base once the
+// spec-seq closes), so the seq's Definition() stays a pure tree read: a
+// length/sign specifier (`unsigned x;`) names C's `int`; any other untyped run
+// (`const x;`) is EDL's universal `var`, same as an undeclared variable. An
+// EMPTY run stays null -- type-id positions parse vacuously when the operand
+// is really a value expression (`sizeof(local_var)`), and inventing a base
+// type there would mis-tag them.
+std::unique_ptr<AST::TypeSpecifierSeq> MakeTypeSpecifierSeq(
+    AST::PNode id_expression, std::unique_ptr<AST::DeclSpecList> declspecs) {
+  if (id_expression == nullptr && declspecs && !declspecs->specs.empty()) {
+    id_expression = specs_imply_int(*declspecs)
+        ? std::make_unique<AST::ImplicitType>(AST::ImplicitType::Kind::INT,
+                                              jdi::builtin_type__int)
+        : std::make_unique<AST::ImplicitType>(AST::ImplicitType::Kind::UNTYPED,
+                                              frontend->look_up("var"));
   }
+  return std::make_unique<AST::TypeSpecifierSeq>(std::move(id_expression), std::move(declspecs));
 }
 
 AstBuilder(Lexer *lexer, ErrorHandler *herr) {
@@ -426,34 +479,7 @@ const Token &current_token() {
 }
 
 std::unique_ptr<AST::Node> TryParseConstantExpression() {
-  return TryParseExpression(Precedence::kTernary);
-}
-
-std::unique_ptr<AST::Node> TryParseArrayBoundsExpression(Declarator *decl, bool outside_nested) {
-  require_token(TT_BEGINBRACKET, "Expected '[' before array bounds expression");
-  std::unique_ptr<AST::Node> expr = nullptr;
-  if (token.type != TT_ENDBRACKET) {
-    expr = TryParseConstantExpression();
-  }
-  require_token(TT_ENDBRACKET, "Expected ']' after array bounds expression");
-
-  // TODO: Check that expression is constant, then evaluate it
-  // for handling new expressions we need to support also non-constant expressions, like `new int[x]`
-  std::size_t arr_size = 0;
-  if (expr) {
-    if (expr->type == AST::NodeType::LITERAL) {
-      auto *lit = expr->As<AST::Literal>();
-      try {
-        arr_size = std::stoi(std::get<string>(lit->value.value));
-      } catch (const std::exception& e) {
-        herr->Error(token) << "Array size must be a numeric literal";
-      }
-    } else {
-      herr->Error(token) << "Array size must be a constant expression";
-    }
-  }
-  decl->add_array_bound(arr_size, outside_nested);
-  return nullptr;
+  return ParseExpression(Precedence::kTernary);
 }
 
 jdi::definition *TryParseNoexceptSpecifier() {
@@ -469,196 +495,108 @@ jdi::definition *TryParseNoexceptSpecifier() {
   return nullptr;
 }
 
-void TryParseParametersAndQualifiers(Declarator *decl, bool outside_nested, bool did_consume_paren,
-                                     bool maybe_expression) {
-  if (!did_consume_paren) {
-    require_token(TT_BEGINPARENTH, "Expected '(' before function parameters");
-  }
-
-  bool is_expression = false;
-  FunctionParameterNode params;
-  params.outside_nested = outside_nested;
-  params.parameters = FunctionParameterNode::ParameterList{};
-  params.kind = FunctionParameterNode::Kind::DECLARATOR;
-  if (token.type != TT_ENDPARENTH) {
-    while (token.type != TT_ENDPARENTH) {
-      if (is_decl_specifier(token) && maybe_expression) {
-        auto declaration = TryParseEitherFunctionalCastOrDeclaration(
-            AST::DeclaratorType::MAYBE_ABSTRACT, false, false,
-            AST::DeclarationStatement::StorageClass::TEMPORARY);
-
-        if (declaration->type == AST::NodeType::DECLARATION) {
-          auto *param_decl = dynamic_cast<AST::DeclarationStatement *>(declaration.get());
-          if (param_decl->declarations.size() != 1) {
-            herr->Error(token) <<
-                "Internal error: number of declarations in AstBuilder::TryParseParametersAndQualifiers not 1";
-          } else {
-            auto param = FunctionParameterNode::Parameter{
-                false, param_decl->declarations[0].init.release(),
-                std::unique_ptr<FullType>(param_decl->declarations[0].declarator.release())};
-            params.as<FunctionParameterNode::ParameterList>().emplace_back(std::move(param));
-          }
-        } else {
-          params.kind = FunctionParameterNode::Kind::EXPRESSION;
-          is_expression = true;
-          auto parameters =
-            std::make_unique<AST::FunctionCallExpression>(nullptr, std::vector<std::unique_ptr<AST::Node>>{});
-
-          for (auto &param : params.as<FunctionParameterNode::ParameterList>()) {
-            auto decl_expr = std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(param.type->decl.to_expression()));
-            if (param.default_value != nullptr) {
-              AST::Operation op(TT_EQUALS,"=");
-              decl_expr = std::make_unique<AST::BinaryExpression>(
-                std::move(decl_expr), std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(param.default_value)),
-                op);
-              param.default_value = nullptr;
-            }
-            parameters->arguments.emplace_back(std::move(decl_expr));
-          }
-          params.parameters = reinterpret_cast<void *>(parameters.release());
-        }
-      } else if (is_expression) {
-        if (!params.is<void *>()) {
-          herr->Error(token) <<
-            "Internal error: params.parameters is not FunctionCallExpression in AstBuilder::TryParseParametersAndQualifiers";
-        } else {
-          reinterpret_cast<AST::FunctionCallExpression *>(
-            params.as<void *>())->arguments.emplace_back(TryParseExpression(Precedence::kTernary));
-        }
-      } else {
-        FunctionParameterNode::Parameter param;
-        FullType type;
-        TryParseDeclSpecifierSeq(&type);
-        TryParseDeclarator(&type, AST::DeclaratorType::MAYBE_ABSTRACT);
-        param.type = std::make_unique<FullType>(std::move(type));
-        if (token.type == TT_EQUALS) {
-          token = lexer->ReadToken();
-          auto init = TryParseExprOrBracedInitList(true, false);
-          param.default_value = reinterpret_cast<void *>(init.release());
-        }
-        params.as<FunctionParameterNode::ParameterList>().emplace_back(std::move(param));
-      }
-
-      if (token.type == TT_COMMA) {
-        token = lexer->ReadToken();
-        if (token.type == TT_ELLIPSES) {
-          token = lexer->ReadToken();
-          if (token.type != TT_ENDPARENTH) {
-            herr->Error(token) << "Extra junk after ellipses in function parameter";
-          }
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    if (token.type == TT_ELLIPSES) {
-      herr->Error(token) << "Unimplemented: varargs";
-      token = lexer->ReadToken();
-    }
-  }
-
-  if (is_expression) {
-    require_token(TT_ENDPARENTH, "Expected ')' after function arguments");
-  } else {
-    decl->add_function_params(std::move(params));
-    require_token(TT_ENDPARENTH, "Expected ')' after function parameters");
-  }
-
-  if (next_is_cv_qualifier()) {
-    token = lexer->ReadToken();
-  }
-  if (next_is_ref_qualifier()) {
-    token = lexer->ReadToken();
-  }
-  if (token.type == TT_NOEXCEPT) {
-    TryParseNoexceptSpecifier();
-  }
+// Null-safe read of the definition an id-expression's root node denotes; `def`
+// lives on the node itself (Node::Definition). A null tree denotes nothing.
+static jdi::definition *id_expression_def(const AST::PNode &node) {
+  return node ? node->Definition() : nullptr;
 }
 
-jdi::definition *TryParseTypeName() {
+AST::PNode TryParseTypeName() {
   Token name = token;
   require_token(TT_IDENTIFIER, "Expected identifier in type name");
+  auto def = frontend->look_up(name.content);
   if (is_template_type(name) && token.type == TT_LESS) {
-    TryParseTemplateArgs(frontend->look_up(name.content));
+    std::vector<AST::PNode> args;
+    jdi::definition *inst = TryParseTemplateArgs(def, &args);
+    // The leaf names the template; the TemplateId's def is the instantiation
+    // (null when deferred to the semantic phase).
+    return std::make_unique<AST::TemplateId>(
+        std::make_unique<AST::IdentifierAccess>(def, name), std::move(args), inst);
   }
-
-  return frontend->look_up(name.content);
+  return std::make_unique<AST::IdentifierAccess>(def, name);
 }
 
-jdi::definition *TryParseIdExpression(Declarator *decl) {
+bool can_begin_id_expression(TokenType tok) {
+  switch (tok) {
+    case TT_TILDE:
+    case TT_IDENTIFIER:
+    case TT_OPERATOR:
+    case TT_SCOPEACCESS:
+    case TT_DECLTYPE:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool next_can_begin_id_expression() {
+  return can_begin_id_expression(token.type);
+}
+
+// Parses an `id-expression` in expression context -- a `qualified-id` or
+// `unqualified-id` -- as a tree: a bare name is an IdentifierAccess leaf, a
+// qualified name a ScopeAccess chain (template segments wrapped in a
+// TemplateId), the same shapes the type-context resolvers emit. Names resolve
+// where possible (the leading segment by ordinary lookup, later segments in
+// their parent's scope); anything unresolved stays on the tree with a null
+// def for the semantic phase to bind -- not a parse error: EDL permits
+// implicitly declared variables, and a not-yet-known qualified name is the
+// semantic phase's to classify.
+std::unique_ptr<AST::Node> TryParseIdExpression() {
   switch (token.type) {
-    case TT_SCOPEACCESS: {
+    case TT_IDENTIFIER: {
+      Token name = token;
       token = lexer->ReadToken();
-      if (next_is_start_of_id_expression() && token.type != TT_SCOPEACCESS) {
-        return TryParseIdExpression(decl);
-      } else {
-        herr->Error(token) << "Expected qualified-id after '::', got: '" << token.content << '\'';
-        return nullptr;
+      if (token.type == TT_SCOPEACCESS) {
+        return TryParseNestedNameSpecifier(std::make_unique<AST::IdentifierAccess>(
+            frontend->look_up(name.content), name));
       }
+      // A locally declared name reads through its declaration, so it stays an
+      // unresolved leaf even when a C++ global shares the name.
+      if (map_contains(declarations, name.content)) {
+        return std::make_unique<AST::IdentifierAccess>(name);
+      }
+      if (jdi::definition *def = frontend->look_up(name.content)) {
+        return std::make_unique<AST::IdentifierAccess>(def, name);
+      }
+      return std::make_unique<AST::IdentifierAccess>(name);
     }
+
+    case TT_SCOPEACCESS:
+      // Leading `::` (global qualification). The operand parser usually
+      // dispatches this earlier; kept for callers that reach an
+      // id-expression directly.
+      return TryParseNestedNameSpecifier(nullptr);
 
     case TT_DECLTYPE: {
-      auto decltype_ = TryParseDecltype();
+      auto base = TryParseDecltype();
       if (token.type == TT_SCOPEACCESS) {
-        return TryParseNestedNameSpecifier(decltype_, decl);
-      } else {
-        herr->Error(token) << "Expected qualified-id after decltype-expression, got: '" << token.content << '\'';
-        return nullptr;
+        return TryParseNestedNameSpecifier(std::move(base));
       }
-    }
-
-    case TT_IDENTIFIER: {
-      if (false/*next_is_user_defined_type()*/) {
-        return TryParsePrefixIdentifier(decl);
-      } else {
-        Token name = token;
-        auto def = frontend->look_up(token.content);
-        token = lexer->ReadToken();
-        const bool is_declarator = decl;
-        if (is_declarator && token.type != TT_SCOPEACCESS) {
-          decl->name = name;  // If we're not accessing a scope then we're probably declaring a variable
-          decl->ndef = def;
-        } else if (token.type == TT_SCOPEACCESS) {
-          return TryParseNestedNameSpecifier(def, decl);
-        } else if (map_contains(declarations, name.content)) {
-          return declarations[name.content]->def;
-        } else if (def == nullptr) {
-          herr->Error(token) << "No such name exists in global scope";
-        }
-
-        return def;
-      }
+      return base;
     }
 
     case TT_OPERATOR: {
+      // operator-function-ids are not modeled yet; consume the form so the
+      // parse can continue, and report.
       Token op = token;
       token = lexer->ReadToken();
-      std::string type = read_required_operatorkw();
-
-      if (type != "") {
-        std::string oper = "operator" + type;
-        if (token.type == TT_LESS && is_template_type(op)) {
-          TryParseTemplateArgs(frontend->look_up(oper));
-        } else {
-          return frontend->look_up(oper);
-        }
-      }
-
+      read_required_operatorkw();
+      herr->Error(op) << "Unimplemented: operator-function id-expressions";
       return nullptr;
     }
 
     case TT_TILDE: {
+      // Destructor-ids are not modeled yet; consume `~type-name` and report.
+      Token tilde = token;
       token = lexer->ReadToken();
       if (token.type == TT_IDENTIFIER) {
-        return TryParseTypeName();
+        TryParseTypeName();
       } else if (token.type == TT_DECLTYPE) {
-        return TryParseDecltype();
-      } else {
-        herr->Error(token) << "Given token is not valid for specifying a destructor to call";
-        return nullptr;
+        TryParseDecltype();
       }
+      herr->Error(tilde) << "Unimplemented: destructor id-expressions";
+      return nullptr;
     }
 
     default: {
@@ -669,96 +607,150 @@ jdi::definition *TryParseIdExpression(Declarator *decl) {
   }
 }
 
-jdi::definition *TryParseDecltype() {
+AST::PNode TryParseDecltype() {
   require_token(TT_DECLTYPE, "Expected 'decltype' keyword");
   require_token(TT_BEGINPARENTH, "Expected '(' after 'decltype'");
-  auto expr = TryParseExpression(Precedence::kAll);
+  auto expr = ParseExpression(Precedence::kAll);
   require_token(TT_ENDPARENTH, "Expected ')' after decltype expression");
 
-  return nullptr;
+  return std::make_unique<AST::Decltype>(std::move(expr));
 }
 
-void TryParseTemplateArgs(jdi::definition *def) {
-  if (def->flags & jdi::DEF_TEMPLATE) {
-    require_token(TT_LESS, "Expected '<' at start of template arguments");
-    auto template_def = reinterpret_cast<jdi::definition_template *>(def);
-    jdi::arg_key argk;
-    argk.mirror_types(template_def);
-    std::size_t args_given = 0;
-    for (; token.type != TT_GREATER && token.type != TT_ENDOFCODE;) {
-      if (template_def->params[args_given]->flags & jdi::DEF_TYPENAME) {
-        FullType type = TryParseTypeID();
-        if (type.def) {
-          jdi::full_type t = type.to_jdi_fulltype();
-          argk[args_given].ft().swap(t);
-        }
-      } else if (next_is_start_of_id_expression()) {
-        herr->Error(token) << "Unimplemented: id-expressions as template arguments";
-//        auto id = TryParseIdExpression(nullptr, false);
-        // TODO: this thing
-      } else {
-        herr->Error(token) << "Unimplemented: NTTP template arguments";
-        auto expr = TryParseConstantExpression();
-      }
-
-      if (token.type == TT_ELLIPSES) {
-        herr->Error(token) << "Unimplemented: variadic template arguments";
-        token = lexer->ReadToken();
-      }
-
-      if (token.type == TT_COMMA) {
-        token = lexer->ReadToken();
-        args_given++;
-        if (args_given > template_def->params.size()) {
-          herr->Error(token) << "Too many types in template instantiation";
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    if (require_token(TT_GREATER, "Expected '>' after template arguments")) {
-      jdi::remap_set remap;
-      for (std::size_t i = 0; i < args_given; i++) {
-        if (argk[i].type == jdi::arg_key::AKT_FULLTYPE) {
-          remap[template_def->params[i].get()] =
-              std::make_unique<jdi::definition_typed>(template_def->params[i]->name, template_def, argk[i].ft(),
-                                                      jdi::DEF_TYPENAME | jdi::DEF_TYPED).release();
-        } else if (argk[i].type == jdi::arg_key::AKT_VALUE) {
-          remap[template_def->params[i].get()] =
-              std::make_unique<jdi::definition_valued>(template_def->params[i]->name, template_def,
-                                                       template_def->params[i]->integer_type.def,
-                                                       template_def->params[i]->integer_type.flags,
-                                                       jdi::DEF_VALUED, argk[i].val()).release();
-        } else {
-          herr->Error(token) << "Internal error: type of template parameter unknown";
-        }
-      }
-
-      // TODO: Fix whatever this garbage is
-      auto errc = jdi::ErrorContext{new jdi::DefaultErrorHandler{}, jdi::SourceLocation{"lol", token.position, token.line}};
-      for (std::size_t i = args_given; i < template_def->params.size(); i++) {
-        if (template_def->params[i]->default_assignment) {
-          jdi::AST ast(*template_def->params[i]->default_assignment, true);
-          ast.remap(remap, errc);
-          if (template_def->params[i]->flags & jdi::DEF_TYPENAME)
-            argk.put_type(i, ast.coerce(errc));
-          else
-            argk.put_value(i, ast.eval(errc));
-        } else {
-          herr->Error(token) << "Expected template argument, parameter " << i << " has no default value";
-        }
-      }
-
-      for (auto &value: remap) {
-        delete value.second;
-      }
-    }
+// `out_args`, when non-null, collects the parsed argument trees in source order
+// Forwards jdi diagnostics raised while filling defaults / instantiating a
+// template onto the EDL error handler, reported against the template-name
+// token. Ordinarily silent: it fires for user-side argument problems (count
+// mismatches, bad defaults) or an engine-side definition breaking under a
+// user instantiation.
+struct JdiDiagnosticForwarder : jdi::ErrorHandler {
+  enigma::parsing::ErrorHandler *herr;
+  Token at;
+  JdiDiagnosticForwarder(enigma::parsing::ErrorHandler *herr, Token at):
+      herr(herr), at(std::move(at)) {}
+  void error(std::string_view msg, jdi::SourceLocation) final {
+    herr->Error(at) << std::string(msg);
   }
+  void warning(std::string_view msg, jdi::SourceLocation) final {
+    herr->Warning(at) << std::string(msg);
+  }
+  void info(std::string_view, int, jdi::SourceLocation) final {}
+};
+
+// Evaluate a parsed non-type template argument to a JDI value, when the tree
+// is one of the two forms the parser can fold without a real evaluator: an
+// integer literal, or an id-expression whose root resolved to a constant
+// (jdi definition_valued). Returns VT_NONE for anything else -- arbitrary
+// constant expressions await the semantic phase.
+static jdi::value nttp_value(const AST::Node *arg) {
+  if (arg == nullptr) return {};
+  if (arg->type == AST::NodeType::LITERAL) {
+    auto &cv = const_cast<AST::Node*>(arg)->As<AST::Literal>()->value;
+    if (cv.type == TT_DECLITERAL) {
+      if (auto *s = std::get_if<std::string>(&cv.value)) {
+        long v = 0;
+        auto [end, ec] = std::from_chars(s->data(), s->data() + s->size(), v);
+        if (ec == std::errc{} && end == s->data() + s->size()) return jdi::value{v};
+      }
+    }
+    return {};
+  }
+  jdi::definition *def = arg->Definition();
+  if (def != nullptr && (def->flags & jdi::DEF_VALUED))
+    return static_cast<jdi::definition_valued*>(def)->value_of;
+  return {};
 }
 
-jdi::definition *TryParseTypenameSpecifier() {
+// Parse `< template-argument-list >` for a template `def`, build the JDI
+// arg_key, and instantiate. Returns the instantiated definition -- cached by
+// JDI, so `vec<int>` is one definition and `vec<float>` another, and repeats
+// are the same pointer -- or null when any argument is unresolved or beyond
+// the parse-time evaluator (the TemplateId then carries a null def for the
+// semantic phase). Count validation and default-argument fill-in are JDI's
+// check_read_template_parameters, reported through the forwarder. `out_args`,
+// when non-null, collects the parsed argument trees in source order (type-id
+// clauses for type params, expressions for NTTPs) for the TemplateId to hold.
+//
+// NTTP expressions parse at kShift: a top-level `>` must close the argument
+// list, not compare (C++ requires parenthesizing a comparison here), and the
+// comma is the list separator. (`vec<vec<int>>` still lexes `>>` as one
+// TT_RSH token -- the C++11 re-lex hack is not implemented.)
+jdi::definition *TryParseTemplateArgs(jdi::definition *def, std::vector<AST::PNode> *out_args = nullptr) {
+  if (!(def->flags & jdi::DEF_TEMPLATE)) return def;
+  Token name_token = token;
+  require_token(TT_LESS, "Expected '<' at start of template arguments");
+  auto template_def = static_cast<jdi::definition_template *>(def);
+  // Sized construction is load-bearing: the default arg_key ctor leaves its
+  // slot array null, and mirror_types placement-news into it.
+  jdi::arg_key argk(template_def->params.size());
+  argk.mirror_types(template_def);
+  std::size_t args_given = 0;
+  bool resolved = true;
+  while (token.type != TT_GREATER && token.type != TT_ENDOFCODE) {
+    const bool in_range = args_given < template_def->params.size();
+    const bool is_type_param =
+        in_range && (template_def->params[args_given]->flags & jdi::DEF_TYPENAME);
+    // Beyond the parameter list there is no kind to parse against; read the
+    // extra argument as a type-id clause when it looks like one (so the token
+    // stream stays sane) and let check_read_template_parameters report the
+    // count. Never indexes params out of range.
+    if (is_type_param || (!in_range && next_is_type_specifier())) {
+      auto clause = ParseTypeIdClause();
+      // In template-argument position the untyped fallback is `variant`, not
+      // `var`: it's lighter weight, and var makes a poor element/key type.
+      // The kind stays UNTYPED; only the inferred def is retagged.
+      if (clause->specifiers && clause->specifiers->id_expression &&
+          clause->specifiers->id_expression->type == AST::NodeType::IMPLICIT_TYPE) {
+        auto *implicit = clause->specifiers->id_expression->As<AST::ImplicitType>();
+        if (implicit->kind == AST::ImplicitType::Kind::UNTYPED)
+          implicit->def = frontend->look_up("variant");
+      }
+      // The clause's full_type carries the declarator too, so `vec<int*>`
+      // keys differently from `vec<int>`.
+      if (jdi::full_type t = clause->to_jdi_fulltype(0); t.def != nullptr) {
+        if (in_range) argk[args_given].ft().swap(t);
+      } else {
+        resolved = false;
+      }
+      if (out_args) out_args->push_back(std::move(clause));
+    } else {
+      auto expr = ParseExpression(Precedence::kShift);
+      if (jdi::value v = nttp_value(expr.get()); v.type != jdi::VT_NONE) {
+        if (in_range) argk.put_value(args_given, v);
+      } else {
+        herr->Error(token) << "Unimplemented: non-constant template arguments";
+        resolved = false;
+      }
+      if (out_args) out_args->push_back(std::move(expr));
+    }
+    ++args_given;
+
+    if (token.type == TT_ELLIPSES) {
+      herr->Error(token) << "Unimplemented: variadic template arguments";
+      token = lexer->ReadToken();
+    }
+    if (token.type == TT_COMMA) {
+      token = lexer->ReadToken();
+      continue;
+    }
+    break;
+  }
+
+  if (!require_token(TT_GREATER, "Expected '>' after template arguments"))
+    return nullptr;
+  // An unresolved argument defers the whole instantiation to the semantic
+  // phase -- silently, per types-as-trees: the parser cannot judge whether a
+  // not-yet-known name is an error.
+  if (!resolved) return nullptr;
+
+  JdiDiagnosticForwarder fwd(herr, name_token);
+  jdi::ErrorContext errc(&fwd, jdi::SourceLocation{
+      "user code", name_token.position, name_token.line});
+  if (jdi::check_read_template_parameters(argk, args_given, template_def, errc))
+    return nullptr;
+  return template_def->instantiate(argk, errc);
+}
+
+AST::PNode TryParseTypenameSpecifier() {
   require_token(TT_TYPENAME, "Expected 'typename' in typename specifier");
 
   switch (token.type) {
@@ -773,75 +765,86 @@ jdi::definition *TryParseTypenameSpecifier() {
   }
 }
 
-jdi::definition *TryParsePrefixIdentifier(Declarator *decl = nullptr, bool is_declarator = false) {
+// Parses a type name, potentially followed by template arguments and/or a nested
+// name specifier. Corresponds roughly to the start of a `qualified-id` or just a
+// `type-name`. Returns the id-expression tree; its root carries the resolved def.
+AST::PNode TryParsePrefixIdentifier() {
   Token id = token;
   require_token(TT_IDENTIFIER, "Expected identifier");
   auto def = require_defined_type(id);
 
+  AST::PNode leaf;
   if (token.type == TT_LESS && is_template_type(def)) {
-    TryParseTemplateArgs(def);
+    std::vector<AST::PNode> args;
+    jdi::definition *inst = TryParseTemplateArgs(def, &args);
+    leaf = std::make_unique<AST::TemplateId>(
+        std::make_unique<AST::IdentifierAccess>(def, id), std::move(args), inst);
+  } else {
+    leaf = std::make_unique<AST::IdentifierAccess>(def, id);
   }
 
   if (token.type == TT_SCOPEACCESS) {
-    return TryParseNestedNameSpecifier(def, decl, is_declarator);
+    return TryParseNestedNameSpecifier(std::move(leaf));
   }
 
-  return def;
+  return leaf;
 }
 
-jdi::definition *TryParseNestedNameSpecifier(jdi::definition *scope, Declarator *decl = nullptr, bool is_declarator = false) {
+// Parses a `nested-name-specifier` (starting with `::`) and the following
+// `unqualified-id`. Despite the name, it parses the rest of a qualified-id, not
+// just the specifier. `scope_tree` is the already-parsed scope id-expression (the
+// chain's `lhs`), null for a global-scope `::name`. Returns the assembled
+// id-expression tree -- a ScopeAccess chain, with any template segment wrapped
+// in a TemplateId. Each segment resolves in its parent's scope when that scope
+// is known; an unresolved or non-scope parent defers the rest of the chain
+// (null segment defs, no diagnostic) for the semantic phase to bind -- whether
+// a dangling name is an error depends on what the chain turns out to be, which
+// the parser cannot judge.
+AST::PNode TryParseNestedNameSpecifier(AST::PNode scope_tree) {
   if (token.type != TT_SCOPEACCESS) {
     herr->Error(token) << "Expected scope access '::' in nested name specifier, got: '" << token.content << '\'';
-    return nullptr;
+    return scope_tree;
   }
 
-  jdi::definition *def = scope;
-  if (def != nullptr && !(def->flags & jdi::DEF_SCOPE)) {
-    herr->Error(token) << "Given specifier does not refer to any existing scopes";
-  }
-
-  bool is_global_scope = def == nullptr;
-
-  Token prev{};
-  Token name{};
+  AST::PNode current = std::move(scope_tree);
   while (token.type == TT_SCOPEACCESS) {
-    prev = token;
     token = lexer->ReadToken();
     if (token.type == TT_IDENTIFIER) {
       Token id = token;
-      name = token;
       token = lexer->ReadToken();
-      if (token.type == TT_LESS && is_template_type(id)) {
-        TryParseTemplateArgs(frontend->look_up(id.content));
-      } else if (is_global_scope) {
-        is_global_scope = false;
-        def = frontend->look_up(id.content);
-        if (def == nullptr) {
-          herr->Error(id) << "Given name does not exist in the scope: '" << id.content << '\'';
-          break;
-        }
-      } else if (auto *def_scope = require_scope_type(def, prev); def_scope != nullptr) {
-        def = def_scope->look_up(std::string{id.content});
-        if (def == nullptr) {
-          herr->Error(id) << "Given name does not exist in the scope: '" << id.content << '\'';
-          break;
+      // Resolve the segment name in its parent's scope first (global lookup
+      // for a leading `::name`), THEN test for a template segment -- the
+      // template must be found where the chain says it lives, not by an
+      // unqualified global probe.
+      jdi::definition *seg_def = nullptr;
+      if (current == nullptr) {
+        seg_def = frontend->look_up(id.content);
+      } else if (jdi::definition *parent = current->Definition();
+                 parent != nullptr && (parent->flags & (jdi::DEF_SCOPE | jdi::DEF_CLASS))) {
+        if (auto *parent_scope = dynamic_cast<jdi::definition_scope *>(parent)) {
+          seg_def = parent_scope->look_up(std::string{id.content});
         }
       }
-    } else if (token.type != TT_STAR) {
-      herr->Error(token) << "Expected either identifier or star ('*') after nested name specifier";
-      return nullptr;
-    }
-  }
-
-  if (is_declarator) {
-    if (decl == nullptr) {
-      herr->Error(name) << "Internal error: nullptr Declarator passed to TryParseNestedNameSpecifier()";
+      bool is_template_seg = token.type == TT_LESS && seg_def != nullptr &&
+                             (seg_def->flags & jdi::DEF_TEMPLATE);
+      AST::PNode seg = std::make_unique<AST::ScopeAccess>(std::move(current), id, seg_def);
+      if (is_template_seg) {
+        std::vector<AST::PNode> args;
+        jdi::definition *inst = TryParseTemplateArgs(seg_def, &args);
+        seg = std::make_unique<AST::TemplateId>(std::move(seg), std::move(args), inst);
+      }
+      current = std::move(seg);
+    } else if (token.type == TT_STAR) {
+      // `A::*` -- the star is a pointer-to-member declarator operator; the
+      // nested-name ends here and the `*` is the caller's.
+      break;
     } else {
-      decl->name = name;
+      herr->Error(token) << "Expected either identifier or star ('*') after nested name specifier";
+      return current;
     }
   }
 
-  return def;
+  return current;
 }
 
 bool matches_token_type(jdi::definition *def, const Token &tok) {
@@ -857,46 +860,48 @@ bool matches_token_type(jdi::definition *def, const Token &tok) {
   }
 }
 
-void TryParseElaboratedName(FullType *type) {
+AST::PNode TryParseElaboratedName() {
   Token tok = token;
 
   token = lexer->ReadToken();
   Token name = token;
-  jdi::definition *def = nullptr;
+  AST::PNode scope_tree;
 
   if (token.type == TT_IDENTIFIER) {
-    def = frontend->look_up(token.content);
+    scope_tree = std::make_unique<AST::IdentifierAccess>(frontend->look_up(token.content), token);
     token = lexer->ReadToken();
   } else if (token.type == TT_DECLTYPE) {
     token = lexer->ReadToken();
-    def = TryParseDecltype();
+    scope_tree = TryParseDecltype();
     if (token.type != TT_SCOPEACCESS) {
       herr->Error(token) << "Expected scope access after decltype";
     }
   }
 
   if (token.type == TT_SCOPEACCESS) {
-    def = TryParseNestedNameSpecifier(def);
+    scope_tree = TryParseNestedNameSpecifier(std::move(scope_tree));
   }
 
-  if (def != nullptr && matches_token_type(def, tok)) {
-    type->def = def;
-  } else {
-    herr->Error(name) << "Given specifier does not refer to a declared enum";
+  // The elaborated form asserts its referent's kind; check it only when the
+  // name actually resolved. An unresolved name stays on the tree for the
+  // semantic phase -- whether it exists is not the parser's judgment.
+  jdi::definition *def = id_expression_def(scope_tree);
+  if (def != nullptr && !matches_token_type(def, tok)) {
+    herr->Error(name) << "'" << name.content << "' does not name "
+                      << (tok.type == TT_ENUM ? "an " : "a ") << tok.content;
   }
+  return scope_tree;
 }
 
-static bool contains_decflag_bitmask(std::size_t combined, std::string_view name) {
-  auto builtin = jdi_decflag_bitmask(name);
-  return (combined & builtin.first) == builtin.second;
-}
-
-void maybe_assign_full_type(FullType *type, jdi::definition *def, Token token) {
-  if (def != nullptr && type->def == nullptr) {
-    type->def = def;
-  } else if (type->def != nullptr) {
-    herr->Error(token) << "Usage of two types in type specifier";
-  }
+// Install `base` as the run's base type. A specifier run names at most one;
+// if the slot is already taken, the earlier tree is retained on the spec
+// list's extra_base_types as evidence for the post-parse checker, which owns
+// the "two types in one specifier" diagnostic. The later name wins the slot,
+// matching the id-expression threading since step 2A.
+void stash_base_type(AST::DeclSpecList *specs, AST::PNode &slot, AST::PNode base) {
+  if (base == nullptr) return;
+  if (slot != nullptr) specs->extra_base_types.push_back(std::move(slot));
+  slot = std::move(base);
 }
 
 jdi::definition *get_builtin(std::string_view name) {
@@ -907,93 +912,102 @@ jdi::definition *get_builtin(std::string_view name) {
   return frontend->look_up(std::string(name));
 }
 
-void TryParseTypeSpecifier(FullType *type) {
+AST::PNode TryParseTypeSpecifier(AST::DeclSpecList *specs) {
+  AST::PNode id_expression;
+  Token start = token;
   switch (token.type) {
     case TT_TYPE_NAME: {
       if (token.content == "long" || token.content == "short") {
-        if (contains_decflag_bitmask(type->flags, "long")) {
+        if (flag_matches(specs->flags, jdi::builtin_flag__long)) {
            if (token.content == "long") {
-             type->flags &= ~jdi_decflag_bitmask("long").second;
-             type->flags |= jdi_decflag_bitmask("long long").second;
+             // long + long = long long: swap the length field's value.
+             const std::size_t field = flag_mask(jdi::builtin_flag__long);
+             specs->flags = (specs->flags & ~field) | flag_value(jdi::builtin_flag__long_long);
+             specs->specs.push_back(token);
            } else if (token.content == "short") {
              herr->Error(token) << "Conflicting usage of 'long' and 'short' in the same type specifier";
            }
-        } else if (contains_decflag_bitmask(type->flags, "short") && token.content == "long") {
+        } else if (flag_matches(specs->flags, jdi::builtin_flag__short) && token.content == "long") {
           herr->Error(token) << "Conflicting usage of 'short' and 'long' in the same type specifier";
-        } else if (contains_decflag_bitmask(type->flags, "long long")) {
+        } else if (flag_matches(specs->flags, jdi::builtin_flag__long_long)) {
           if (token.content == "long") {
             herr->Error(token) << "Too many 'long's in type specifier";
           } else if (token.content == "short") {
             herr->Error(token) << "Conflicting usage of 'short' and 'long long' in the same type specifier";
           }
         } else {
-          type->flags |= jdi_decflag_bitmask(token.content).second;
+          specs->flags |= flag_value(lookup_decflag(token.content));
+          specs->specs.push_back(token);
         }
       } else {
-        maybe_assign_full_type(type, get_builtin(token.content), token);
+        id_expression = std::make_unique<AST::IdentifierAccess>(get_builtin(token.content), token);
       }
       token = lexer->ReadToken();
       break;
     }
 
     case TT_IDENTIFIER: {
-      maybe_assign_full_type(type, TryParsePrefixIdentifier(), token);
+      id_expression = TryParsePrefixIdentifier();
       break;
     }
 
     case TT_SCOPEACCESS: {
-      maybe_assign_full_type(type, TryParseNestedNameSpecifier(nullptr), token);
+      id_expression = TryParseNestedNameSpecifier(nullptr);
       break;
     }
 
     case TT_DECLTYPE: {
-      Token tok = token;
-      auto def = TryParseDecltype();
+      id_expression = TryParseDecltype();
 
       if (token.type == TT_SCOPEACCESS) {
-        def = TryParseNestedNameSpecifier(def);
+        id_expression = TryParseNestedNameSpecifier(std::move(id_expression));
       }
 
-      if (def != nullptr) {
-        maybe_assign_full_type(type, def, tok);
-      } else {
-        herr->Error(tok) << "Could not parse decltype specifier";
+      // decltype RESOLUTION is unimplemented (Decltype::Definition() is
+      // always null), so a decltype base type still reports here.
+      if (id_expression_def(id_expression) == nullptr) {
+        herr->Error(start) << "Could not parse decltype specifier";
       }
       break;
     }
 
     case TT_TYPENAME: {
-      maybe_assign_full_type(type, TryParseTypenameSpecifier(), token);
+      id_expression = TryParseTypenameSpecifier();
       break;
     }
 
     default: {
-      if (token.type == TT_SIGNED || token.type == TT_UNSIGNED || next_is_cv_qualifier()) {
-        //        if (contains_decflag_bitmask(type->flags, "signed") && token.type == TT_UNSIGNED) {
-        //          // TODO: There is no way to actually detect this, as signed's value is 0
-        //          herr->Error(token) << "Conflicting use of 'signed' and 'unsigned' in the same type specifier";
-        //        } else
-        if (contains_decflag_bitmask(type->flags, "unsigned") && token.type == TT_SIGNED) {
+      if (token.type == TT_DECLSPEC) {
+        const jdi::typeflag *flag = lookup_decflag(token.content);
+        // unsigned-then-signed is flag-detectable (unsigned wrote a bit); the
+        // reverse order is not (`signed` writes none) and is caught post-parse
+        // by the SyntaxChecker's token-based check. The duplicate warning
+        // likewise exempts `signed`, whose all-zero flag "matches" any run.
+        if (flag_matches(specs->flags, jdi::builtin_flag__unsigned) && token.content == "signed") {
           herr->Error(token) << "Conflicting use of 'unsigned' and 'signed' in the same type specifier";
-        } else if (contains_decflag_bitmask(type->flags, token.content) && token.type != TT_SIGNED) {
+        } else if (flag_matches(specs->flags, flag) && token.content != "signed") {
           herr->Warning(token) << "Duplicate usage of flags in type specifier";
         } else {
-          type->flags |= jdi_decflag_bitmask(token.content).second;
+          specs->flags |= flag_value(flag);
+          specs->specs.push_back(token);
         }
         token = lexer->ReadToken();
       } else if (next_is_class_key() || token.type == TT_ENUM) {
-        TryParseElaboratedName(type);
+        id_expression = TryParseElaboratedName();
       } else {
         herr->Error(token) << "Given token does not specify a valid type specifier";
       }
       break;
     }
   }
+  return id_expression;
 }
 
-std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type) {
+std::pair<bool, bool> TryParseTypeSpecifierSeq(AST::DeclSpecList *specs,
+                                               AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
-  while (next_is_type_specifier() || token.content == "global" || token.content == "local") {
+  while (next_is_type_specifier() || next_is_user_defined_type() ||
+         token.content == "global" || token.content == "local") {
     if (token.content == "global") {
       global_local.first = true;
       token = lexer->ReadToken();
@@ -1001,100 +1015,115 @@ std::pair<bool, bool> TryParseTypeSpecifierSeq(FullType *type) {
       global_local.second = true;
       token = lexer->ReadToken();
     } else {
-      TryParseTypeSpecifier(type);
+      stash_base_type(specs, out_id_expression, TryParseTypeSpecifier(specs));
     }
   }
   return global_local;
 }
 
-void TryParsePtrOperator(FullType *type) {
-  if (token.type == TT_STAR) {
-    bool is_const = false;
-    bool is_volatile = false;
-    token = lexer->ReadToken();
-    while (next_is_cv_qualifier()) {
-      if (token.type == TT_CONST) {
-        if (is_const) {
-          herr->Warning(token) << "Duplicate 'const' flag in pointer";
-        }
-        is_const = true;
-      } else if (token.type == TT_VOLATILE) {
-        if (is_volatile) {
-          herr->Warning(token) << "Duplicate 'volatile' flag in pointer";
-        }
-        is_volatile = true;
-      }
-      token = lexer->ReadToken();
-    }
-    type->decl.add_pointer(nullptr, is_const, is_volatile);
-  } else if (next_is_ref_qualifier()) {
-    if (token.type == TT_AND) {
-      type->decl.add_reference(DeclaratorNode::Kind::RVAL_REFERENCE);
-    } else {
-      type->decl.add_reference(DeclaratorNode::Kind::REFERENCE);
-    }
-    token = lexer->ReadToken();
+// Build the TypeSpecifierSeq for a `<type-id>` grammar production. The parser
+// records the decl-spec chain (declspecs, which carries both the source-order
+// specifier tokens and the flag bitmask) and the base type's id-expression tree;
+// the seq's Definition() reads the resolved type back from that tree root.
+std::unique_ptr<AST::TypeSpecifierSeq> TryParseTypeID() {
+  auto declspecs = std::make_unique<AST::DeclSpecList>();
+  AST::PNode id_expression;
+  while (next_is_type_specifier() || next_is_user_defined_type()) {
+    stash_base_type(declspecs.get(), id_expression, TryParseTypeSpecifier(declspecs.get()));
   }
+
+  return MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
 }
 
-void TryParseMaybeNestedPtrOperator(FullType *type) {
-  if (next_maybe_nested_name()) {
-    jdi::definition *def = nullptr;
-    if (token.type == TT_IDENTIFIER) {
-      def = frontend->look_up(token.content);
-      token = lexer->ReadToken();
-    } else if (token.type == TT_DECLTYPE) {
-      def = TryParseDecltype();
-    }
-
-    def = TryParseNestedNameSpecifier(def);
-    if (token.type == TT_STAR) {
-      bool is_const = false;
-      bool is_volatile = false;
-      token = lexer->ReadToken();
-      while (next_is_cv_qualifier()) {
-        if (token.type == TT_CONST) {
-          if (is_const) {
-            herr->Warning(token) << "Duplicate 'const' flag in pointer";
-          }
-          is_const = true;
-        } else if (token.type == TT_VOLATILE) {
-          if (is_volatile) {
-            herr->Warning(token) << "Duplicate 'volatile' flag in pointer";
-          }
-          is_volatile = true;
-        }
-        token = lexer->ReadToken();
-      }
-      if (!(def->flags & jdi::DEF_CLASS)) {
-        herr->Error(token) << "Member pointer to non-class type: '" << def->name << "'";
-      } else {
-        type->decl.add_pointer(reinterpret_cast<jdi::definition_class *>(def), is_const, is_volatile);
-      }
-    }
+// Parse a full type-id (type-specifier-seq + abstract-declarator) into a
+// DeclaratorClause. The declarator is parsed through the unified expression
+// path with allow_abstract_operand_ set, so a missing operand -- bare `int`,
+// `int *`, `int **(*)[10]`, ... -- becomes an abstract-declarator leaf instead
+// of an error. This is the first setter of the abstract-operand mechanism.
+// Used at type-id-demanding sites bounded by `)` / `>` (sizeof/alignof, and
+// C-style + named cast targets). The lone InitDeclarator carries the declarator
+// tree in declarator_expr; its name/init stay empty for a type-id. NB:
+// postfix-only abstract declarators with no grouping (`int[10]`, `int(args)`)
+// aren't covered yet -- the abstract leaf only fires at `) ] , ; > EOF`, not
+// before a leading `[`/`(`.
+//
+// The declarator is parsed at kUnaryPrefix, not kAll: a single type-id's
+// declarator is built solely from prefix `* &` and the postfix `[] ()` that
+// bind tighter, never a top-level binary or comma operator. Parsing at kAll
+// would wrongly let the binary loop consume a trailing `>` (as greater-than)
+// when this is a named-cast target -- kUnaryPrefix stops before any binary
+// operator, so the `>` is left for the caller's require_token to close.
+//
+// Parse*, never returns null: TryParseTypeID always builds a TypeSpecifierSeq
+// (despite the Try* name -- it's misnamed at the call site), and ParseExpression
+// only yields null on genuine malformed input, in which case the inner call has
+// already reported the error on herr.
+std::unique_ptr<AST::DeclaratorClause> ParseTypeIdClause() {
+  auto specifiers = TryParseTypeID();
+  AST::PNode declarator_expr;
+  {
+    ScopedFlag allow_abstract(allow_abstract_operand_, true);
+    declarator_expr = ParseExpression(Precedence::kUnaryPrefix);
   }
+  std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
+  auto decl = std::make_unique<AST::InitDeclarator>();
+  decl->declarator_expr = std::move(declarator_expr);
+  declarators.push_back(std::move(decl));
+  return std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
 }
 
-FullType TryParseTypeID() {
-  FullType type;
-  while (next_is_type_specifier()) {
-    TryParseTypeSpecifier(&type);
-  }
-
-  maybe_infer_int(type);
-
-  if (next_maybe_ptr_decl_operator() || token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACKET) {
-    TryParseDeclarator(&type, AST::DeclaratorType::ABSTRACT);
-  }
-
-  return type;
+// A parenthesized group is a C-style-cast target iff its single element is an
+// abstract type-id clause (a declarator with no name in its spine). A named
+// declarator (`int x`) or a comma-list (a tuple) is not a cast; those flow on
+// as a Parenthetical for the semantic phase / the outer `=>`,`=` dispatch.
+bool clause_is_abstract_type_id(AST::Node *node) {
+  if (!node || node->type != AST::NodeType::DECLARATOR_CLAUSE) return false;
+  auto *clause = node->As<AST::DeclaratorClause>();
+  return clause->declarators.size() == 1 &&
+         find_declarator_name(clause->declarators[0]->declarator_expr.get()) == nullptr;
 }
 
-void TryParseDeclSpecifier(FullType *type) {
+// All operand-position `(...)` groups funnel through here: grouping, C-style
+// cast, tuple/tie, and lambda-parameter lists. The contents parse as one
+// comma-list under maybe_declarator_group_, so a type-name element becomes a
+// (possibly abstract) declarator clause and ParseExpression itself ties the
+// commas -- the uniform tuple. Role is deferred to the semantic phase, with one
+// parse-time carve-out: a lone abstract type-id is the only shape that must
+// consume a trailing operand here (the C-style cast), since nothing downstream
+// would. (The postfix `(` -- call args / function-declarator params -- will
+// delegate here once Family A is retired; see #33/#34.)
+std::unique_ptr<AST::Node> ParseParenthetical() {
+  auto paren = token;
+  token = lexer->ReadToken();
+  std::unique_ptr<AST::Node> body;
+  // `()` is a legitimate empty group (an empty lambda parameter list); the
+  // Parenthetical carries a null expression rather than a sentinel.
+  if (token.type != TT_ENDPARENTH) {
+    ScopedFlag group(maybe_declarator_group_, true);
+    body = ParseExpression(Precedence::kAll);
+  }
+  require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
+  if (clause_is_abstract_type_id(body.get())) {
+    auto expr = ParseExpression(Precedence::kUnaryPrefix);
+    return std::make_unique<AST::CastExpression>(
+        AST::CastExpression::Kind::C_STYLE, paren, std::move(body), std::move(expr));
+  }
+  return std::make_unique<AST::Parenthetical>(std::move(body));
+}
+
+void TryParseDeclSpecifier(AST::DeclSpecList *specs, AST::PNode &out_id_expression) {
   switch (token.type) {
     case TT_TYPEDEF: {
-      TryParseTypeSpecifierSeq(type);
-      TryParseDeclarator(type, AST::DeclaratorType::NON_ABSTRACT);
+      // `typedef` is a decl-specifier; the following type-specifier-seq and
+      // declarator are parsed by the unified path, exactly as for any other
+      // declaration. Registering the declared name as a type alias is a
+      // semantic-phase concern.
+      // TODO: there is no jdi typeflag for typedef (no DEF_TYPEDEF / decflag),
+      // so the typedef-ness is currently only preserved as a token in
+      // specs->specs, not as a semantic flag. Add a real marker so the semantic
+      // phase can register the declared name as a type alias.
+      specs->specs.push_back(token);
+      token = lexer->ReadToken();
       break;
     }
 
@@ -1111,22 +1140,29 @@ void TryParseDeclSpecifier(FullType *type) {
     case TT_MUTABLE:
     case TT_INLINE:
     case TT_STATIC: {
-      type->flags |= jdi_decflag_bitmask(token.content).second;
+      const jdi::typeflag *flag =
+          token.type == TT_MUTABLE ? jdi::builtin_flag__mutable
+          : token.type == TT_INLINE ? jdi::builtin_flag__inline
+                                    : jdi::builtin_flag__static;
+      specs->flags |= flag_value(flag);
+      specs->specs.push_back(token);
       token = lexer->ReadToken();
-      // TODO: FIXME: This should have a break or [[fallthrough]]... does not look like an optimization, so guessing break
+      break;
     }
 
     default:
-      if (next_is_type_specifier()) {
-        TryParseTypeSpecifier(type);
+      if (next_is_type_specifier() || next_is_user_defined_type()) {
+        stash_base_type(specs, out_id_expression, TryParseTypeSpecifier(specs));
         break;
       }
   }
 }
 
-std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type) {
+std::pair<bool, bool> TryParseDeclSpecifierSeq(AST::DeclSpecList *specs,
+                                               AST::PNode &out_id_expression) {
   std::pair<bool, bool> global_local = {false, false};
-  while (is_decl_specifier(token) || token.content == "global" || token.content == "local") {
+  while (next_is_decl_specifier() || next_is_user_defined_type() ||
+         token.content == "global" || token.content == "local") {
     if (token.content == "global") {
       global_local.first = true;
       token = lexer->ReadToken();
@@ -1134,173 +1170,29 @@ std::pair<bool, bool> TryParseDeclSpecifierSeq(FullType *type) {
       global_local.second = true;
       token = lexer->ReadToken();
     } else
-      TryParseDeclSpecifier(type);
+      TryParseDeclSpecifier(specs, out_id_expression);
   }
   return global_local;
 }
 
-std::unique_ptr<AST::Node> TryParsePtrDeclarator(FullType *type, AST::DeclaratorType is_abstract, bool maybe_expression = false) {
-  while (next_maybe_ptr_decl_operator()) {
-    if (next_maybe_nested_name()) {
-      TryParseMaybeNestedPtrOperator(type);
-    } else {
-      TryParsePtrOperator(type);
-    }
-  }
-
-  return TryParseNoPtrDeclarator(type, is_abstract, maybe_expression);
-}
-
-std::unique_ptr<AST::Node> TryParseNoPtrDeclarator(FullType *type, AST::DeclaratorType is_abstract, bool maybe_expression = false) {
-  auto maybe_prefix_operator = [this]() {
-    return Precedence::kUnaryPrefixOps.find(token.type) != Precedence::kUnaryPrefixOps.end();
-  };
-
-  auto maybe_infix_operator = [this]() {
-    return map_contains(Precedence::kBinaryPrec, token.type) ||
-           map_contains(Precedence::kTernaryPrec, token.type);
-  };
-
-  auto maybe_postfix_operator = [this]() {
-    return map_contains(Precedence::kUnaryPostfixPrec, token.type);
-  };
-
-  // Do not accidentally consume the pointer declarators
-  if (maybe_expression && maybe_prefix_operator() &&
-      token.type != TT_STAR && token.type != TT_AMPERSAND) {
-    return TryParseExpression(Precedence::kAll);
-  }
-
-  if (token.type == TT_BEGINPARENTH) {
-    std::unique_ptr<AST::Node> expr = nullptr;
-    token = lexer->ReadToken();
-    FullType inner;
-    auto inner_decl_expr = TryParsePtrDeclarator(&inner, is_abstract, maybe_expression);
-    // Check if the next token is an operator but don't accidentally eat array bounds specifiers or function parameter
-    // declarators
-    if (maybe_expression && (maybe_infix_operator() || maybe_postfix_operator()) &&
-        token.type != TT_BEGINPARENTH && token.type != TT_BEGINBRACKET) {
-      if (inner_decl_expr == nullptr) {
-        inner_decl_expr = TryParseExpression(Precedence::kAll,
-                                        std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(inner.decl.to_expression())));
-      } else {
-        inner_decl_expr = TryParseExpression(Precedence::kAll, std::move(inner_decl_expr));
-      }
-      require_token(TT_ENDPARENTH, "Expected ')' after expression");
-    } else if (inner_decl_expr == nullptr) {
-      require_token(TT_ENDPARENTH, "Expected ')' after declarator");
-      if (!inner.decl.name.content.empty()) {
-        type->decl.name = inner.decl.name;
-      }
-    } else {
-      require_token(TT_ENDPARENTH, "Expected ')' after expression");
-    }
-
-    while (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACKET) {
-      if (token.type == TT_BEGINPARENTH) {
-        TryParseParametersAndQualifiers(&inner.decl, true, false, maybe_expression);
-      } else {
-        TryParseArrayBoundsExpression(&inner.decl, true);
-      }
-    }
-
-    if (inner_decl_expr != nullptr) {
-      type->decl.add_nested(reinterpret_cast<void *>(inner_decl_expr.release()));
-      inner_decl_expr = std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression()));
-    } else {
-      type->decl.add_nested(std::make_unique<Declarator>(std::move(inner.decl)));
-    }
-
-    if (maybe_expression && (maybe_infix_operator() || maybe_postfix_operator()) &&
-        token.type != TT_BEGINPARENTH && token.type != TT_BEGINBRACKET &&
-        token.type != TT_EQUALS && token.type != TT_BEGINBRACE && token.type != TT_COMMA) {
-      if (inner_decl_expr != nullptr) {
-        return TryParseExpression(Precedence::kAll, std::move(inner_decl_expr));
-      } else {
-        return TryParseExpression(
-            Precedence::kAll, std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression())));
-      }
-    } else if (inner_decl_expr != nullptr) {
-      return inner_decl_expr;
-    }
-  } else if (is_abstract == AST::DeclaratorType::NON_ABSTRACT) {
-    if (token.type == TT_ELLIPSES) {
-      token = lexer->ReadToken();
-    }
-    TryParseIdExpression(&type->decl);
-  } else if (is_abstract == AST::DeclaratorType::MAYBE_ABSTRACT && next_is_start_of_id_expression()) {
-    TryParseIdExpression(&type->decl);
-  }
-
-  while (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACKET) {
-    if (token.type == TT_BEGINPARENTH) {
-      TryParseParametersAndQualifiers(&type->decl, false, false, maybe_expression);
-    } else {
-      TryParseArrayBoundsExpression(&type->decl, false);
-    }
-  }
-
-  // All the array bounds specifiers and function parameter declarators would have been eaten before this
-  if (maybe_expression && (maybe_infix_operator() || maybe_postfix_operator()) &&
-      token.type != TT_EQUALS && token.type != TT_BEGINBRACE && token.type != TT_COMMA) {
-    return TryParseExpression(Precedence::kAll,
-                              std::unique_ptr<AST::Node>(reinterpret_cast<AST::Node *>(type->decl.to_expression())));
-  }
-
-  return nullptr;
-}
-
-void TryParseDeclarator(FullType *type, AST::DeclaratorType is_abstract = AST::DeclaratorType::NON_ABSTRACT) {
-  if (next_maybe_ptr_decl_operator()) {
-    TryParsePtrDeclarator(type, is_abstract);
-  } else {
-    TryParseNoPtrDeclarator(type, is_abstract);
-    if (token.type == TT_ARROW) {
-      token = lexer->ReadToken();
-      TryParseTypeID();
-    }
-  }
-}
-
-AST::InitializerNode TryParseExprOrBracedInitList(bool is_init_clause, bool in_init_list) {
+AST::PNode TryParseExprOrBracedInitList(bool is_init_clause, bool in_init_list) {
   // This function handles:
   // <brace-or-equal-initializer>    ::= = <initializer-clause>
   //                                   | <braced-init-list>
   // <initializer-clause>            ::= <assignment-expression>
   //                                   | <braced-init-list>
-  // and the `...` in
-  // <initializer-list>              ::= <initializer-clause> ...?
   if (token.type == TT_EQUALS && !is_init_clause) {
+    // `= <initializer-clause>`: delegate to the clause production and wrap as
+    // ASSIGN (so `= {...}` is an ASSIGN over a brace-init-list, not a bare
+    // BRACE), rather than peeking for `{` here.
     token = lexer->ReadToken();
-    if (token.type == TT_BEGINBRACE) {
-      return AST::Initializer::from(AST::AssignmentInitializer::from(TryParseBraceInitializer()));
-    } else {
-      return AST::Initializer::from(AST::AssignmentInitializer::from(TryParseExpression(Precedence::kAssign)));
-    }
+    std::vector<AST::PNode> vals;
+    vals.push_back(TryParseExprOrBracedInitList(/*is_init_clause=*/true, in_init_list));
+    return std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, nullptr, std::move(vals));
   } else if (token.type == TT_BEGINBRACE) {
-    auto val = AST::Initializer::from(TryParseBraceInitializer());
-    if (token.type == TT_ELLIPSES) {
-      if (in_init_list) {
-        token = lexer->ReadToken();
-        val->is_variadic = true;
-      } else {
-        herr->Error(token) << "Cannot use ellipses in brace initializer";
-        token = lexer->ReadToken();
-      }
-    }
-    return val;
+    return TryParseBraceInitializer();
   } else if (is_init_clause) {
-    auto val = AST::Initializer::from(TryParseExpression(Precedence::kAssign));
-    if (token.type == TT_ELLIPSES) {
-      if (in_init_list) {
-        token = lexer->ReadToken();
-        val->is_variadic = true;
-      } else {
-        herr->Error(token) << "Cannot use ellipses in initializer";
-        token = lexer->ReadToken();
-      }
-    }
-    return val;
+    return ParseExpression(Precedence::kAssign);
   } else {
     herr->Error(token) << "Expected equals ('=') or opening brace ('{') at start of initializer, got: '"
                        << token.content << '\'';
@@ -1308,66 +1200,78 @@ AST::InitializerNode TryParseExprOrBracedInitList(bool is_init_clause, bool in_i
   }
 }
 
-AST::BraceOrParenInitNode TryParseInitializerList(TokenType closing) {
-  AST::BraceOrParenInitNode init = std::make_unique<AST::BraceOrParenInitializer>();
+AST::InitializerNode TryParseInitializerList(TokenType closing) {
+  std::vector<AST::PNode> values;
   while (token.type != closing) {
-    init->values.emplace_back("", TryParseExprOrBracedInitList(true, true));
+    values.push_back(TryParseExprOrBracedInitList(true, true));
     if (token.type == TT_COMMA) {
       token = lexer->ReadToken();
     } else {
       break;
     }
   }
-  return init;
+  require_token(closing, "Expected closing brace ('}') at the end of brace initializer");
+  return std::make_unique<AST::Initializer>(AST::Initializer::Kind::BRACE, nullptr, std::move(values));
 }
 
-AST::BraceOrParenInitNode TryParseBraceInitializer() {
+AST::InitializerNode TryParseBraceInitializer() {
   require_token(TT_BEGINBRACE, "Expected opening brace ('{') at the start of brace initializer");
-  AST::BraceOrParenInitNode init = std::make_unique<AST::BraceOrParenInitializer>();
+  std::vector<AST::PNode> values;
   if (token.type == TT_DOT) {
-    init->kind = AST::BraceOrParenInitializer::Kind::DESIGNATED_INIT;
     while (token.type != TT_ENDBRACE) {
       token = lexer->ReadToken();
-      std::string name{token.content};
+      Token name = token;
       require_token(TT_IDENTIFIER, "Expected identifier after dot in designated initializer");
-      init->values.emplace_back(name, TryParseExprOrBracedInitList(false, false));
+      require_token(TT_EQUALS, "Expected '=' in designated initializer");
+      
+      // The designator's `=` is already consumed above, so the value is a plain
+      // initializer-clause (assignment-expression or braced-init-list), not a
+      // brace-or-equal-initializer: pass is_init_clause=true.
+      std::vector<AST::PNode> assign_vals;
+      assign_vals.push_back(TryParseExprOrBracedInitList(true, false));
+      
+      auto designator = std::make_unique<AST::IdentifierAccess>(name);
+      values.push_back(std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, std::move(designator), std::move(assign_vals)));
+
       if (token.type == TT_COMMA) {
         token = lexer->ReadToken();
       } else {
         break;
       }
     }
+    require_token(TT_ENDBRACE, "Expected closing brace ('}') at the end of brace initializer");
+    return std::make_unique<AST::Initializer>(AST::Initializer::Kind::BRACE, nullptr, std::move(values));
   } else {
-    init = TryParseInitializerList(TT_ENDBRACE);
-    init->kind = AST::BraceOrParenInitializer::Kind::BRACE_INIT;
+    return TryParseInitializerList(TT_ENDBRACE);
   }
-  require_token(TT_ENDBRACE, "Expected closing brace ('}') at the end of brace initializer");
-
-  return init;
 }
 
 AST::InitializerNode TryParseInitializer(bool allow_paren_init = true) {
   switch (token.type) {
     case TT_EQUALS: {
+      // `= <initializer-clause>`: consume the `=`, then delegate to the
+      // initializer-clause production (which itself handles either an
+      // assignment-expression or a braced-init-list) and wrap as ASSIGN. We do
+      // not peek for `{` here -- a copy-list-init `= {...}` is an ASSIGN whose
+      // value is a brace-init-list, which preserves the `=` for round-tripping.
       token = lexer->ReadToken();
-      if (token.type == TT_BEGINBRACE) {
-        return AST::Initializer::from(AST::AssignmentInitializer::from(TryParseBraceInitializer()));
-      } else {
-        return AST::Initializer::from(AST::AssignmentInitializer::from(TryParseExpression(Precedence::kAssign)));
-      }
+      std::vector<AST::PNode> vals;
+      vals.push_back(TryParseExprOrBracedInitList(/*is_init_clause=*/true, /*in_init_list=*/false));
+      return std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, nullptr, std::move(vals));
     }
 
-    case TT_BEGINBRACE: return AST::Initializer::from(TryParseBraceInitializer());
+    case TT_BEGINBRACE: return TryParseBraceInitializer();
 
     case TT_BEGINPARENTH: {
       if (!allow_paren_init) {
-        return AST::Initializer::from(TryParseExpression(Precedence::kAll));
+        std::vector<AST::PNode> vals;
+        vals.push_back(ParseExpression(Precedence::kAll));
+        return std::make_unique<AST::Initializer>(AST::Initializer::Kind::ASSIGN, nullptr, std::move(vals));
       } else {
-        AST::BraceOrParenInitNode init = std::make_unique<AST::BraceOrParenInitializer>();
-        init->kind = AST::BraceOrParenInitializer::Kind::PAREN_INIT;
+        std::vector<AST::PNode> values;
         token = lexer->ReadToken();
         while (token.type != TT_ENDPARENTH) {
-          init->values.emplace_back("", TryParseExprOrBracedInitList(true, true));
+          values.push_back(TryParseExprOrBracedInitList(true, true));
           if (token.type == TT_COMMA) {
             token = lexer->ReadToken();
           } else {
@@ -1375,7 +1279,7 @@ AST::InitializerNode TryParseInitializer(bool allow_paren_init = true) {
           }
         }
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after initializer");
-        return AST::Initializer::from(std::move(init));
+        return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN, nullptr, std::move(values));
       }
     }
 
@@ -1386,109 +1290,140 @@ AST::InitializerNode TryParseInitializer(bool allow_paren_init = true) {
   }
 }
 
-void maybe_assign_def(FullType *type) {
-  if ((contains_decflag_bitmask(type->flags, "long long") || contains_decflag_bitmask(type->flags, "long") ||
-       contains_decflag_bitmask(type->flags, "short")) &&
-      type->def == nullptr) {
-    maybe_assign_full_type(type, get_builtin("int"), token);
-  }
-}
-
-std::unique_ptr<AST::Node> TryParseDeclarations(bool parse_unbounded) {
+std::unique_ptr<AST::Node> TryParseDeclarations(
+    bool parse_unbounded,
+    AST::DeclaratorType decl_type = AST::DeclaratorType::NON_ABSTRACT) {
   bool is_global = token.content == "global";
   bool is_local = token.content == "local";
-  if (is_decl_specifier(token) || is_global || is_local) {
-    FullType type;
-    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(&type);
+  if (next_is_decl_specifier() || is_global || is_local) {
+    auto declspecs = std::make_unique<AST::DeclSpecList>();
+    AST::PNode id_expression;
+    std::pair<bool, bool> global_local = TryParseDeclSpecifierSeq(declspecs.get(), id_expression);
     if (global_local.first && global_local.second) {
       herr->Error(token) << "Cannot have both 'global' and 'local' in the same declaration";
       return nullptr;
     }
-    maybe_infer_int(type);
-    maybe_assign_def(&type);
-    if (type.def == nullptr) {
-      herr->Error(token) << "Unable to parse type specifier in declaration";
-      return nullptr;
-    }
-
+    // No guard against a missing type-name here: a non-empty spec run with no
+    // type-name still declares -- a sign/length specifier implies `int`, and
+    // any other untyped run (`const x;`) is EDL's universal `var` --
+    // materialized by parse_declarations via MakeTypeSpecifierSeq.
     auto sc = is_global || global_local.first   ? AST::DeclarationStatement::StorageClass::GLOBAL
               : is_local || global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                                 : AST::DeclarationStatement::StorageClass::TEMPORARY;
-    return parse_declarations(sc, type, AST::DeclaratorType::NON_ABSTRACT, parse_unbounded, {});
-  } else {
-    return nullptr;
+    return parse_declarations(sc, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
   }
+  return nullptr;
+}
+
+// "Is this `new` an array-new?" -- i.e. is the outermost derivation of the
+// type-id an array? Reads the unified declarator-expression-tree: an abstract
+// array declarator parses to a subscript `BinaryExpression` (op TT_BEGINBRACKET)
+// at the root, e.g. `int[]` -> Subscript(<abstract leaf>, <bound>) and
+// `int[][15]` -> Subscript(Subscript(...), 15). A pointer/grouped outermost
+// (`int *(**)[10]`) roots in a prefix `*`, so it's not array-new.
+static bool DeclaratorClauseIsArray(const std::unique_ptr<AST::DeclaratorClause> &c) {
+  if (!c || c->declarators.empty()) return false;
+  const auto &decl = c->declarators.front();
+  if (!decl->declarator_expr ||
+      decl->declarator_expr->type != AST::NodeType::BINARY_EXPRESSION)
+    return false;
+  return decl->declarator_expr->As<AST::BinaryExpression>()->operation.type == TT_BEGINBRACKET;
+}
+
+// In a new-type-id, grouping is never a declarator: the standard forbids parens
+// in a new-declarator precisely to disambiguate `new T(x)`'s `(x)` from a
+// function-declarator. We don't disambiguate at parse time -- we build the
+// operand tree like any other type-id, then reinterpret here. A top-level
+// grouped/call form on the declarator-expression is therefore the
+// new-initializer:
+//   `new int(5)`    -> declarator-expr Parenthetical(5)       -> init (5)
+//   `new int[2](5)` -> declarator-expr FunctionCall([2], 5)   -> init (5),
+//                      declarator drops to the bracketed array part.
+// Returns the peeled initializer (PAREN, no target) or null, mutating the
+// clause's declarator to drop the consumed group.
+AST::InitializerNode PeelNewInitializer(AST::DeclaratorClause *clause) {
+  if (!clause || clause->declarators.empty()) return nullptr;
+  auto &dexpr = clause->declarators.front()->declarator_expr;
+  if (!dexpr) return nullptr;
+  if (dexpr->type == AST::NodeType::PARENTHETICAL) {
+    std::vector<AST::PNode> vals;
+    vals.push_back(std::move(dexpr->As<AST::Parenthetical>()->expression));
+    dexpr = make_abstract_operand();
+    return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN, nullptr, std::move(vals));
+  }
+  if (dexpr->type == AST::NodeType::FUNCTION_CALL) {
+    auto *call = dexpr->As<AST::FunctionCallExpression>();
+    std::vector<AST::PNode> vals = std::move(call->arguments);
+    dexpr = std::move(call->function);
+    return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN, nullptr, std::move(vals));
+  }
+  return nullptr;
 }
 
 std::unique_ptr<AST::Node> TryParseNewExpression(bool is_global) {
   require_token(TT_S_NEW, "Expected 'new' in new-expression");
 
-  bool is_array = false;
-  AST::InitializerNode placement = nullptr;
-  FullType type;
-  AST::InitializerNode initializer = nullptr;
+  std::vector<AST::PNode> placement_args;
+  std::unique_ptr<AST::DeclaratorClause> type_node;
+  // True once the type-id was taken from a parenthesized form `new (T)`. Such a
+  // type is *wholly* parenthesized -- nothing inside it is an initializer (a
+  // grouped declarator like `int(*)()` must survive as the type), so we don't
+  // peel its tree; only a trailing token-group after the `)` is its initializer.
+  bool parenthesized_type = false;
 
+  // Optional leading `(...)`: either placement-new arguments (`new (ptr) T`) or
+  // a parenthesized type-id (`new (T)`). Only placement reads a *second*
+  // expression (the type) afterward; the parenthesized type-id is the type.
   if (token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
     if (next_is_type_specifier()) {
-      type = TryParseTypeID();
+      type_node = ParseTypeIdClause();
       require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
-      if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
-        initializer = TryParseInitializer(true);
-      }
-      is_array = !type.decl.components.empty() &&
-                 type.decl.components.begin()->kind == DeclaratorNode::Kind::ARRAY_BOUND;
-
-      MaybeConsumeSemicolon();
-
-      return std::make_unique<AST::NewExpression>(is_global, is_array, std::move(placement), std::move(type), std::move(initializer));
+      parenthesized_type = true;
     } else {
-      auto init = TryParseInitializerList(TT_ENDPARENTH);
-      init->kind = AST::BraceOrParenInitializer::Kind::PAREN_INIT;
-      placement = AST::Initializer::from(std::move(init));
-      placement->kind = AST::Initializer::Kind::PLACEMENT_NEW;
+      while (token.type != TT_ENDPARENTH) {
+        placement_args.push_back(ParseExpression(Precedence::kAssign));
+        if (token.type == TT_COMMA) token = lexer->ReadToken();
+        else if (token.type != TT_ENDPARENTH) {
+          herr->Error(token) << "Expected end of placement-new arguments";
+          return nullptr;
+        }
+      }
       require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after placement-new arguments");
     }
   }
 
-  // At this point we have handled:
-  // ::? new ( <type-id> ) <new-initializer>?
-
-  // Remaining:
-  // ::? new <new-placement> ( <type-id> ) <new-initializer>?
-  // ::? new <new-placement> <new-type-id> <new-initializer>?
-  // ::? new <new-type-id> <new-initializer>?
-  //
-  // This code path is taken only when <new-placement> is present, otherwise the paren would've been picked up earlier
-  if (token.type == TT_BEGINPARENTH) {
+  // The type itself, when not already taken as a parenthesized form above. After
+  // placement it may still be parenthesized (`new (ptr) (T)`); otherwise it's a
+  // bare new-type-id: type-specifier-seq + abstract declarator, parsed through
+  // the unified expression path (array bounds and any trailing initializer are
+  // captured into the one declarator-expression tree, to be peeled below).
+  if (!type_node && token.type == TT_BEGINPARENTH) {
     token = lexer->ReadToken();
-    type = TryParseTypeID();
+    type_node = ParseTypeIdClause();
     require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after new-expression type");
-  } else {
-    TryParseTypeSpecifierSeq(&type);
-    while (next_maybe_ptr_decl_operator()) {
-      if (next_maybe_nested_name()) {
-        TryParseMaybeNestedPtrOperator(&type);
-      } else {
-        TryParsePtrOperator(&type);
-      }
-    }
-
-    while (token.type == TT_BEGINBRACKET) {
-      TryParseArrayBoundsExpression(&type.decl, false);
-    }
+    parenthesized_type = true;
+  }
+  if (!type_node) {
+    type_node = ParseTypeIdClause();
   }
 
-  if (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE) {
+  // Peel the built tree, in order: a top-level grouped/call form on the bare
+  // type-id is the new-initializer; failing that, a trailing `(`/`{` token-group
+  // (the only place a parenthesized type-id's initializer can appear) is the
+  // initializer; a subscript root marks array-new; the remainder is the type.
+  AST::InitializerNode initializer;
+  if (!parenthesized_type) {
+    initializer = PeelNewInitializer(type_node.get());
+  }
+  if (!initializer && (token.type == TT_BEGINPARENTH || token.type == TT_BEGINBRACE)) {
     initializer = TryParseInitializer(true);
   }
-
-  is_array = !type.decl.components.empty() &&
-             type.decl.components.begin()->kind == DeclaratorNode::Kind::ARRAY_BOUND;
+  bool is_array = DeclaratorClauseIsArray(type_node);
 
   MaybeConsumeSemicolon();
 
-  return std::make_unique<AST::NewExpression>(is_global, is_array, std::move(placement), std::move(type), std::move(initializer));
+  return std::make_unique<AST::NewExpression>(is_global, is_array, std::move(placement_args), std::move(type_node), std::move(initializer));
 }
 
 std::unique_ptr<AST::Node> TryParseDeleteExpression(bool is_global) {
@@ -1501,33 +1436,122 @@ std::unique_ptr<AST::Node> TryParseDeleteExpression(bool is_global) {
     require_token(TT_ENDBRACKET, "Expected ']' to close '[' in delete-expression");
   }
 
-  auto node =  std::make_unique<AST::DeleteExpression>(is_global, is_array, TryParseExpression(Precedence::kUnaryPrefix));
+  auto node =  std::make_unique<AST::DeleteExpression>(is_global, is_array, ParseExpression(Precedence::kUnaryPrefix));
   MaybeConsumeSemicolon();
 
   return node;
 }
 
-std::unique_ptr<AST::Node> TryParseIdExpression() {
-  Declarator decl;
-  auto def = TryParseIdExpression(&decl);
-  
-  if (decl.name.content.empty()) {
-    herr->Error(token) << "Unable to parse id-expression";
-    return nullptr;
-  } else if (map_contains(declarations, decl.name.content)) {
-    return std::make_unique<AST::IdentifierAccess>(declarations[decl.name.content], decl.name);
-  } else {
-    return std::make_unique<AST::IdentifierAccess>(def, decl.name);
-  }
-}
+
 
 /// Parse an operand--this includes variables, literals, arrays, and
 /// unary expressions on these.
+// An abstract (nameless) declarator -- the operand position of a type-id with
+// no declarator-id. Encoded, per the established convention, as an
+// IdentifierAccess leaf with empty name content. Distinct from SyntaxError,
+// which marks a genuine parse failure.
+std::unique_ptr<AST::Node> make_abstract_operand() {
+  return std::make_unique<AST::IdentifierAccess>(Token{});
+}
+
+// Walk the declarator spine of an expression-tree to its terminal leaf and,
+// if that leaf is a non-empty identifier, return its name Token; otherwise
+// return nullptr. The spine is the set of edges a declarator may legally
+// recurse through: prefix `*`/`&`/`&&` -> operand, `[bound]` -> left (the
+// array's element), a call group -> function (the parenthesised declarator),
+// and `( ... )` -> expression. Any other node (e.g. a `+`, a literal, an
+// abstract empty-name leaf) means the operand is not a named declarator.
+// This is a purely structural, parse-time test -- no type lookup -- and is
+// how the most-vexing-parse branch decides `T(x) = ...` is a declaration
+// (named x) versus `T(expr) = ...` a temporary-assignment expression.
+const Token *find_declarator_name(AST::Node *expr) {
+  for (;;) {
+    if (!expr) return nullptr;
+    switch (expr->type) {
+      case AST::NodeType::IDENTIFIER: {
+        auto *id = expr->As<AST::IdentifierAccess>();
+        return id->name.content.empty() ? nullptr : &id->name;
+      }
+      case AST::NodeType::UNARY_PREFIX_EXPRESSION: {
+        auto *u = expr->As<AST::UnaryPrefixExpression>();
+        if (u->operation.type != TT_STAR && u->operation.type != TT_AMPERSAND &&
+            u->operation.type != TT_AND)
+          return nullptr;
+        expr = u->operand.get();
+        break;
+      }
+      case AST::NodeType::BINARY_EXPRESSION: {
+        auto *b = expr->As<AST::BinaryExpression>();
+        if (b->operation.type != TT_BEGINBRACKET) return nullptr;
+        expr = b->left.get();
+        break;
+      }
+      case AST::NodeType::FUNCTION_CALL:
+        expr = expr->As<AST::FunctionCallExpression>()->function.get();
+        break;
+      case AST::NodeType::PARENTHETICAL:
+        expr = expr->As<AST::Parenthetical>()->expression.get();
+        break;
+      default:
+        return nullptr;
+    }
+  }
+}
+
+// The deliberate set of tokens at which an operand may be *legitimately* absent
+// -- i.e. where an abstract declarator ends (a closing or separating token).
+// This is NOT the same as "tokens that return null in TryParseOperand": that
+// larger set also includes malformed-operand cases (`+`, `%`, `:`, ...) which
+// must stay errors even in a type-id context. This is the discriminator
+// between "abstract declarator" and "broken expression", so it gets its own
+// explicit list rather than piggybacking on a switch case. Only consulted when
+// allow_abstract_operand_ is set.
+// TODO(setters): revisit `=` (default-argument after an abstract param, e.g.
+// `f(int = 5)`) when the default-value flip-to-false is wired in.
+bool at_abstract_declarator_end() {
+  switch (token.type) {
+    case TT_ENDPARENTH: case TT_ENDBRACKET: case TT_COMMA:
+    case TT_SEMICOLON:  case TT_GREATER:    case TT_ENDOFCODE:
+    // A block close ends a semicolonless declaration (`{int cc = new int}`),
+    // so it ends an abstract declarator the same way `;` does.
+    case TT_ENDBRACE:
+      return true;
+    // A leading `[` is an abstract *array* declarator (`int[10]`, `new int[]`).
+    // Unlike `(`, it's unambiguous -- no grouped-declarator form begins with
+    // `[` -- so the operand is legitimately absent and we insert the abstract
+    // leaf here; the postfix-subscript loop in ParseExpression then attaches
+    // the `[bound]` to it. (`(` is deliberately excluded: in a `new` type-id a
+    // trailing `(` is the initializer, and elsewhere a grouped `(*)` `(` must
+    // stay a primary so the grouped declarator parses.)
+    case TT_BEGINBRACKET:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::unique_ptr<AST::Node> TryParseOperand() {
+  // In a type-id / declarator production (allow_abstract_operand_), a missing
+  // operand is an abstract declarator, not an error. Yielding the placeholder
+  // here also covers `*`/`&`-then-terminator (e.g. `int *)`), since the prefix
+  // operator parses its operand by recursing back through this function.
+  if (allow_abstract_operand_ && at_abstract_declarator_end()) {
+    return make_abstract_operand();
+  }
   switch (token.type) {
     case TT_BEGINBRACE: case TT_ENDBRACE:
     case TT_ENDPARENTH: case TT_ENDBRACKET:
     case TT_ENDOFCODE: case TT_SEMICOLON:
+      // Not consumed: closers and terminators belong to the caller. Callers
+      // with OPTIONAL expression slots (return values, for-loop clauses,
+      // empty groups and array literals) peek their current token before
+      // parsing, so reaching here is a genuinely missing expression -- raise,
+      // so the SyntaxError substituted upstream always has a diagnostic.
+      if (token.type == TT_ENDOFCODE) {
+        herr->Error(token) << "Expected an expression before end of code";
+      } else {
+        herr->Error(token) << "Expected an expression before '" << token.content << '\'';
+      }
       return nullptr;
     case TT_COLON:
       herr->ReportError(token, "Expected label or ternary expression before colon");
@@ -1575,7 +1599,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       Token unary_op = token;
       token = lexer->ReadToken();
 
-      if (auto exp = TryParseExpression(Precedence::kUnaryPrefix)) {
+      if (auto exp = ParseExpression(Precedence::kUnaryPrefix)) {
         AST::Operation op(unary_op.type, std::string(unary_op.content));
         return std::make_unique<AST::UnaryPrefixExpression>(std::move(exp), op);
       }
@@ -1583,27 +1607,17 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       return nullptr;
     }
 
-    case TT_BEGINPARENTH: {
-      auto paren = token;
-      token = lexer->ReadToken();
-      if (next_is_type_specifier()) {
-        FullType type = TryParseTypeID();
-        require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
-        auto expr = TryParseExpression(Precedence::kUnaryPrefix);
-        return std::make_unique<AST::CastExpression>(paren, std::move(type), std::move(expr), TT_BEGINPARENTH);
-      } else {
-        auto exp = TryParseExpression(Precedence::kAll);
-        require_token(TT_ENDPARENTH, "Expected closing parenthesis before '", token.content, "'");
-        return std::make_unique<AST::Parenthetical>(std::move(exp));
-      }
-    }
+    case TT_BEGINPARENTH:
+      return ParseParenthetical();
 
     case TT_BEGINBRACKET: {
       token = lexer->ReadToken();
       std::vector<std::unique_ptr<AST::Node>> elements;
 
-      while (std::unique_ptr<AST::Node> element = TryParseExpression(Precedence::kComma)) {
-        elements.push_back(std::move(element));
+      // `[]` is a legitimate empty array literal; peek the closer rather
+      // than reading an empty expression.
+      while (token.type != TT_ENDBRACKET && token.type != TT_ENDOFCODE) {
+        elements.push_back(ParseExpression(Precedence::kComma));
         if (token.type != TT_COMMA) break;
         token = lexer->ReadToken();
       }
@@ -1613,7 +1627,8 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     }
 
     case TT_DECLITERAL: case TT_BINLITERAL: case TT_OCTLITERAL:
-    case TT_HEXLITERAL: case TT_STRINGLIT: case TT_CHARLIT: {
+    case TT_HEXLITERAL: case TT_STRINGLIT: case TT_CHARLIT:
+    case TT_BOOLLITERAL: {
       Token res = token;
       token = lexer->ReadToken();
       return std::make_unique<AST::Literal>(std::move(res));
@@ -1622,22 +1637,40 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_SIZEOF: {
       token = lexer->ReadToken();
       if (token.type == TT_BEGINPARENTH) {
+        // `sizeof(...)`: the parenthesized operand is a type-id OR a value
+        // expression. Parse it through the uniform group (as ParseParenthetical
+        // does) so a type-name promotes to a DeclaratorClause and anything else
+        // parses as a full expression -- the old unconditional type-id parse
+        // choked on any top-level binary operator (`sizeof(x + 1)`). Classify
+        // by the resulting shape; a value keeps its source parens as a
+        // Parenthetical so the EXPR printing round-trips them.
         token = lexer->ReadToken();
-        FullType type = TryParseTypeID();
+        std::unique_ptr<AST::Node> body;
+        {
+          ScopedFlag group(maybe_declarator_group_, true);
+          body = ParseExpression(Precedence::kAll);
+        }
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after sizeof-expression");
-        return std::make_unique<AST::SizeofExpression>(std::move(type));
+        if (body && body->type == AST::NodeType::DECLARATOR_CLAUSE) {
+          return std::make_unique<AST::SizeofExpression>(AST::SizeofExpression::Kind::TYPE, std::move(body));
+        }
+        return std::make_unique<AST::SizeofExpression>(
+            AST::SizeofExpression::Kind::EXPR,
+            std::make_unique<AST::Parenthetical>(std::move(body)));
       } else if (token.type == TT_ELLIPSES) {
         token = lexer->ReadToken();
         require_token(TT_BEGINPARENTH, "Expected opening '(' after 'sizeof ...'");
         auto arg = token;
         if (require_token(TT_IDENTIFIER, "Expected identifier as argument to variadic sizeof")) {
           require_token(TT_ENDPARENTH, "Expected closing ')' after variadic sizeof");
-          return std::make_unique<AST::SizeofExpression>(std::string{arg.content});
+          // TODO: model pack-expansion explicitly; for now drop into an IdentifierAccess.
+          return std::make_unique<AST::SizeofExpression>(
+              AST::SizeofExpression::Kind::VARIADIC, std::make_unique<AST::IdentifierAccess>(arg));
         } else {
           return nullptr;
         }
       } else {
-        auto operand = TryParseExpression(Precedence::kUnaryPrefix);
+        auto operand = ParseExpression(Precedence::kUnaryPrefix);
         return std::make_unique<AST::SizeofExpression>(std::move(operand));
       }
     }
@@ -1645,9 +1678,15 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_ALIGNOF: {
       token = lexer->ReadToken();
       if (require_token(TT_BEGINPARENTH, "Expected opening parenthesis ('(') after 'alignof'")) {
-        FullType type = TryParseTypeID();
+        // Same uniform group parse as sizeof; no Parenthetical wrap here
+        // because the alignof printing always supplies the parens.
+        std::unique_ptr<AST::Node> body;
+        {
+          ScopedFlag group(maybe_declarator_group_, true);
+          body = ParseExpression(Precedence::kAll);
+        }
         require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after alignof-expression");
-        return std::make_unique<AST::AlignofExpression>(std::move(type));
+        return std::make_unique<AST::AlignofExpression>(std::move(body));
       } else {
         return nullptr;
       }
@@ -1656,7 +1695,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_CO_AWAIT: {
       auto oper = token;
       token = lexer->ReadToken();
-      auto expr = TryParseExpression(Precedence::kUnaryPrefix);
+      auto expr = ParseExpression(Precedence::kUnaryPrefix);
       AST::Operation op(oper.type, std::string(oper.content));
       return std::make_unique<AST::UnaryPrefixExpression>(std::move(expr), op);
     }
@@ -1666,7 +1705,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       token = lexer->ReadToken();
       if (require_token(TT_BEGINPARENTH, "Expected opening '(' after noexcept")) {
         token = lexer->ReadToken();
-        auto expr = TryParseExpression(Precedence::kAll);
+        auto expr = ParseExpression(Precedence::kAll);
         require_token(TT_ENDPARENTH, "Expected closing ')' after noexcept expression");
         AST::Operation op(oper.type, std::string(oper.content));
         return std::make_unique<AST::UnaryPrefixExpression>(std::move(expr), op);
@@ -1682,23 +1721,44 @@ std::unique_ptr<AST::Node> TryParseOperand() {
       Token oper = token;
       token = lexer->ReadToken();
       require_token(TT_LESS, "Expected '<' after '", oper.content, "'");
-      FullType type = TryParseTypeID();
+      auto type_node = ParseTypeIdClause();
       require_token(TT_GREATER, "Expected '>' after '", oper.content, "' type");
       require_token(TT_BEGINPARENTH, "Expected '(' before '", oper.content, "' expression");
-      auto expr = TryParseExpression(Precedence::kAll);
+      auto expr = ParseExpression(Precedence::kAll);
       require_token(TT_ENDPARENTH, "Expected ')' after '", oper.content, "' expression");
-      return std::make_unique<AST::CastExpression>(oper, std::move(type), std::move(expr), TT_ERROR);
+      return std::make_unique<AST::CastExpression>(oper, std::move(type_node), std::move(expr));
     }
 
     case TT_SCOPEACCESS: {
+      // A global `::` can qualify only new, delete, or an unqualified-id (a
+      // globally qualified user TYPE arrives as a plain identifier too,
+      // indistinguishable from a value without resolution -- classifying it
+      // is the semantic phase's job).
       token = lexer->ReadToken();
       if (token.type == TT_S_NEW) {
         return TryParseNewExpression(true);
       } else if (token.type == TT_S_DELETE) {
         return TryParseDeleteExpression(true);
-      } else {
-        return TryParseIdExpression();
       }
+      // A global-qualified id denotes the GLOBAL name only: do NOT delegate
+      // to TryParseIdExpression, whose unqualified path consults the local
+      // `declarations` map and EDL's implicit-local fallback -- neither may
+      // apply under explicit qualification. The qualification is carried as
+      // a ScopeAccess with a null lhs (= global scope); an unresolved name
+      // stays unresolved on the node for the semantic phase to bind in
+      // global scope.
+      if (token.type == TT_IDENTIFIER) {
+        Token name = token;
+        token = lexer->ReadToken();
+        auto access = std::make_unique<AST::ScopeAccess>(
+            nullptr, name, frontend->look_up(name.content));
+        if (token.type == TT_SCOPEACCESS) {
+          return TryParseNestedNameSpecifier(std::move(access));
+        }
+        return access;
+      }
+      herr->Error(token) << "Expected qualified-id after '::', got: '" << token.content << '\'';
+      return nullptr;
     }
 
     case TT_TILDE: {
@@ -1706,7 +1766,7 @@ std::unique_ptr<AST::Node> TryParseOperand() {
         Token unary_op = token;
         token = lexer->ReadToken();
 
-        if (auto exp = TryParseExpression(Precedence::kUnaryPrefix)) {
+        if (auto exp = ParseExpression(Precedence::kUnaryPrefix)) {
           AST::Operation op(unary_op.type, std::string(unary_op.content));
           return std::make_unique<AST::UnaryPrefixExpression>(std::move(exp), op);
         }
@@ -1728,31 +1788,59 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_TYPE_NAME:
     case TT_GLOBAL:
     case TT_LOCAL: {
+      // Inside a maybe-declarator group (parenthesized list), a type-name is
+      // promoted to a full type-id clause (specifiers + declarator) so the
+      // surrounding ParseExpression keeps going and ties the comma-list -- the
+      // uniform tuple. This fires before the functional-cast heuristic below,
+      // which would otherwise demand a `(`/`{` and reject a bare `(int)` / a
+      // declarator. A bare identifier (not a type) falls through to normal
+      // handling so `(int x, y, float z)`'s `y` stays an expression leaf.
+      if (maybe_declarator_group_ && (token.type == TT_TYPE_NAME || next_is_user_defined_type())) {
+        return ParseTypeIdClause();
+      }
       if (next_maybe_functional_cast()) {
-        FullType type;
-        TryParseTypeSpecifier(&type);
+        auto declspecs = std::make_unique<AST::DeclSpecList>();
+        AST::PNode id_expression = TryParseTypeSpecifier(declspecs.get());
         if (token.type == TT_BEGINPARENTH) {
-          auto tok = token;
           token = lexer->ReadToken();
-          auto expr = TryParseExpression(Precedence::kAll);
+          std::vector<AST::PNode> args;
+          {
+            // `Type(...)` is the same most-vexing ambiguity as the statement
+            // form: the parenthesized content may be an abstract declarator
+            // (`int (*)` as a type-id), so a missing operand is the abstract
+            // leaf, not an error -- the semantic phase classifies the shape.
+            ScopedFlag allow_abstract(allow_abstract_operand_, true);
+            args.push_back(ParseExpression(Precedence::kAll));
+          }
           require_token(TT_ENDPARENTH, "Expected closing parenthesis (')') after functional cast");
-          return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::FUNCTIONAL, tok,
-                                                       std::move(type), std::move(expr), TT_BEGINPARENTH);
+          return std::make_unique<AST::Initializer>(AST::Initializer::Kind::PAREN,
+                                                    MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs)),
+                                                    std::move(args));
         } else if (token.type == TT_BEGINBRACE) {
-          auto tok = token;
           auto init = TryParseInitializer(false);
           require_token(TT_ENDBRACE, "Expected closing brace ('}') after temporary object initializer");
-          return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::FUNCTIONAL, tok,
-                                                       std::move(type), std::move(init), TT_BEGINBRACE);
+          init->target = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
+          return init;
+        } else if (declspecs->specs.empty() && id_expression != nullptr) {
+          // A lone id-expression with no specifier run and no cast tokens is
+          // just a (possibly qualified) name read -- `test_vec<int>::size` as
+          // a value. Return the tree; whether the chain denotes a type or a
+          // value is the semantic phase's call.
+          return id_expression;
         } else {
           herr->Error(token) << "Expected opening parenthesis ('(') or brace ('{') after functional-cast type";
           return nullptr;
         }
-      } else {
-        return TryParseIdExpression();
       }
-      herr->Error(token) << "INTERNAL ERROR: " __FILE__ ":" << __LINE__ << ": Unreachable";
-      return nullptr;
+      // If the operand names a type (built-in via TT_TYPE_NAME, or a
+      // user-defined typedef/class/enum resolved through the frontend),
+      // produce a TypeSpecifierSeq and let the surrounding ParseExpression bail to
+      // the caller -- the caller decides whether this is a declaration, a
+      // cast target, a sizeof argument, etc.
+      if (token.type == TT_TYPE_NAME || next_is_user_defined_type()) {
+        return TryParseTypeID();
+      }
+      return TryParseIdExpression();
     }
 
     case TT_RETURN:   case TT_EXIT:   case TT_BREAK:   case TT_CONTINUE:
@@ -1774,9 +1862,14 @@ std::unique_ptr<AST::Node> TryParseOperand() {
     case TT_TYPENAME: case TT_OPERATOR: case TT_CONSTEXPR:
     case TT_CONSTINIT: case TT_CONSTEVAL: case TT_INLINE:
     case TT_STATIC: case TT_THREAD_LOCAL: case TT_EXTERN:
-    case TT_MUTABLE: case TT_UNION: case TT_SIGNED:
-    case TT_UNSIGNED: case TT_CONST: case TT_VOLATILE:
+    case TT_MUTABLE: case TT_UNION: case TT_DECLSPEC:
     case TT_ENUM: case TT_TYPEDEF: {
+      // Inside a maybe-declarator group, a decl-spec-led run (`const int`,
+      // bare `unsigned`) is a type-id clause, same as the type-name promotion
+      // in the identifier case above.
+      if (maybe_declarator_group_ && next_is_type_specifier()) {
+        return ParseTypeIdClause();
+      }
       herr->Error(token) << "Unexpected declarator";
       return nullptr;
     }
@@ -1796,13 +1889,35 @@ static bool ShouldAcceptPrecedence(const OperatorPrecedence &prec,
                 prec.associativity == Associativity::RTL);
 }
 
+// Operand shapes postfix ++/-- binds to: a name (qualified or not) or an
+// access chain (member access, subscript). Call results and parenthesized
+// groups are deliberately excluded: EDL statements need no semicolon, so
+// after `foo(12)` or a `while (cond)` header, a following `--x`/`++i` starts
+// the NEXT statement (or the loop body) -- the statement boundary outranks
+// postfix binding. Names and access chains carry no such boundary reading
+// (a bare `a[1]` statement does nothing), so `grid[x]++` binds.
+static bool operand_takes_postfix(AST::Node *operand) {
+  switch (operand->type) {
+    case AST::NodeType::IDENTIFIER:
+    case AST::NodeType::SCOPE_ACCESS:
+      return true;
+    case AST::NodeType::BINARY_EXPRESSION: {
+      TokenType op = operand->As<AST::BinaryExpression>()->operation.type;
+      return op == TT_DOT || op == TT_ARROW || op == TT_BEGINBRACKET;
+    }
+    default:
+      return false;
+  }
+}
+
 std::unique_ptr<AST::Node> TryParseLambdaExpression(std::unique_ptr<AST::Node> operand) {
   token = lexer->ReadToken();
   auto body = ParseStatementOrBlock();
   return std::make_unique<AST::LambdaExpression>(std::move(operand), std::move(body));
 }
 
-std::unique_ptr<AST::Node> TryParseExpression(int precedence, std::unique_ptr<AST::Node> operand = nullptr) {
+std::unique_ptr<AST::Node> ParseExpression(int precedence, std::unique_ptr<AST::Node> operand = nullptr) {
+  Token origin = token;
   if (operand == nullptr) {
     operand = TryParseOperand();
   }
@@ -1810,11 +1925,15 @@ std::unique_ptr<AST::Node> TryParseExpression(int precedence, std::unique_ptr<AS
     if (operand->type == AST::NodeType::DELETE || operand->type == AST::NodeType::NEW) {
       return operand;
     }
-    // TODO: Handle binary operators, unary postfix operators
-    // (including function calls, array indexing, etc).
-    // XXX: Maybe handle TT_IDENTIFIER here when `operand` names a type
-    // to parse a declaration as an expression. This is a bold move, but
-    // more robust than handling it in TryParseExpression.
+    // A bare type-id at LHS isn't an expression -- it's a declaration,
+    // c-style cast target, sizeof arg, etc. Return immediately so the
+    // caller can decide. (Per the longstanding XXX in this slot: this is
+    // the "bold move" that lets us drop the maybe_expression / to_expression
+    // panic-rollback machinery; the semantic phase is now load-bearing for
+    // disambiguating these uses.)
+    if (operand->type == AST::NodeType::TYPE_SPECIFIER_SEQ) {
+      return operand;
+    }
     while (token.type != TT_ENDOFCODE) {
       if(token.type == TT_JS_ARROW){
         operand = TryParseLambdaExpression(std::move(operand));
@@ -1824,15 +1943,8 @@ std::unique_ptr<AST::Node> TryParseExpression(int precedence, std::unique_ptr<AS
         }
         operand = TryParseBinaryExpression(precedence, std::move(operand));
       } else if (map_contains(Precedence::kUnaryPostfixPrec, token.type)) {
-        if (operand->type == AST::NodeType::BINARY_EXPRESSION) {
-          auto exp = operand->As<AST::BinaryExpression>();
-          if (exp->operation.type != TT_DOT && exp->operation.type != TT_ARROW) {
-            break;
-          }
-        }
-        bool valid_operand_type =
-            operand->type == AST::NodeType::IDENTIFIER || operand->type == AST::NodeType::BINARY_EXPRESSION;
-        if (precedence < Precedence::kUnaryPostfix || !valid_operand_type) {
+        if (precedence < Precedence::kUnaryPostfix ||
+            !operand_takes_postfix(operand.get())) {
           break;
         }
         operand = TryParseUnaryPostfixExpression(precedence, std::move(operand));
@@ -1859,10 +1971,15 @@ std::unique_ptr<AST::Node> TryParseExpression(int precedence, std::unique_ptr<AS
     }
     return operand;
   }
-  return nullptr;
+  // No operand parsed -- expression site reached without anything to parse.
+  // Naming convention: Parse* never returns null. TryParseOperand raises a
+  // diagnostic on every null return (optional-expression callers peek before
+  // calling), so a SyntaxError node never appears in a legitimate tree --
+  // substitute one so callers can rely on the result being non-null.
+  return std::make_unique<AST::SyntaxError>(origin);
 }
 
-std::unique_ptr<AST::BinaryExpression> TryParseBinaryExpression(int precedence, std::unique_ptr<AST::Node> operand) {
+std::unique_ptr<AST::Node> TryParseBinaryExpression(int precedence, std::unique_ptr<AST::Node> operand) {
   while (map_contains(Precedence::kBinaryPrec, token.type) &&
          precedence >= Precedence::kBinaryPrec[token.type].precedence && token.type != TT_ENDOFCODE) {
     Token oper = token;
@@ -1873,17 +1990,28 @@ std::unique_ptr<AST::BinaryExpression> TryParseBinaryExpression(int precedence, 
       herr->Error(token) << "Uncompleted binary expression";
     }
 
+    // EDL's universal access operator builds the uniform access node, the
+    // same shape `::` produces in id-expressions: chains left-fold as
+    // ScopeAccess(ScopeAccess(a, b), c). The semantic annotator classifies
+    // each link; the parser only records the shape.
+    if (oper.type == TT_DOT) {
+      Token name = token;
+      require_token(TT_IDENTIFIER, "Expected identifier after member access");
+      operand = std::make_unique<AST::ScopeAccess>(std::move(operand), name, oper);
+      continue;
+    }
+
     auto right = (rule.associativity == Associativity::LTR)
-        ? TryParseExpression(rule.precedence - 1)
+        ? ParseExpression(rule.precedence - 1)
         : (rule.associativity == Associativity::RTL)
-            ? TryParseExpression(rule.precedence)
+            ? ParseExpression(rule.precedence)
             : nullptr;
 
     AST::Operation op(oper.type, std::string(oper.content));
     operand = std::make_unique<AST::BinaryExpression>(std::move(operand), std::move(right), op);
   }
 
-  return dynamic_unique_pointer_cast<AST::BinaryExpression>(std::move(operand));
+  return operand;
 }
 
 std::unique_ptr<AST::UnaryPostfixExpression> TryParseUnaryPostfixExpression(
@@ -1903,11 +2031,11 @@ std::unique_ptr<AST::TernaryExpression> TryParseTernaryExpression(int precedence
 //  Token oper = token;
   token = lexer->ReadToken(); // Consume the operator
 
-  auto middle = TryParseExpression(Precedence::kBoolOr);
+  auto middle = ParseExpression(Precedence::kBoolOr);
 
   require_token(TT_COLON, "Expected colon (':') after expression in conditional operator");
 
-  auto right = TryParseExpression(Precedence::kTernary);
+  auto right = ParseExpression(Precedence::kTernary);
   operand = std::make_unique<AST::TernaryExpression>(std::move(operand), std::move(middle), std::move(right));
 
   return dynamic_unique_pointer_cast<AST::TernaryExpression>(std::move(operand));
@@ -1919,7 +2047,7 @@ std::unique_ptr<AST::BinaryExpression> TryParseSubscriptExpression(int precedenc
     Token oper = token;
     token = lexer->ReadToken(); // Consume the operator
 
-    auto right = TryParseExpression(Precedence::kAll);
+    auto right = ParseExpression(Precedence::kAll);
 
     AST::Operation op(oper.type, std::string(oper.content));
     operand = std::make_unique<AST::BinaryExpression>(std::move(operand), std::move(right), op);
@@ -1933,12 +2061,34 @@ std::unique_ptr<AST::BinaryExpression> TryParseSubscriptExpression(int precedenc
 std::unique_ptr<AST::FunctionCallExpression> TryParseFunctionCallExpression(int precedence, std::unique_ptr<AST::Node> operand) {
   (void)precedence;
   while (token.type == TT_BEGINPARENTH) {
-    // Token oper = token;
+    // A named value callee (`foo(...)`, `a::b(...)`) is a CALL: its
+    // parenthesized list can never be a function-declarator's parameter
+    // list, so a type-specifier-led argument there is a functional cast or
+    // temporary, not a parameter-declaration. Only type-flavored or grouped
+    // callees keep the maybe-declarator argument dispatch below.
+    const bool callee_is_named_value =
+        operand->type == AST::NodeType::IDENTIFIER ||
+        operand->type == AST::NodeType::SCOPE_ACCESS;
     token = lexer->ReadToken(); // Consume the operator
 
     std::vector<std::unique_ptr<AST::Node>> arguments{};
     while (token.type != TT_ENDPARENTH && token.type != TT_ENDOFCODE) {
-      arguments.emplace_back(TryParseExpression(Precedence::kTernary, nullptr));
+      // A type-specifier-led argument is a function-declarator parameter
+      // (`int x`, `int (*x)(int x)`, abstract `int (*)[10]`), not a value
+      // expression. Parse it as a single (maybe-abstract) parameter-declaration
+      // -- TPEFCOD yields a DeclarationStatement (or, for an unnamed functional
+      // cast, an expression) and recurses through nested parameter lists. The
+      // comma stays ours: parse_unbounded=false so commas separate parameters,
+      // not declarators. The call stays uniformly shaped; the semantic phase
+      // decides call-vs-declarator and reinterprets typed args accordingly.
+      if (!callee_is_named_value && next_is_decl_specifier()) {
+        arguments.emplace_back(TryParseEitherFunctionalCastOrDeclaration(
+            AST::DeclaratorType::MAYBE_ABSTRACT, /*parse_unbounded=*/false,
+            /*maybe_c_style_cast=*/false,
+            AST::DeclarationStatement::StorageClass::TEMPORARY));
+      } else {
+        arguments.emplace_back(ParseExpression(Precedence::kTernary, nullptr));
+      }
       if (token.type != TT_COMMA && token.type != TT_ENDPARENTH) {
         herr->Error(token) << "Expected ',' or ')' after function argument";
         break;
@@ -1964,7 +2114,7 @@ std::unique_ptr<AST::Node> TryParseControlExpression(SyntaxMode mode_) {
     require_token(TT_BEGINPARENTH, "Expected '(' before control expression");
   }
 
-  auto expr = TryParseExpression(Precedence::kAll);
+  auto expr = ParseExpression(Precedence::kAll);
 
   if (mode_ == SyntaxMode::STRICT) {
     require_token(TT_ENDPARENTH, "Expected ')' after control expression");
@@ -1976,12 +2126,11 @@ std::unique_ptr<AST::Node> TryParseControlExpression(SyntaxMode mode_) {
 std::unique_ptr<AST::Node> TryParseDeclOrTypeExpression() {
   if (next_is_decl_specifier() || next_maybe_functional_cast()) {
     if (token.type == TT_SCOPEACCESS) {
-      token = lexer->ReadToken();
-      if (token.type == TT_S_NEW) {
-        return TryParseNewExpression(true);
-      } else if (token.type == TT_S_DELETE) {
-        return TryParseDeleteExpression(true);
-      }
+      // The operand parser owns the global-`::` dispatch (new / delete /
+      // qualified-id); parse the whole expression statement from here. This
+      // used to consume the `::` itself and drop it on the floor when neither
+      // new nor delete followed, so `::x = 5` parsed unqualified.
+      return ParseExpression(Precedence::kAll);
     }
     return TryParseEitherFunctionalCastOrDeclaration(AST::DeclaratorType::NON_ABSTRACT, true, true,
                                                      AST::DeclarationStatement::StorageClass::TEMPORARY);
@@ -2035,7 +2184,7 @@ std::unique_ptr<AST::Node> TryParseStatement() {
     case TT_LESS: case TT_GREATER: case TT_LSH: case TT_RSH:
     case TT_LESSEQUAL: case TT_GREATEREQUAL:
     case TT_QMARK:
-      // Allow TryParseExpression to handle errors.
+      // Allow ParseExpression to handle errors.
       // (Fall through.)
     case TT_PLUS: case TT_MINUS: case TT_STAR: case TT_AMPERSAND:
     case TT_NOT: case TT_BANG: case TT_TILDE:
@@ -2043,12 +2192,13 @@ std::unique_ptr<AST::Node> TryParseStatement() {
     case TT_BEGINPARENTH: case TT_BEGINBRACKET:
     case TT_DECLITERAL: case TT_BINLITERAL: case TT_OCTLITERAL:
     case TT_HEXLITERAL: case TT_STRINGLIT: case TT_CHARLIT:
+    case TT_BOOLLITERAL:
     case TT_SCOPEACCESS: case TT_CO_AWAIT:
     case TT_NOEXCEPT: case TT_ALIGNOF: case TT_SIZEOF:
     case TT_STATIC_CAST: case TT_DYNAMIC_CAST:
     case TT_REINTERPRET_CAST: case TT_CONST_CAST:
     case TT_S_NEW: case TT_S_DELETE:{
-      auto node = TryParseExpression(Precedence::kAll);
+      auto node = ParseExpression(Precedence::kAll);
       MaybeConsumeSemicolon();
       return node;
     }
@@ -2067,7 +2217,7 @@ std::unique_ptr<AST::Node> TryParseStatement() {
     case TT_TYPE_NAME:
     case TT_TYPEDEF:
     case TT_CONSTEXPR: case TT_CONSTINIT: case TT_CONSTEVAL:
-    case TT_SIGNED: case TT_UNSIGNED: case TT_CONST: case TT_VOLATILE:
+    case TT_DECLSPEC:
     case TT_INLINE: case TT_STATIC: case TT_EXTERN:
     case TT_MUTABLE: case TT_THREAD_LOCAL: {
       AST::DeclarationStatement::StorageClass sc;
@@ -2086,19 +2236,18 @@ std::unique_ptr<AST::Node> TryParseStatement() {
                                        : AST::DeclarationStatement::StorageClass::LOCAL;
         token = lexer->ReadToken();
       }
-      if (is_decl_specifier(token) || next_maybe_functional_cast() || (is_global_local && token.type != TT_DOT)) {
+      if (next_is_decl_specifier() || next_maybe_functional_cast() || (is_global_local && token.type != TT_DOT)) {
         Token start = token;
         auto decl = TryParseEitherFunctionalCastOrDeclaration(AST::DeclaratorType::NON_ABSTRACT, true, false, sc);
         MaybeConsumeSemicolon();
         return decl;
-      } else {
-        jdi::definition *def = nullptr;
-        std::unique_ptr<AST::Node> operand =
-            is_global_local ? std::make_unique<AST::IdentifierAccess>(def, maybe_global_local) : nullptr;
-        auto node = TryParseExpression(Precedence::kAll, std::move(operand));
-        MaybeConsumeSemicolon();
-        return node;
       }
+      jdi::definition *def = nullptr;
+      std::unique_ptr<AST::Node> operand =
+          is_global_local ? std::make_unique<AST::IdentifierAccess>(def, maybe_global_local) : nullptr;
+      auto node = ParseExpression(Precedence::kAll, std::move(operand));
+      MaybeConsumeSemicolon();
+      return node;
     }
 
     case TT_RETURN: return ParseReturnStatement();
@@ -2158,15 +2307,22 @@ std::unique_ptr<AST::Node> TryParseStatement() {
 std::unique_ptr<AST::Node> ParseCFStmtBody() { return ParseStatementOrBlock(); }
 
 bool next_is_decl_specifier() {
-  return is_decl_specifier(token);
+  return is_decl_specifier(token.type);
 }
 
 std::unique_ptr<AST::Node> ParseStatementOrBlock() {
-  if (token.type == TT_BEGINBRACE) {
-    return ParseCodeBlock();
-  } else {
-    return TryParseStatement();
+  if (token.type == TT_BEGINBRACE) return ParseCodeBlock();
+  Token origin = token;
+  if (auto stmt = TryParseStatement()) return stmt;
+  // Naming convention: Parse* never returns null. TryParseStatement should
+  // have raised a diagnostic on herr; if it also failed to advance the
+  // token, that's a parser bug -- report it and force-advance so loop
+  // callers don't spin.
+  if (token.position == origin.position) {
+    herr->Error(token) << "Internal parser error: TryParseStatement returned null without advancing past `" << token.content << "`";
+    token = lexer->ReadToken();
   }
+  return std::make_unique<AST::SyntaxError>(origin);
 }
 
 std::unique_ptr<AST::CodeBlock> ParseCode() {
@@ -2227,57 +2383,102 @@ std::unique_ptr<AST::Node> TryParseEitherFunctionalCastOrDeclaration(
     AST::DeclaratorType decl_type, bool parse_unbounded,
     bool maybe_c_style_cast, AST::DeclarationStatement::StorageClass sc) {
   if (next_maybe_functional_cast()) {
-    FullType type;
-    TryParseTypeSpecifier(&type);
+    auto declspecs = std::make_unique<AST::DeclSpecList>();
+    AST::PNode id_expression = TryParseTypeSpecifier(declspecs.get());
     if (next_is_type_specifier() ||
         // Make sure we don't accidentally consume a c-style cast when its required
         (!(maybe_c_style_cast && token.type == TT_ENDPARENTH) &&
          (token.type != TT_BEGINBRACE && token.type != TT_BEGINPARENTH))) {
-      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(&type);
+      std::pair<bool, bool> global_local = TryParseTypeSpecifierSeq(declspecs.get(), id_expression);
       if (global_local.first && global_local.second) {
         herr->Error(token) << "Cannot have both `global` and `local` storage class specifiers";
       }
       sc = global_local.first    ? AST::DeclarationStatement::StorageClass::GLOBAL
            : global_local.second ? AST::DeclarationStatement::StorageClass::LOCAL
                                  : sc;
-      maybe_assign_def(&type);
-      return parse_declarations(sc, type, decl_type, parse_unbounded, {});
+      return parse_declarations(sc, std::move(declspecs), std::move(id_expression), decl_type, parse_unbounded, {});
     } else if (token.type == TT_BEGINBRACE) {
-      Token tok = token;
-      return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::FUNCTIONAL, tok, FullType{type.def},
-                                                   TryParseInitializer(), TT_BEGINBRACE);
+      auto init = TryParseBraceInitializer();
+      init->target = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
+      return init;
     } else if (token.type == TT_BEGINPARENTH) {
-      Token tok = token;
-      auto declarator = TryParseNoPtrDeclarator(&type, decl_type, true);
-      if (declarator != nullptr) {
-        return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::FUNCTIONAL, tok, FullType{type.def},
-                                                     std::move(declarator), TT_BEGINPARENTH);
-      } else {
-        if (type.decl.has_nested_declarator && type.decl.nested_declarator == 0) {
-          type.decl = std::move(*type.decl.components[0]
-                                 .as<NestedNode>()
-                                 .as<std::unique_ptr<Declarator>>()
-                                 .release());
-        }
-        std::vector<AST::DeclarationStatement::Declaration> decls = {};
-        decls.emplace_back(std::move(type), next_is_start_of_initializer() ? TryParseInitializer() : nullptr);
-        if (token.type == TT_COMMA && parse_unbounded) {
-          maybe_assign_def(&type);
-          return parse_declarations(sc, type, decl_type, parse_unbounded, std::move(decls), true);
-        } else {
-          return std::make_unique<AST::DeclarationStatement>(sc, decls[0].declarator->def, std::move(decls));
+      // `Foo( ... )`: parse as a call-shaped expression with a TypeSpecifierSeq callee.
+      // This is the most-vexing-parse: it could be a functional cast, a
+      // temporary-object expression, or a declaration whose declarator is
+      // parenthesized (`Foo (*p)`). The parser stays context-free and emits
+      // the call shape uniformly; the semantic phase disambiguates. (Replaces
+      // the old speculative declarator-parse-then-rollback via to_expression.)
+      //
+      // NB comma precedence: kAll includes the comma operator, so
+      // `Foo(*p), q` parses as a comma-expression here, NOT as two declarators
+      // sharing the `Foo` spec (the way the declaration parser treats a comma).
+      // When the semantic phase resolves this construct to a declaration it
+      // must split the top-level comma into per-declarator nodes; when it
+      // resolves to an expression the comma-expression stands.
+      auto callee = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
+      // The call shape is a maybe-declarator context: when this production
+      // permits an abstract declarator, its argument positions may hold
+      // abstract shapes too (`int (*)[10]` as a nested parameter), so the
+      // abstract-operand flag follows decl_type through the call parse.
+      std::unique_ptr<AST::FunctionCallExpression> call;
+      {
+        ScopedFlag allow_abstract(allow_abstract_operand_,
+                                  decl_type != AST::DeclaratorType::NON_ABSTRACT);
+        call = TryParseFunctionCallExpression(Precedence::kAll, std::move(callee));
+      }
+
+      // [stmt.ambig]: "if it can be a declaration, it is."
+      // Convert a cast like `int(identifier)` to a declaration.
+      // Notably, that cast must have exactly one argument:
+      // `int(a,b)` is not declaring both `a` and `b`.
+      if (call->arguments.size() == 1) {
+        if (const Token *namep = find_declarator_name(call->arguments[0].get())) {
+          Token name = *namep;
+          auto specifiers = dynamic_unique_pointer_cast<AST::TypeSpecifierSeq>(std::move(call->function));
+          // The first parenthesized group was consumed as the call's argument
+          // list, so its content is the *inner* of a parenthesized declarator.
+          // Whether those parens are meaningful grouping depends on what follows
+          // the group: a trailing declarator postfix (`int(*p)[10]`,
+          // `int(*p)(int)`) binds to the whole group, so re-wrap it as a grouping
+          // Parenthetical and continue the postfix loop (kFuncCall continues only
+          // `[]`/`()` and stops at any binary op or `=`). With nothing trailing
+          // (`int(*(*a)[10])`) the parens are redundant grouping around the entire
+          // declarator -- strip them and take the bare argument as the declarator.
+          AST::PNode declarator_expr;
+          if (token.type == TT_BEGINBRACKET || token.type == TT_BEGINPARENTH) {
+            auto paren = std::make_unique<AST::Parenthetical>(std::move(call->arguments[0]));
+            declarator_expr = ParseExpression(Precedence::kFuncCall, std::move(paren));
+          } else {
+            declarator_expr = std::move(call->arguments[0]);
+          }
+          std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
+          declarators.push_back(std::make_unique<AST::InitDeclarator>(
+              name, std::move(declarator_expr),
+              next_is_start_of_initializer() ? TryParseInitializer() : nullptr));
+          auto clause = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
+          register_declarations(clause.get());
+          return std::make_unique<AST::DeclarationStatement>(sc, std::move(clause));
         }
       }
+      return ParseExpression(Precedence::kAll, std::move(call));
     } else if (token.type == TT_ENDPARENTH && maybe_c_style_cast) {
       token = lexer->ReadToken();
-      return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::C_STYLE, token, std::move(type),
-                                                   TryParseExpression(Precedence::kAll), TT_BEGINPARENTH);
+      // The spec-seq was consumed up-front and the `)` proves there's no
+      // declarator, so wrap it in a DeclaratorClause with a single abstract
+      // (declarator-less) init-declarator -- keeping cast->type uniformly a
+      // DeclaratorClause, same as the operand-level C-style and named casts.
+      auto specifiers = MakeTypeSpecifierSeq(std::move(id_expression), std::move(declspecs));
+      std::vector<std::unique_ptr<AST::InitDeclarator>> declarators;
+      declarators.push_back(std::make_unique<AST::InitDeclarator>());
+      auto type_node = std::make_unique<AST::DeclaratorClause>(std::move(specifiers), std::move(declarators));
+      return std::make_unique<AST::CastExpression>(AST::CastExpression::Kind::C_STYLE, token, std::move(type_node),
+                                                   ParseExpression(Precedence::kAll));
     } else {
       // This should be unreachable...
-      return TryParseDeclarations(parse_unbounded);
+      return TryParseDeclarations(parse_unbounded, decl_type);
     }
   } else {
-    return TryParseDeclarations(parse_unbounded);
+    return TryParseDeclarations(parse_unbounded, decl_type);
   }
 }
 
@@ -2293,7 +2494,7 @@ std::unique_ptr<AST::ForLoop> ParseForLoop() {
     token = lexer->ReadToken();
     is_conventional = true;
   }
-  if (is_decl_specifier(token)) {
+  if (next_is_decl_specifier()) {
     init = TryParseEitherFunctionalCastOrDeclaration(
         AST::DeclaratorType::NON_ABSTRACT, true, is_conventional,
         AST::DeclarationStatement::StorageClass::TEMPORARY);
@@ -2303,20 +2504,21 @@ std::unique_ptr<AST::ForLoop> ParseForLoop() {
         is_conventional = false;
       }
     }
-  } else {
-    init = TryParseExpression(Precedence::kAll, nullptr);
+  } else if (token.type != TT_SEMICOLON) {
+    // All three clauses are optional; an omitted one is null, not a sentinel.
+    init = ParseExpression(Precedence::kAll, nullptr);
   }
   if (token.type == TT_ENDPARENTH) {
     is_conventional = false;
     token = lexer->ReadToken();
   }
   require_token(TT_SEMICOLON, "Expected semicolon (';') after for-loop initializer");
-  if (token.type != TT_SEMICOLON) {
+  if (token.type != TT_SEMICOLON && token.type != TT_ENDPARENTH) {
     cond = TryParseControlExpression(SyntaxMode::GML);
   }
   require_token(TT_SEMICOLON, "Expected semicolon (';') after for-loop condition");
-  if (token.type != TT_SEMICOLON) {
-    incr = TryParseExpression(Precedence::kAll);
+  if (token.type != TT_SEMICOLON && token.type != TT_ENDPARENTH) {
+    incr = ParseExpression(Precedence::kAll);
   }
 
   if (is_conventional) {
@@ -2373,15 +2575,17 @@ std::unique_ptr<AST::WhileLoop> ParseRepeatStatement() {
 
 std::unique_ptr<AST::ReturnStatement> ParseReturnStatement() {
   token = lexer->ReadToken();
-  auto value = TryParseExpression(Precedence::kAll);
+  // The value is optional: a bare `return` carries a null expression, not a
+  // sentinel. Peek the statement's legitimate enders before parsing.
+  AST::PNode value;
+  if (token.type != TT_SEMICOLON && token.type != TT_ENDBRACE &&
+      token.type != TT_ENDOFCODE) {
+    value = ParseExpression(Precedence::kAll);
+  }
 
   MaybeConsumeSemicolon();
 
-  if (value) {
-    return std::make_unique<AST::ReturnStatement>(std::move(value), false);
-  } else {
-    return std::make_unique<AST::ReturnStatement>(nullptr, false);
-  }
+  return std::make_unique<AST::ReturnStatement>(std::move(value), false);
 }
 
 std::unique_ptr<AST::BreakStatement> ParseBreakStatement() {
@@ -2456,7 +2660,7 @@ std::unique_ptr<AST::Node> ParseCaseOrDefaultStatement(bool is_default) {
     require_token(TT_COLON, "Expected colon (':') after 'default'");
   } else {
     require_token(TT_S_CASE, "Expected 'case' at the start of case statement");
-    expr = TryParseExpression(Precedence::kAll);
+    expr = ParseExpression(Precedence::kAll);
     require_token(TT_COLON, "Expected colon (':') after case expression");
   }
 
@@ -2487,92 +2691,89 @@ std::unique_ptr<AST::WithStatement> ParseWithStatement() {
 
 };  // class AstBuilder
 
+// The source token of an id-expression tree's final segment, for reporting
+// against; null for token-free roots (ImplicitType, Decltype).
+static const Token *id_expression_token(AST::Node *node) {
+  if (node == nullptr) return nullptr;
+  switch (node->type) {
+    case AST::NodeType::IDENTIFIER:
+      return &node->As<AST::IdentifierAccess>()->name;
+    case AST::NodeType::SCOPE_ACCESS:
+      return &node->As<AST::ScopeAccess>()->name;
+    case AST::NodeType::TEMPLATE_ID:
+      return id_expression_token(node->As<AST::TemplateId>()->name.get());
+    default:
+      return nullptr;
+  }
+}
+
 class SyntaxChecker : public AST::Visitor {
   ErrorHandler *herr;
   const LanguageFrontend * frontend;
 
  public:
   SyntaxChecker(ErrorHandler *herr, const LanguageFrontend *fe) : herr(herr), frontend(fe) {}
-  bool VisitFunctionCallExpression(AST::FunctionCallExpression &node) {
-    if (node.function->type == AST::NodeType::IDENTIFIER) {
-      auto func = node.function->As<AST::IdentifierAccess>();
-      jdi::definition *def = nullptr;
-      if (std::holds_alternative<jdi::definition *>(func->type)) {
-        def = std::get<jdi::definition *>(func->type);
-      } else {
-        node.RecursiveSubVisit(*this);
-        return false;
-      }
-      unsigned int min = 0;
-      unsigned int max = 0;
-      frontend->definition_parameter_bounds(def, min, max);
-      Token tok;
-      tok.content = func->name.content;
-      tok.type = TT_IDENTIFIER;
-      if (max != unsigned(-1)) {
-        if (node.arguments.size() < min) {
-          herr->Error(tok) << "Too few arguments to function call";
-        } else if (node.arguments.size() > max) {
-          herr->Error(tok) << "Too many arguments to function call";
-        }
+
+  bool VisitTypeSpecifierSeq(AST::TypeSpecifierSeq &node) {
+    // A specifier run names at most one base type. The parser retains any
+    // surplus trees on the spec list (last one wins the id-expression slot)
+    // rather than judging mid-parse; the diagnostic lives here, reported
+    // against the winning (i.e. colliding) name.
+    if (node.declspecs && !node.declspecs->extra_base_types.empty()) {
+      if (const Token *at = id_expression_token(node.id_expression.get())) {
+        herr->Error(*at) << "Usage of two types in type specifier";
+      } else if (!node.declspecs->specs.empty()) {
+        herr->Error(node.declspecs->specs.front()) << "Usage of two types in type specifier";
       }
     }
     node.RecursiveSubVisit(*this);
     return false;
   }
 
+  // Call argument checking is deliberately absent here: a callee's identity
+  // (and thus its arity) isn't knowable until the semantic layer resolves
+  // dot accesses and instance lookups, so validate_call lives on the
+  // SemanticAnnotator.
+
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) {
-    if (node.declarations.size()) {
-      auto &type = node.declarations[0].declarator;
-      if (type) {
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "unsigned") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "signed")) {
-          Token tok;
-          tok.content = "unsigned";
-          tok.type = TT_UNSIGNED;
-          herr->Error(tok) << "Conflicting use of 'unsigned' and 'signed' in the same type specifier";
+    // TODO: belongs in a dedicated semantic-validation pass, not interleaved
+    // with syntactic checks. Tracked separately.
+    //
+    // Flag conflicts are properties of the shared decl-spec sequence, read
+    // from the clause's specifiers->declspecs. Pairs that the parser already
+    // rejects while folding (`long short`) are not re-checked here.
+    auto *type_id = node.clause ? node.clause->specifiers.get() : nullptr;
+    if (type_id && type_id->declspecs) {
+      const AST::DeclSpecList &declspecs = *type_id->declspecs;
+      const std::size_t flags = declspecs.flags;
+      // signed/unsigned: `signed` writes no flag bits (JDI encodes it as the
+      // absence of unsigned), so the pair is only detectable from the retained
+      // spec tokens. The parser catches unsigned-then-signed at fold time;
+      // this catches both orders, reported on the real `signed` token.
+      if (flags & AstBuilder::flag_mask(jdi::builtin_flag__unsigned)) {
+        for (const Token &spec : declspecs.specs) {
+          if (spec.content == "signed") {
+            herr->Error(spec) << "Conflicting use of 'signed' and 'unsigned' in the same type specifier";
+            break;
+          }
         }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "long") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "short")) {
-          Token tok;
-          tok.content = "long";
-          tok.type = TT_TYPE_NAME;
-          herr->Error(tok) << "Conflicting use of 'long' and 'short' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "const") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "mutable")) {
-          Token tok;
-          tok.content = "const";
-          tok.type = TT_CONST;
-          herr->Error(tok) << "Conflicting use of 'const' and 'mutable' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "static") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "register")) {
-          Token tok;
-          tok.content = "static";
-          tok.type = TT_STATIC;
-          herr->Error(tok) << "Conflicting use of 'static' and 'register' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "inline") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "register")) {
-          Token tok;
-          tok.content = "inline";
-          tok.type = TT_INLINE;
-          herr->Error(tok) << "Conflicting use of 'inline' and 'register' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "extern") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "register")) {
-          Token tok;
-          tok.content = "extern";
-          tok.type = TT_EXTERN;
-          herr->Error(tok) << "Conflicting use of 'extern' and 'register' in the same type specifier";
-        }
-        if (AstBuilder::contains_decflag_bitmask(type->flags, "mutable") &&
-            AstBuilder::contains_decflag_bitmask(type->flags, "static")) {
-          Token tok;
-          tok.content = "mutable";
-          tok.type = TT_MUTABLE;
-          herr->Error(tok) << "Conflicting use of 'mutable' and 'static' in the same type specifier";
+      }
+      static const struct { jdi::typeflag *const *a, *const *b; } conflicts[] = {
+        {&jdi::builtin_flag__const,   &jdi::builtin_flag__mutable },
+        {&jdi::builtin_flag__static,  &jdi::builtin_flag__register},
+        {&jdi::builtin_flag__inline,  &jdi::builtin_flag__register},
+        {&jdi::builtin_flag__mutable, &jdi::builtin_flag__static  },
+      };
+      for (const auto &c : conflicts) {
+        const jdi::typeflag *a = *c.a, *b = *c.b;
+        if (AstBuilder::flag_matches(flags, a) && AstBuilder::flag_matches(flags, b)) {
+          const Token *at = nullptr;
+          for (const Token &spec : declspecs.specs)
+            if (spec.content == a->name) { at = &spec; break; }
+          if (at != nullptr) {
+            herr->Error(*at) << "Conflicting use of '" << a->name << "' and '"
+                             << b->name << "' in the same type specifier";
+          }
         }
       }
     }

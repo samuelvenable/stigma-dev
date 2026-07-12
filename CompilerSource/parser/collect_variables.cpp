@@ -61,7 +61,7 @@ struct scope_ignore {
 
 using enigma::parsing::AST;
 
-std::string GetFullType(enigma::parsing::FullType &ft) {
+std::string GetFullType(const jdi::full_type &ft, std::string_view declared_name) {
   std::string type;
   std::vector<std::size_t> flags_values = {
       jdi::builtin_flag__const->value,    jdi::builtin_flag__static->value,       jdi::builtin_flag__volatile->value,
@@ -83,7 +83,8 @@ std::string GetFullType(enigma::parsing::FullType &ft) {
 
   for (std::size_t i = 0; i < flags_values.size(); i++) {
     if ((ft.flags & flags_masks[i]) == flags_values[i]) {
-      if (flags_names[i] != "signed" || (flags_names[i] == "signed" && ft.def->name == "char")) {
+      // ft.def may be null: an unresolved type defers to the semantic phase.
+      if (flags_names[i] != "signed" || (ft.def && ft.def->name == "char")) {
         type += flags_names[i] + " ";
       }
     }
@@ -91,13 +92,12 @@ std::string GetFullType(enigma::parsing::FullType &ft) {
 
   // type += ft.def->name + " ";
 
-  std::string name = std::string(ft.decl.name.content);
-  if (name != "" && !ft.decl.components.size()) {
+  std::string name(declared_name);
+  if (name != "" && ft.refs.size() == 0) {
     type += name + " ";
   }
 
-  jdi::ref_stack stack;
-  ft.decl.to_jdi_refstack(stack);
+  const jdi::ref_stack &stack = ft.refs;
   auto first = stack.begin();
 
   std::string ref;
@@ -129,7 +129,6 @@ std::string GetFullType(enigma::parsing::FullType &ft) {
     }
 
     if (print_name) {
-      std::string name = std::string(ft.decl.name.content);
       if (name != "") {
         if (it->type == jdi::ref_stack::RT_ARRAYBOUND) {
           ref = name + ref;
@@ -161,7 +160,7 @@ class DeclGatheringVisitor : public AST::Visitor {
     if (node->type == AST::NodeType::IDENTIFIER) {
       std::string name = node->As<AST::IdentifierAccess>()->name.content;
       if (parsed_scope->declarations.find(name) != parsed_scope->declarations.end()) {
-        node->As<AST::IdentifierAccess>()->type = parsed_scope->declarations[name];
+        node->As<AST::IdentifierAccess>()->def = parsed_scope->declarations[name];
         return "";
       } else if (script_names.find(name) != script_names.end()) {
         if (node->type == AST::NodeType::FUNCTION_CALL) {
@@ -192,26 +191,6 @@ class DeclGatheringVisitor : public AST::Visitor {
     }
   }
 
-  bool AddGlobal(AST::BinaryExpression &node) {
-    if (node.left->type == AST::NodeType::IDENTIFIER) {
-      auto left = node.left->As<AST::IdentifierAccess>();
-      if (left->name.content == "global" && node.operation.type == enigma::parsing::TokenType::TT_DOT) {
-        auto right = node.right->As<AST::IdentifierAccess>();
-        parsed_scope->globals[right->name.content] = dectrip("var");
-        parsed_scope->locals[right->name.content] = dectrip("var");
-        cs->add_dot_accessed_local(right->As<AST::IdentifierAccess>()->name.content);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  void AddDot(AST::PNode &node) {
-    if (!node) return;
-    std::string name = CheckIfIdentifier(node);
-    if (name != "") parsed_scope->dots[name] = 0;
-    cs->add_dot_accessed_local(name);
-  }
 
   void AddFunction(AST::FunctionCallExpression &node) {
     std::string name = CheckIfIdentifier(node.function);
@@ -227,10 +206,15 @@ class DeclGatheringVisitor : public AST::Visitor {
   bool VisitDeclarationStatement(AST::DeclarationStatement &node) {
     bool is_global = node.storage_class == AST::DeclarationStatement::StorageClass::GLOBAL;
     bool is_local = node.storage_class == AST::DeclarationStatement::StorageClass::LOCAL;
-    for (const auto &decl : node.declarations) {
-      std::string name = decl.declarator->decl.name.content;
-      std::string ftype = GetFullType(*decl.declarator);
-      std::string type = decl.declarator->def->name;
+    auto *type_id = node.clause ? node.clause->specifiers.get() : nullptr;
+    jdi::definition *spec_def = type_id ? type_id->to_jdi_fulltype().def : nullptr;
+    for (const auto &entry : node.clause->declarators) {
+      std::string name(entry->name.content);
+      jdi::full_type jft;
+      if (type_id) jft = type_id->to_jdi_fulltype();
+      enigma::parsing::walk_declarator_expr(entry->declarator_expr.get(), jft.refs);
+      std::string ftype = GetFullType(jft, entry->name.content);
+      std::string type = spec_def ? spec_def->name : "";
       size_t pos = ftype.find(name);
       std::string prefix;
       std::string suffix;
@@ -244,25 +228,43 @@ class DeclGatheringVisitor : public AST::Visitor {
       if (is_global) parsed_scope->globals[name] = dtrip;
       if (is_local) parsed_scope->locals[name] = dtrip;
       cs->add_dot_accessed_local(name);
-      parsed_scope->declarations[name] = node.def;
+      parsed_scope->declarations[name] = spec_def;
     }
 
-    for (const auto &decl : node.declarations) {
-      if (decl.init) {
-        VisitInitializer(*decl.init);
+    for (const auto &entry : node.clause->declarators) {
+      if (entry->init) {
+        VisitInitializer(*entry->init);
       }
     }
     return false;
   }
 
   bool VisitBinaryExpression(AST::BinaryExpression &node) {
-    bool added = AddGlobal(node);
-    if (!added) {
-      AddLocal(node.left);
-      if (node.operation.type == enigma::parsing::TokenType::TT_DOT) {
-        AddDot(node.right);
+    AddLocal(node.left);
+    AddLocal(node.right);
+    node.RecursiveSubVisit(*this);
+    return false;
+  }
+
+  // EDL dot accesses arrive as the uniform access node. global.<name>
+  // declares a global; any other dot marks <name> as a dot-accessed local
+  // so the accessor generator can reach it on every object.
+  bool VisitScopeAccess(AST::ScopeAccess &node) {
+    if (node.op.type == enigma::parsing::TokenType::TT_DOT) {
+      std::string name(node.name.content);
+      if (node.lhs && node.lhs->type == AST::NodeType::IDENTIFIER &&
+          node.lhs->As<AST::IdentifierAccess>()->name.content == "global") {
+        parsed_scope->globals[name] = dectrip("var");
+        parsed_scope->locals[name] = dectrip("var");
+        cs->add_dot_accessed_local(name);
       } else {
-        AddLocal(node.right);
+        AddLocal(node.lhs);
+        // Built-in tier locals route through the generated tier accessor,
+        // not a per-name varaccess; keep them out of the dot map.
+        if (!lang->is_shared_local(name)) {
+          parsed_scope->dots[name] = 0;
+          cs->add_dot_accessed_local(name);
+        }
       }
     }
     node.RecursiveSubVisit(*this);
@@ -303,149 +305,13 @@ class DeclGatheringVisitor : public AST::Visitor {
     return false;
   }
 
-  bool VisitIfStatement(AST::IfStatement &node) {
-    AddLocal(node.condition);
-    AddLocal(node.true_branch);
-    AddLocal(node.false_branch);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitUnaryPrefixExpression(AST::UnaryPrefixExpression &node) {
-    AddLocal(node.operand);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitUnaryPostfixExpression(AST::UnaryPostfixExpression &node) {
-    AddLocal(node.operand);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitTernaryExpression(AST::TernaryExpression &node) {
-    AddLocal(node.condition);
-    AddLocal(node.true_expression);
-    AddLocal(node.false_expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitLambdaExpression(AST::LambdaExpression &node) {
-    // I think no need to add locals for the arguments, because we give them `auto` in the pretty printer
-    AddLocal(node.body);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  virtual bool VisitSizeofExpression(AST::SizeofExpression &node) {
-    if (node.kind == AST::SizeofExpression::Kind::EXPR) {
-      AddLocal(std::get<AST::PNode>(node.argument));
-    }
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitCastExpression(AST::CastExpression &node) {
-    AddLocal(node.expr);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitParenthetical(AST::Parenthetical &node) {
-    AddLocal(node.expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitArray(AST::Array &node) {
-    for (auto &elem : node.elements) AddLocal(elem);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitForLoop(AST::ForLoop &node) {
-    AddLocal(node.assignment);
-    AddLocal(node.condition);
-    AddLocal(node.increment);
-    AddLocal(node.body);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitWhileLoop(AST::WhileLoop &node) {
-    AddLocal(node.condition);
-    AddLocal(node.body);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  virtual bool VisitDoLoop(AST::DoLoop &node) {
-    AddLocal(node.body);
-    AddLocal(node.condition);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitCaseStatement(AST::CaseStatement &node) {
-    AddLocal(node.value);
-    // CaseStatement::statements is code block, no need to add locals here
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitDefaultStatement(AST::DefaultStatement &node) {
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitSwitchStatement(AST::SwitchStatement &node) {
-    AddLocal(node.expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitReturnStatement(AST::ReturnStatement &node) {
-    AddLocal(node.expression);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitBreakStatement(AST::BreakStatement &node) {
-    AddLocal(node.count);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitContinueStatement(AST::ContinueStatement &node) {
-    AddLocal(node.count);
-    node.RecursiveSubVisit(*this);
-    return false;
-  }
-
-  bool VisitBraceOrParenInitializer(AST::BraceOrParenInitializer &node) {
-    for (auto &val : node.values) VisitInitializer(*val.second);
-    return false;
-  }
-
-  bool VisitAssignmentInitializer(AST::AssignmentInitializer &node) {
-    if (node.kind == AST::AssignmentInitializer::Kind::BRACE_INIT) {
-      VisitBraceOrParenInitializer(*std::get<AST::BraceOrParenInitNode>(node.initializer));
-    } else {
-      auto &expr = std::get<AST::PNode>(node.initializer);
-      AddLocal(expr);
-      expr->accept(*this);
-    }
-    return false;
-  }
-
   bool VisitInitializer(AST::Initializer &node) {
-    if (node.kind == AST::Initializer::Kind::ASSIGN_EXPR) {
-      auto &init = std::get<AST::AssignmentInitNode>(node.initializer);
-      VisitAssignmentInitializer(*init);
-    } else if (node.kind == AST::Initializer::Kind::BRACE_INIT) {
-      auto &init = std::get<AST::BraceOrParenInitNode>(node.initializer);
-      VisitBraceOrParenInitializer(*init);
+    if (node.target) {
+      // Target is usually a type or identifier, not a variable usage in the expression sense
+      node.target->accept(*this);
+    }
+    for (auto &val : node.values) {
+      val->accept(*this);
     }
     return false;
   }

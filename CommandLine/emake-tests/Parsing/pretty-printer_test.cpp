@@ -179,9 +179,9 @@ TEST(PrinterTest, test9) {
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
   code =
-      "int strange_name = (3); while(strange_name--){ int xx =12;  foo(12, fo(12), sizeof( int)); "
+      "{ int strange_name = (3); while(strange_name--){ int xx =12;  foo(12, fo(12), sizeof( int)); "
       "while((2)){c--; "
-      "c++; c*=2;}}";
+      "c++; c*=2;}} }";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -197,7 +197,7 @@ TEST(PrinterTest, test10) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "alignof(const volatile unsigned long long int*);";
+  code = "alignof(const volatile unsigned long long *);";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -394,12 +394,29 @@ TEST(PrinterTest, test20) {
   ASSERT_TRUE(compare(code, printed));
 }
 
+// `char`, `signed char`, and `unsigned char` are three distinct types, and
+// although ENIGMA's semantic layer may treat plain `char` as signed, the
+// printer must preserve the exact decl-spec tokens the user wrote so the
+// pretty-printer can double as a faithful code formatter. The signedness
+// keyword is retained in TypeSpecifierSeq::declspecs->specs (the source-order
+// token vector), independently of the flag bitmask -- `signed`'s flag value is
+// 0, so a flags-derived reconstruction would silently drop it.
+TEST(PrinterTest, DeclSpecSignednessFidelity) {
+  std::string code = "signed char i = 'A';unsigned char j = 'B';char k = 'C';";
+  ParserTester test = ParserTester::CreateWithCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
+}
+
 TEST(PrinterTest, test21) {
   std::string code =
       "for (char i = 'A'; i <= 'B'; ++i) {for (char j = '1'; j <= '2'; ++j) {for (char k = 'a'; k <= 'b'; ++k) {for "
       "(char l = 'X'; l <= 'Y'; ++l) {c++;}}}}";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -409,9 +426,9 @@ TEST(PrinterTest, test21) {
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
   code =
-      "for (signed char i = 'A'; i <= 'B'; ++i) {for (signed char j = '1'; j <= '2'; ++j) {for (signed char k = 'a'; k "
+      "for (char i = 'A'; i <= 'B'; ++i) {for (char j = '1'; j <= '2'; ++j) {for (char k = 'a'; k "
       "<= 'b'; ++k) {for "
-      "(signed char l = 'X'; l <= 'Y'; ++l) {c++;}}}}";
+      "(char l = 'X'; l <= 'Y'; ++l) {c++;}}}}";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -421,7 +438,7 @@ TEST(PrinterTest, test22) {
       "char i = 'A';do {char j = '1';while (j <= '2') {for (char k = 'a'; k <= 'b'; ++k) {char l = 'X';do {++l;} while "
       "(l <= 'Y');}++j;}++i;} while (i <= 'B');";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -431,8 +448,8 @@ TEST(PrinterTest, test22) {
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
   code =
-      "signed char i = 'A';do {signed char j = '1';while (j <= '2') {for (signed char k = 'a'; k <= 'b'; ++k) {signed "
-      "char l = 'X';do {++l;} while "
+      "char i = 'A';do {char j = '1';while (j <= '2') {for (char k = 'a'; k <= 'b'; ++k) {char "
+      "l = 'X';do {++l;} while "
       "(l <= 'Y');}++j;}++i;} while (i <= 'B');";
 
   ASSERT_TRUE(compare(code, printed));
@@ -444,7 +461,7 @@ TEST(PrinterTest, test23) {
       "'A':break;case 'B':break;default:break;}condition = (i == 'A' && j == '1') || (k == 'b' && l == 'Y');if "
       "(condition) {c++;}++l;} while (l <= 'Y');k--;k++;}++j;}++i;} while (i <= 'B');";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -453,8 +470,10 @@ TEST(PrinterTest, test23) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
+  // `char` round-trips as written; canonicalizing it to `signed char` was the
+  // pre-[E] expectation this test carried after test21/22 were fixed.
   code =
-      "do {signed char j = '1';while (j <= '2') {for (signed char k = 'a'; k <= 'b'; ++k) {signed char l = 'X';do "
+      "do {char j = '1';while (j <= '2') {for (char k = 'a'; k <= 'b'; ++k) {char l = 'X';do "
       "{switch (int((i))) {case "
       "'A':{break;}case 'B':{break;}default:{break;}}condition = (i == 'A' && j == '1') || (k == 'b' && l == 'Y');if "
       "(condition) {c++;}++l;} while (l <= 'Y');k--;k++;}++j;}++i;} while (i <= 'B');";
@@ -528,8 +547,8 @@ TEST(PrinterTest, test26) {
       "condition = (size_a > size_b) ? 1 : 0;result = (condition) ? size_a : size_b;outer = 1;do {"
       "inner = 1;do {inner++;} while (inner <= outer);outer++;} while (!(outer <= 3));result = (c > 10.0) ? ( "
       "int)c "
-      ": b; int strange_name = 123; while(strange_name--){int * z = new (int), d = new (int), g; "
-      "fn(alignof (int), sizeof 4, 12, x+x+(x++)-x*22); }";
+      ": b; { int strange_name = 123; while(strange_name--){int * z = new (int), d = new (int), g; "
+      "fn(alignof (int), sizeof 4, 12, x+x+(x++)-x*22); } }";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -540,7 +559,7 @@ TEST(PrinterTest, test27) {
       "int temp = display;int divisor = 10000;while (divisor > 0) {int digit = temp / divisor;temp = temp % "
       "divisor;divisor = divisor / 10;putchar('0' + digit);}putchar(   'c');return 0;}";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -551,6 +570,80 @@ TEST(PrinterTest, test27) {
   std::string printed = v.GetPrintedCode();
 
   ASSERT_TRUE(compare(code, printed));
+}
+
+TEST(PrinterTest, FunctionalCastSimple) {
+  std::string code = "int a = int(5);";
+  ParserTester test = ParserTester::CreateWithCpp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
+}
+
+TEST(PrinterTest, FunctionalCastGroupedFnPtr) {
+  std::string code = "int a = ((int(*)())(func))(5);";
+  ParserTester test = ParserTester::CreateWithCpp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
+}
+
+// New-expression coverage. These pin the post-build interpretation in
+// TryParseNewExpression: the operand is parsed like any other type-id, then a
+// top-level grouped/call form on the declarator is reinterpreted as the
+// new-initializer (the standard forbids parens in a new-declarator precisely so
+// `(args)` is unambiguously the initializer; we build first, interpret second).
+// The printer wraps the new-type-id in parens, so the expected forms below are
+// `new (T)…`, not the bare source spelling.
+namespace {
+void expect_new_roundtrip(const std::string &source, const std::string &expected) {
+  ParserTester test = ParserTester::CreateWithCpp(source);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*node->As<AST::CodeBlock>()));
+  EXPECT_TRUE(compare(expected, v.GetPrintedCode()))
+      << "source:   " << source << "\nexpected: " << expected << "\nprinted:  " << v.GetPrintedCode();
+}
+}  // namespace
+
+TEST(PrinterTest, NewScalarNoInit) {
+  expect_new_roundtrip("int* z = new int;", "int* z = new (int);");
+}
+
+TEST(PrinterTest, NewScalarParenInit) {
+  expect_new_roundtrip("int* p = new int(12);", "int* p = new (int)(12);");
+}
+
+TEST(PrinterTest, NewScalarExprInit) {
+  expect_new_roundtrip("float* q = new float(2+3);", "float* q = new (float)(2 + 3);");
+}
+
+TEST(PrinterTest, NewScalarSizeofInit) {
+  expect_new_roundtrip("int* r = new int(sizeof 12);", "int* r = new (int)(sizeof 12);");
+}
+
+TEST(PrinterTest, NewArrayNoInit) {
+  expect_new_roundtrip("int* y = new int[2];", "int* y = new (int[2]);");
+}
+
+TEST(PrinterTest, NewArrayWithInit) {
+  expect_new_roundtrip("int* w = new int[2](5);", "int* w = new (int[2])(5);");
+}
+
+TEST(PrinterTest, NewBuiltinTypes) {
+  expect_new_roundtrip("bool* b = new bool;", "bool* b = new (bool);");
+  expect_new_roundtrip("double* d = new double;", "double* d = new (double);");
+}
+
+TEST(PrinterTest, NewParenthesizedTypeId) {
+  expect_new_roundtrip("int* p = new (int)(7);", "int* p = new (int)(7);");
 }
 
 TEST(PrinterTest, test28) {
@@ -575,12 +668,12 @@ TEST(PrinterTest, test28) {
       " int *num1 = new ( int)(5);  int *num2 = new ( int)(3);  int *result = new "
       "( "
       "int);  int choice = 2; do {switch(int((choice))) {case "
-      "1: {*(result) = *(num1) + *(num2);break;} case 2:{ *(result) = *(num1) - *(num2);break;} case 3:{ *(result) = "
-      "*(num1) * "
-      "*(num2);break;} case 4: {if (*(num2) != 0) { int tempResult = static_cast< int>(*(num1)) / "
-      "static_cast< int>(*(num2));*(result) = static_cast< int>(tempResult);} else {*(result) = "
-      "0;}break;}case 5:{*(result) = "
-      "static_cast< int>(sqrt(static_cast< int>(*(num1))));break;} default: {*(result) = "
+      "1: {*result = *num1 + *num2;break;} case 2:{ *result = *num1 - *num2;break;} case 3:{ *result = "
+      "*num1 * "
+      "*num2;break;} case 4: {if (*num2 != 0) { int tempResult = static_cast< int>(*num1) / "
+      "static_cast< int>(*num2);*result = static_cast< int>(tempResult);} else {*result = "
+      "0;}break;}case 5:{*result = "
+      "static_cast< int>(sqrt(static_cast< int>(*num1)));break;} default: {*result = "
       "0;break;}}choice++; }while "
       "(choice <= "
       "5);";
@@ -633,7 +726,7 @@ TEST(PrinterTest, test31) {
       "const unsigned int n=12; bool x = (n>12); signed char c='s'; volatile int v=12; const volatile unsigned long "
       "long int f=12; const double l = 123; unsigned int u = 123; int *p = new (int)(22+3); const int * q ; ";
 
-  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  ParserTester test = ParserTester::CreateWithCpp(code);
   auto node = test->ParseCode();
 
   ASSERT_EQ(node->type, AST::NodeType::BLOCK);
@@ -663,7 +756,7 @@ TEST(PrinterTest, test32) {
   code =
       "int x [2]; int* y = new (int[2]); int z[2] = {1,2}; int* p = new (int)(12); float* q = new (float)(2+3); int* r "
       "= new "
-      "(int)(sizeof 12); bool* b = new (bool); signed char* c = new (signed char); double* d = new (double);";
+      "(int)(sizeof 12); bool* b = new (bool); char* c = new (char); double* d = new (double);";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -838,7 +931,9 @@ TEST(PrinterTest, test40) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "int((*(x))[5] + 6); int *(*a)[10] = nullptr;  int(*((*(a))[10]) + b); int(*(*(*(*(x) + 4))));";
+  // Source grouping round-trips verbatim (no synthesized parens, per [B]);
+  // only the second statement reshapes, via its promotion to a declaration.
+  code = "int((*x)[5] + 6); int *(*a)[10] = nullptr;  int(*(*a)[10] + b); int(*(*(*(*x + 4))));";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -894,7 +989,7 @@ TEST(PrinterTest, test42) {
   AST::CppPrettyPrinter v;
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "while(i==1){i++;} while(!(i==1)) {i++;} int strange_name =(4) ; while(strange_name--){i++;}";
+  code = "while(i==1){i++;} while(!(i==1)) {i++;} { int strange_name =(4) ; while(strange_name--){i++;} }";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1321,7 +1416,7 @@ TEST(PrinterTest, test67) {
   AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "long long int foo;";
+  code = "long long foo;";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1338,7 +1433,7 @@ TEST(PrinterTest, test68) {
   AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "long int foo;";
+  code = "long foo;";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1355,7 +1450,7 @@ TEST(PrinterTest, test69) {
   AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
   ASSERT_TRUE(v.VisitCode(*block));
   std::string printed = v.GetPrintedCode();
-  code = "short int foo;";
+  code = "short foo;";
 
   ASSERT_TRUE(compare(code, printed));
 }
@@ -1424,4 +1519,89 @@ TEST(PrinterTest, test73) {
   std::string printed = v.GetPrintedCode();
 
   ASSERT_TRUE(compare(code, printed));
+}
+
+// Nested repeats: each lowering is braced (one statement wherever it sits,
+// counter scoped) and each nesting level numbers its counter, so the inner
+// loop cannot shadow-decrement the outer one's.
+TEST(PrinterTest, NestedRepeatLowering) {
+  std::string code = "repeat(2) repeat(3) i++";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected =
+      "{ int strange_name = (2); while(strange_name--) "
+      "{ int strange_name1 = (3); while(strange_name1--) i++; } }";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// Prefixed-literal tokens hold bare digits; the printer restores a C++
+// spelling for each radix. GML $ hex and 0o octal have no C++ form, so
+// this is a translation, not an echo of the source.
+TEST(PrinterTest, RadixPrefixedLiterals) {
+  std::string code = "a = 0x5B; b = 0b101; c = 0o17; d = $F0;";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "a = 0x5B; b = 0b101; c = 017; d = 0xF0;";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// String bytes outside printable ASCII emit as three-octal-digit escapes:
+// unsigned (no sign extension on 0x80-0xFF) and fixed-width (a digit
+// character following the escape cannot extend it).
+TEST(PrinterTest, HighByteStringEscapes) {
+  std::string code = "x = \"\xE2\x9C\x93\"; y = \"\x01" "1\";";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "x = \"\\342\\234\\223\"; y = \"\\0011\";";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// Array literals print every element, not just the first.
+TEST(PrinterTest, ArrayLiteralAllElements) {
+  std::string code = "x = [1, 2, 3];";
+  ParserTester test = ParserTester::CreateWithoutCpp(code);
+  auto node = test->ParseCode();
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v;
+  ASSERT_TRUE(v.VisitCode(*block));
+  ASSERT_TRUE(compare(code, v.GetPrintedCode()));
+}
+
+// enigma::varargs emission insurance ahead of the jdi2 rewrite: variadic
+// detection flows through is_variadic_function/function_variadic_after, which
+// read the JDI definition -- exactly the surface a backend swap can break.
+// max() joins choose() (test64) as a pinned emitter.
+TEST(PrinterTest, VarargsEmissionMax) {
+  std::string code = "y = max(a, b, c, d)";
+  ParserTester test = ParserTester::CreateWithSetUp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "y = max((enigma::varargs(), a, b, c, d));";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
+}
+
+// A variadic function called with no variadic arguments emits NO wrapper --
+// and, in particular, no unbalanced closing parenthesis (the pre-#65 bug).
+TEST(PrinterTest, VarargsEmissionZeroArgs) {
+  std::string code = "y = max()";
+  ParserTester test = ParserTester::CreateWithSetUp(code);
+  auto node = test->ParseCode();
+  ASSERT_EQ(node->type, AST::NodeType::BLOCK);
+  auto *block = node->As<AST::CodeBlock>();
+  AST::CppPrettyPrinter v(test.lexer.GetContext().language_fe);
+  ASSERT_TRUE(v.VisitCode(*block));
+  std::string expected = "y = max();";
+  ASSERT_TRUE(compare(expected, v.GetPrintedCode()));
 }

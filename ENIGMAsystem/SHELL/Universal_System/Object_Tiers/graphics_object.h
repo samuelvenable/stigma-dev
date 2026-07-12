@@ -77,22 +77,16 @@ namespace enigma
       virtual variant myevent_drawresize();
 
     //Accessors
-      #ifdef JUST_DEFINE_IT_RUN
-        int sprite_width, sprite_height;
-        int sprite_xoffset, sprite_yoffset;
-        int image_number;
-      #else
-        int $sprite_width() const;
-        int $sprite_height() const;
-        int $sprite_xoffset() const;
-        int $sprite_yoffset() const;
-        int $image_number() const;
-        #define sprite_width $sprite_width()
-        #define sprite_height $sprite_height()
-        #define sprite_xoffset $sprite_xoffset()
-        #define sprite_yoffset $sprite_yoffset()
-        #define image_number $image_number()
-      #endif
+      int $sprite_width() const;
+      int $sprite_height() const;
+      int $sprite_xoffset() const;
+      int $sprite_yoffset() const;
+      int $image_number() const;
+      #define sprite_width $sprite_width()
+      #define sprite_height $sprite_height()
+      #define sprite_xoffset $sprite_xoffset()
+      #define sprite_yoffset $sprite_yoffset()
+      #define image_number $image_number()
 
     //Constructors
       object_graphics();

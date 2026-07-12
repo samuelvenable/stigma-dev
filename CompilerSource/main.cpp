@@ -68,6 +68,7 @@ extern const char* establish_bearings(const char *compiler);
 
 #include "general/bettersystem.h"
 #include "languages/lang_CPP.h"
+#include "languages/clang_adapter.h"
 #include <System/builtins.h>
 #include <API/context.h>
 
@@ -108,7 +109,7 @@ DLLEXPORT const char* libInit_path(EnigmaCallbacks* ecs, const char* enigma_path
   current_language = languages[current_language_name] = new lang_CPP();
 
   cout << "Creating parse context" << endl;
-  main_context = new jdi::Context;
+  main_context = new clang_adapter::ClangContext;
 
   return 0;
 }

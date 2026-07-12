@@ -84,6 +84,7 @@ enum TokenType {
   TT_HEXLITERAL,      // 0x0 $1 0x2... 0x9 0xA... $F $10... $FEDCBA9876543210...
   TT_STRINGLIT,       // "", ''
   TT_CHARLIT,         // '' when in C++ Strings mode (or translating a macro).
+  TT_BOOLLITERAL,     // true, false
   TT_SCOPEACCESS,     // ::
   TT_TYPE_NAME,       // var, char, char8_t, char16_t, char32_t, wchar_t, bool, short, int, long, float, double, void; any baked-in primitive type (includes C++ types in namespace enigma_user).
   TT_LOCAL,           // `local` storage specifier
@@ -131,10 +132,7 @@ enum TokenType {
   TT_CLASS,           // class declaration keyword
   TT_STRUCT,          // struct declaration keyword
   TT_UNION,           // union declaration keyword
-  TT_SIGNED,          // signed
-  TT_UNSIGNED,        // unsigned
-  TT_CONST,           // const
-  TT_VOLATILE,        // volatile
+  TT_DECLSPEC,        // long, sort, signed, unsigned, const, volatile
   TT_DECLTYPE,        // decltype
   TTM_WHITESPACE,     // Preprocessing token: whitespace
   TTM_CONCAT,         // Preprocessing token: ##

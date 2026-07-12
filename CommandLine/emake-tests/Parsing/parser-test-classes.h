@@ -42,11 +42,25 @@ struct ParserTester {
     builder->initialize(&lexer, &herr);
   }
 
+  // Settings-aware constructor: identical to the SetUp-based one, but appends
+  // `extra_yaml` to the base YAML config so individual tests can override
+  // compatibility flags (e.g. "inherit-increment-from: 1\n"). Re-runs
+  // definitionsModified on every call; settings live as long as the shared
+  // static lang_CPP does, so later tests should reset what they care about.
+  ParserTester(std::string code, std::string_view extra_yaml, bool /*tag*/)
+      : context(&SetUpWithSettings(extra_yaml)), lexer(std::move(code), context, &herr) {
+    builder->initialize(&lexer, &herr);
+  }
+
   static ParserTester CreateWithCpp(std::string code) { return ParserTester(std::move(code), true); }
 
   static ParserTester CreateWithoutCpp(std::string code) { return ParserTester(std::move(code), false); }
 
   static ParserTester CreateWithSetUp(std::string code) { return ParserTester(std::move(code)); }
+
+  static ParserTester CreateWithSettings(std::string code, std::string_view extra_yaml) {
+    return ParserTester(std::move(code), extra_yaml, /*tag=*/true);
+  }
 
   const ParseContext& SetUp() {
     static lang_CPP cpp{};
@@ -79,6 +93,37 @@ struct ParserTester {
     }
     static ParseContext context(&cpp, kNoNames);
     return context;
+  }
+
+  const ParseContext& SetUpWithSettings(std::string_view extra_yaml) {
+    // Ensure baseline static cpp + ParseContext exist.
+    const ParseContext &base_ctx = SetUp();
+    // Mutate the existing static lang_CPP (reached via the base context) with
+    // the overridden YAML so subsequent parses pick up the extra settings.
+    auto *cpp = const_cast<lang_CPP*>(static_cast<const lang_CPP*>(base_ctx.language_fe));
+    std::string yaml = (string) "%e-yaml\n"
+      "---\n"
+      "target-windowing: " +  (CURRENT_PLATFORM_ID==OS_WINDOWS ? "Win32" : CURRENT_PLATFORM_ID==OS_MACOSX ? "Cocoa" : "xlib")  + "\n"
+      "treat-literals-as: 0\n"
+      "sample-lots-of-radios: 0\n"
+      "inherit-equivalence-from: 0\n"
+      "sample-checkbox: on\n"
+      "sample-edit: DEADBEEF\n"
+      "sample-combobox: 0\n"
+      "inherit-strings-from: 0\n"
+      "inherit-escapes-from: 0\n"
+      "inherit-increment-from: 0\n"
+      " \n"
+      "target-audio: OpenAL\n"
+      "target-windowing: xlib\n"
+      "target-compiler: gcc\n"
+      "target-graphics: OpenGL\n"
+      "target-widget: None\n"
+      "target-collision: BBox\n"
+      "target-networking: None\n";
+    yaml += std::string(extra_yaml);
+    cpp->definitionsModified(NULL, yaml.c_str());
+    return base_ctx;
   }
 
   void TearDown() {
