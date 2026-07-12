@@ -1,0 +1,11 @@
+%e-yaml
+---
+
+Name: Native Widgets
+Identifier: Native
+Description: Create widgets using native API's which match your desktop environment.
+Author: Samuel Venable
+Depends:
+	Build-Platforms: Windows, MacOSX, Linux, FreeBSD, DragonFlyBSD, SDL
+Represents:
+	Build-Platforms: Windows, MacOSX, Linux, FreeBSD, DragonFlyBSD, SDL
