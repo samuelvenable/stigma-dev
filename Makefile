@@ -3,13 +3,13 @@ include Config.mk
 PATH := $(eTCpath)$(PATH)
 SHELL=/bin/bash
 
-.PHONY: ENIGMA all clean Game clean-game clean-protos emake emake-tests gm2egm libpng-util libProtocols libEGM required-directories .FORCE
+.PHONY: ENIGMA all clean improv-clean Game clean-game clean-protos emake emake-tests gm2egm libpng-util libProtocols libEGM required-directories .FORCE
 
 $(LIB_PFX)compileEGMf$(LIB_EXT): ENIGMA
 ENIGMA: .FORCE libProtocols$(LIB_EXT) libENIGMAShared$(LIB_EXT)
 	$(MAKE) -C CompilerSource
 
-clean: .FORCE
+clean: .FORCE improv-clean
 	$(MAKE) -C CompilerSource/ clean
 	$(MAKE) -C CommandLine/emake/ clean
 	$(MAKE) -C CommandLine/libEGM/ clean
@@ -17,6 +17,13 @@ clean: .FORCE
 	$(MAKE) -C shared/ clean
 	$(MAKE) -C shared/protos/ clean
 	$(MAKE) -C CommandLine/gm2egm/ clean
+
+# Improvised stopgap until cross-directory header dependency tracking is fixed
+# (#17): CompilerSource header changes don't invalidate the emake-tests object
+# files, so they keep stale symbol layouts -> link errors / ABI-skew segfaults.
+# Nuke them so the next build recompiles against current headers.
+improv-clean: .FORCE
+	find CommandLine/emake-tests -name '*.o' -delete
 
 all: libENIGMAShared libProtocols libEGM ENIGMA gm2egm emake emake-tests test-runner .FORCE
 
@@ -45,7 +52,7 @@ libEGM$(LIB_EXT): libEGM
 libEGM: .FORCE libProtocols$(LIB_EXT) libENIGMAShared$(LIB_EXT)
 	$(MAKE) -C CommandLine/libEGM/
 
-EMAKE_TARGETS = .FORCE libProtocols$(LIB_EXT) libEGM$(LIB_EXT)
+EMAKE_TARGETS = .FORCE ENIGMA libProtocols$(LIB_EXT) libEGM$(LIB_EXT)
 
 emake: $(EMAKE_TARGETS) $(LIB_PFX)compileEGMf$(LIB_EXT)
 	$(MAKE) -C CommandLine/emake/

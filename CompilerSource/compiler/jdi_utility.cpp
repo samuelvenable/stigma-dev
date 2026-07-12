@@ -24,7 +24,7 @@
 #include <Storage/definition.h>
 #include <languages/lang_CPP.h>
 
-using namespace jdip;
+using namespace jdi;
 
 /*
  * Visit a function overload and change minimum argument count and maximum
@@ -32,9 +32,11 @@ using namespace jdip;
  */
 static void visit_overload(
     definition_overload* d, unsigned &min, unsigned &max, definition *varargs_t) {
-  bool variadic = false;
+  // DEF_VARIADIC is the clang populator's C-style-varargs mark; JDI1's own
+  // parse marked a parameter instead. Honor both.
+  bool variadic = (d->flags & DEF_VARIADIC);
   unsigned int local_min=0,local_max=0;
-  
+
   const ref_stack &refs = ((definition_overload*)d)->referencers;
   const ref_stack::parameter_ct& params = ((ref_stack::node_func*)&refs.top())->params;
   for (size_t i = 0; i < params.size(); ++i)
@@ -51,13 +53,12 @@ static void visit_overload(
  */
 static void iterate_overloads(
     definition_function* d, unsigned &min, unsigned &max, definition *varargs_t) {
-  for (map<arg_key, definition_overload*>::iterator iter = d->overloads.begin();
-       iter != d->overloads.end(); iter++) {
-    visit_overload(iter->second, min, max, varargs_t);
+  for (auto iter = d->overloads.begin(); iter != d->overloads.end(); iter++) {
+    visit_overload(iter->second.get(), min, max, varargs_t);
   }
 
-  for (definition_template* templateOverload : d->template_overloads) {
-    definition* def = templateOverload->def;
+  for (const auto &templateOverload : d->template_overloads) {
+    definition* def = templateOverload->def.get();
     if (def->flags & DEF_OVERLOAD) {
      visit_overload(static_cast<definition_overload*>(def), min, max, varargs_t);
     }
@@ -74,21 +75,21 @@ static int referencers_varargs_at(ref_stack &refs, jdi::definition *varargs_t) {
   return -1;
 }
 
-bool lang_CPP::is_variadic_function(jdi::definition *d) {
+bool lang_CPP::is_variadic_function(jdi::definition *d) const {
   if (!definition_is_function(d)) return false;
   return function_variadic_after((jdi::definition_function*) d) != -1;
 }
 
-int lang_CPP::function_variadic_after(jdi::definition_function *func) {
+int lang_CPP::function_variadic_after(jdi::definition_function *func) const {
   for (const auto &overload_pair : func->overloads) {
-    jdi::definition_overload *ov = overload_pair.second;
+    jdi::definition_overload *ov = overload_pair.second.get();
     const int rva = referencers_varargs_at(ov->referencers, enigma_type__varargs);
     if (rva != -1) return rva;
   }
   return -1;
 }
 
-void lang_CPP::definition_parameter_bounds(definition *d, unsigned &min, unsigned &max) {
+void lang_CPP::definition_parameter_bounds(definition *d, unsigned &min, unsigned &max) const {
   min = (unsigned) SIZE_MAX;
   max = 0;
   
@@ -100,7 +101,7 @@ void lang_CPP::definition_parameter_bounds(definition *d, unsigned &min, unsigne
   iterate_overloads((definition_function*) d, min, max, enigma_type__varargs);
 }
 
-bool lang_CPP::definition_is_function(definition *d) {
+bool lang_CPP::definition_is_function(definition *d) const {
   if (d->flags & DEF_FUNCTION) return true;
   if (d->flags & DEF_TEMPLATE) {
     definition_template *dt = (definition_template*) d;
@@ -109,7 +110,7 @@ bool lang_CPP::definition_is_function(definition *d) {
   return false;
 }
 
-size_t lang_CPP::definition_overload_count(jdi::definition *d) {
+size_t lang_CPP::definition_overload_count(jdi::definition *d) const {
   if (!(d->flags & DEF_FUNCTION)) return 0;
   definition_function *df = (definition_function*) d;
   return df->overloads.size() + df->template_overloads.size();
@@ -117,22 +118,51 @@ size_t lang_CPP::definition_overload_count(jdi::definition *d) {
 
 
 #include "languages/lang_CPP.h"
-definition* lang_CPP::find_typename(string n) {
-  definition* d = look_up(n);
+definition* lang_CPP::find_typename(std::string_view name) const {
+  definition* d = look_up(name);
   if (!d) return NULL;
   if (d->flags & DEF_TYPENAME) return d;
   return NULL;
 }
 
-bool lang_CPP::global_exists(string n) {
+bool lang_CPP::global_exists(string n) const {
   definition* d = look_up(n);
   return d;
 }
 
 
 void lang_CPP::quickmember_variable(jdi::definition_scope* scope, jdi::definition* type, string name) {
-  scope->members[name] = new jdi::definition_typed(name,scope,type);
+  scope->members[name] = std::make_unique<jdi::definition_typed>(name,scope,type);
 }
+
+void lang_CPP::quickmember_template(jdi::definition_scope* scope, string name,
+                                    size_t type_params, size_t value_params) {
+  // Mirrors what handle_templates builds for `template<typename T0, ...,
+  // int N0, ...> class name {};` -- params registered in the template scope,
+  // the templated entity a plain class -- without a JDI source parse.
+  auto temp = std::make_unique<definition_template>(name, scope, DEF_TEMPLATE);
+  for (size_t i = 0; i < type_params; ++i) {
+    auto p = std::make_unique<definition_tempparam>(
+        "T" + std::to_string(i), temp.get(),
+        DEF_TEMPPARAM | DEF_DEPENDENT | DEF_TYPENAME);
+    temp->use_general(p->name, p.get());
+    temp->params.push_back(std::move(p));
+  }
+  for (size_t i = 0; i < value_params; ++i) {
+    // The full_type-taking definition_tempparam constructor is declared but
+    // has no definition in JDI; set integer_type post-construction instead.
+    auto p = std::make_unique<definition_tempparam>(
+        "N" + std::to_string(i), temp.get(), DEF_TEMPPARAM | DEF_DEPENDENT);
+    p->integer_type.def = jdi::builtin_type__int;
+    temp->use_general(p->name, p.get());
+    temp->params.push_back(std::move(p));
+  }
+  temp->def = std::make_unique<definition_class>(name, temp.get(),
+                                                 DEF_CLASS | DEF_TYPENAME);
+  scope->members[name] = std::move(temp);
+}
+
+enigma::parsing::StdErrorHandler hackybaby;  // TODO: FIXME: This should be using a central error handler...
 void lang_CPP::quickmember_script(jdi::definition_scope* scope, string name) {
   jdi::ref_stack rfs;
   jdi::ref_stack::parameter_ct params;
@@ -143,5 +173,5 @@ void lang_CPP::quickmember_script(jdi::definition_scope* scope, string name) {
     params.throw_on(p);
   }
   rfs.push_func(params);
-  scope->members[name] = new jdi::definition_function(name,enigma_type__var,scope,rfs,0,0);
+  scope->members[name] = std::make_unique<jdi::definition_function>(name,enigma_type__var,scope,rfs,0,0, SourceLocation{name, 0, 0}, (ErrorHandler*)&hackybaby);
 }

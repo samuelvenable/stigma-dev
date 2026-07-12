@@ -21,11 +21,6 @@
   @brief Adds a timelines tier following the main tier.
 */
 
-//FIXME: this should be ifdef shellmain but enigmas in a sorry state
-#ifdef JUST_DEFINE_IT_RUN
-#  error This file includes non-ENIGMA STL headers and should not be included from SHELLmain.
-#endif
-
 #ifndef ENIGMA_TIMELINES_OBJECT_H
 #define ENIGMA_TIMELINES_OBJECT_H
 
@@ -40,6 +35,8 @@ namespace enigma
 {
   struct object_timelines : object_planar
   {
+    static constexpr unsigned char objtype = 0xAC;
+
     //Used as a global lookup for timeline moments. Filled at runtime.
     //vector is indexed by timeline_id. map::key is moment_time; map::value is moment_id
     static std::vector< std::map<int, int> > timeline_moments_maps;
@@ -60,6 +57,11 @@ namespace enigma
     void advance_curr_timeline();
     void loop_curr_timeline();
     virtual void timeline_call_moment_script(int timeline_index, int moment_index) {} //This will be provided by the object_locals subclass in compiled code.
+
+    // Serialization and deserialization
+    std::vector<std::byte> serialize() override;
+    std::size_t deserialize_self(std::byte *iter) override;
+    static std::pair<object_timelines, std::size_t> deserialize(std::byte *iter);
   };
 } //namespace enigma
 

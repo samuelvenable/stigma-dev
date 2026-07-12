@@ -12,7 +12,6 @@ void gtest_assert_false(bool exp, std::string message = "");
 void gtest_assert_eq_eps(var a, var b, std::string message = "");
 
 void gtest_assert_eq(var a, var b, std::string message = "");
-void gtest_assert_eq(var a, var b, std::string message = "");
 void gtest_assert_ne(var a, var b, std::string message = "");
 void gtest_assert_lt(var a, var b, std::string message = "");
 void gtest_assert_le(var a, var b, std::string message = "");

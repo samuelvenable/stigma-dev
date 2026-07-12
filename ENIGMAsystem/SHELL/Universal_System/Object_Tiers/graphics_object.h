@@ -53,6 +53,8 @@ namespace enigma
   };
   struct object_graphics: object_timelines
   {
+    static constexpr unsigned char objtype = 0xAD;
+
     //Sprites: these are mostly for higher tiers...
       int sprite_index;
       gs_scalar image_index;
@@ -75,27 +77,26 @@ namespace enigma
       virtual variant myevent_drawresize();
 
     //Accessors
-      #ifdef JUST_DEFINE_IT_RUN
-        int sprite_width, sprite_height;
-        int sprite_xoffset, sprite_yoffset;
-        int image_number;
-      #else
-        int $sprite_width() const;
-        int $sprite_height() const;
-        int $sprite_xoffset() const;
-        int $sprite_yoffset() const;
-        int $image_number() const;
-        #define sprite_width $sprite_width()
-        #define sprite_height $sprite_height()
-        #define sprite_xoffset $sprite_xoffset()
-        #define sprite_yoffset $sprite_yoffset()
-        #define image_number $image_number()
-      #endif
+      int $sprite_width() const;
+      int $sprite_height() const;
+      int $sprite_xoffset() const;
+      int $sprite_yoffset() const;
+      int $image_number() const;
+      #define sprite_width $sprite_width()
+      #define sprite_height $sprite_height()
+      #define sprite_xoffset $sprite_xoffset()
+      #define sprite_yoffset $sprite_yoffset()
+      #define image_number $image_number()
 
     //Constructors
       object_graphics();
       object_graphics(unsigned x, int y);
       virtual ~object_graphics();
+
+    // Serialization and deserialization
+      std::vector<std::byte> serialize() override;
+      std::size_t deserialize_self(std::byte *iter) override;
+      static std::pair<object_graphics, std::size_t> deserialize(std::byte *iter);
   };
 } //namespace enigma
 

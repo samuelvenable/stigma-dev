@@ -24,16 +24,9 @@
 #include <limits>
 #include <string>
 
-#ifdef JUST_DEFINE_IT_RUN
-#  include <stdint.h>
-#  define constexpr const
-#  define decltype(x) double
-#  define rvalue_ref &
-#else
-#  include <cstdint>
-#  include <type_traits>
-#  define rvalue_ref &&
-#endif
+#include <cstdint>
+#include <type_traits>
+#define rvalue_ref &&
 
 namespace enigma {
 
@@ -154,8 +147,6 @@ ACCEPT_TYPE(StringTypeEnabler, const char*);
 
 #undef ACCEPT_TYPE
 
-#ifndef JUST_DEFINE_IT_RUN
-
 #define RLY_INLINE __attribute__((always_inline))
 
 template<typename T, typename U, typename V = decltype(+*(T*)0 | +*(U*)0)>
@@ -188,31 +179,6 @@ template<typename T> using NonStringNumber =
 #define REQUIRE_VARIANT_TYPE(T) \
     typename enigma::VariantTypeEnabler<T>::EN = 0
 
-#else
-
-template<typename T> struct SIntType {};
-template<typename T> struct UIntType {};
-template<typename T> struct IntType  {};
-template<typename T> struct FloatType   {};
-template<typename T> struct NumericType {};
-template<typename T> struct ArithmeticType {};
-template<typename T> struct StringType  {};
-
-#define REQUIRE_NON_STRING_NUMBER(T) bool non_string_number = true
-#define REQUIRE_STRING_TYPE(T)       bool is_string_type = true
-#define REQUIRE_NON_VARIANT_TYPE(T)  bool is_not_variant_type = true
-#define REQUIRE_VARIANT_TYPE(T)      bool is_variant_type = true
-
-template<typename T, typename U, typename V = decltype(+*(T*)0 | +*(U*)0)>
-struct EnumAndNumericBinaryFuncEnabler {};
-
-template<typename T, typename U> struct NumericFunc {};
-template<typename T, typename U> struct NSNumberFunc {};
-template<typename T, typename U> struct StringFunc {};
-
-#define RLY_INLINE
-#endif  // JUST_DEFINE_IT_RUN
-
 union rvt {
   double d;
   const void * p;
@@ -244,8 +210,8 @@ struct variant;
 namespace enigma {
 
 template<typename T> struct VariantTypeEnabler
-    : MaybeEnabled<T, std::is_base_of<variant, T>::value> {};
-template<> struct VariantTypeEnabler<variant> : EnabledType<variant> {};
+    : MaybeEnabled<T, std::is_base_of<::variant, T>::value> {};
+template<> struct VariantTypeEnabler<::variant> : EnabledType<::variant> {};
 template<> struct VariantTypeEnabler<var> : EnabledType<var> {};
 
 }
@@ -266,8 +232,21 @@ std::string toString(double);
 #define string(...) toString(__VA_ARGS__)
 #endif
 
-using std::string;
+// A typedef rather than a using-declaration: the definitions parse skips
+// std headers, so a using-declaration has no populated target and EDL
+// would not see `string` as a type name. The typedef is its own
+// definition. The function-like macro above still claims `string(...)`.
+typedef std::string string;
 
+}
+
+namespace {
+template <typename T, typename U>
+T bit_cast(const U &value) {
+  T result;
+  std::memcpy(reinterpret_cast<void*>(&result), reinterpret_cast<const void*>(&value), sizeof(T));
+  return result;
+}
 }
 
 //▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚
@@ -562,24 +541,24 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   // ===========================================================================
 
   template<typename T>
-  decltype(0LL << (int)*(T*)nullptr) operator<<(T x) const {
-    return (long long) rval.d << (int) x;
+  decltype(0ULL << (int)*(T*)nullptr) operator<<(T x) const {
+    return bit_cast<unsigned long long>(rval.d) << (int) x;
   }
   template<typename T>
-  decltype(0LL >> (int)*(T*)nullptr) operator>>(T x) const {
-    return (long long) rval.d >> (int) x;
+  decltype(0ULL >> (int)*(T*)nullptr) operator>>(T x) const {
+    return bit_cast<unsigned long long>(rval.d) >> (int) x;
   }
   template<typename T>
-  decltype(0LL & (long long)*(T*)nullptr) operator&(T x) const {
-    return (long long) rval.d & (long long) x;
+  decltype(0ULL & (long long)*(T*)nullptr) operator&(T x) const {
+    return bit_cast<unsigned long long>(rval.d) & (long long) x;
   }
   template<typename T>
-  decltype(0LL | (long long)*(T*)nullptr) operator|(T x) const {
-    return (long long) rval.d | (long long) x;
+  decltype(0ULL | (long long)*(T*)nullptr) operator|(T x) const {
+    return bit_cast<unsigned long long>(rval.d) | (long long) x;
   }
   template<typename T>
-  decltype(0LL | (long long)*(T*)nullptr) operator^(T x) const {
-    return (long long) rval.d ^ (long long) x;
+  decltype(0ULL | (long long)*(T*)nullptr) operator^(T x) const {
+    return bit_cast<unsigned long long>(rval.d) ^ (long long) x;
   }
 
   // Miscellanea
@@ -611,9 +590,9 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
 //██▙▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▟█████████████████████████████████████████
 //▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞
 
-struct var : variant {
-  lua_table<variant> array1d;
-  lua_table<lua_table<variant>> array2d;
+struct var : ::variant {
+  lua_table<::variant> array1d;
+  lua_table<lua_table<::variant>> array2d;
 
   var() {}
   var(const var&) = default;
@@ -699,7 +678,6 @@ struct var : variant {
   using variant::operator!;   using variant::operator!=;
   using variant::operator~;
 
-  #ifndef JUST_DEFINE_IT_RUN // These confuse JDI for some reason
   var &operator=(const var &v) {
     *(variant*) this = v;
     return *this;
@@ -709,7 +687,6 @@ struct var : variant {
   variant operator+(const T &v) {
     return *(variant*) this + v;
   }
-  #endif
 
   ~var() {}
 };
@@ -762,14 +739,10 @@ VARBINOP long long operator^(T a, const U &b) {
 // We need to disallow these operators for variants or Clang will decide
 // that the global version is equally preferable with the FULLY-SPECIFIED
 // match in the actual variant class.
-#ifndef JUST_DEFINE_IT_RUN
 #define PRIMITIVE_OP                                                           \
     template<class T, typename U,                                              \
         REQUIRE_NON_VARIANT_TYPE(T), REQUIRE_VARIANT_TYPE(U)>                  \
         static inline
-#else
-#define PRIMITIVE_OP template<typename T, typename U>
-#endif
 
 PRIMITIVE_OP bool operator==(const T &a, const U &b) { return b == a; }
 PRIMITIVE_OP bool operator!=(const T &a, const U &b) { return b != a; }
@@ -803,16 +776,16 @@ using ::var;
 using ::variant;
 typedef std::string std_string;
 
-static inline bool is_undefined(const variant &val) {
+static inline bool is_undefined(const ::variant &val) {
   return val.type == enigma_user::ty_undefined;
 }
-static inline bool is_real     (const variant &val) {
+static inline bool is_real     (const ::variant &val) {
   return val.type == enigma_user::ty_real;
 }
-static inline bool is_string   (const variant &val) {
+static inline bool is_string   (const ::variant &val) {
   return val.type == enigma_user::ty_string;
 }
-static inline bool is_ptr      (const variant &val) {
+static inline bool is_ptr      (const ::variant &val) {
   return val.type == enigma_user::ty_pointer;
 }
 
@@ -822,10 +795,10 @@ static inline bool is_ptr      (const variant &val) {
 
 namespace std {
 
-template<> class numeric_limits<var>: numeric_limits<double> {};
-template<> class numeric_limits<variant>: numeric_limits<double> {};
-template<> class numeric_limits<const var&>: numeric_limits<double> {};
-template<> class numeric_limits<const variant&>: numeric_limits<double> {};
+template<> class numeric_limits<::var>: numeric_limits<double> {};
+template<> class numeric_limits<::variant>: numeric_limits<double> {};
+template<> class numeric_limits<const ::var&>: numeric_limits<double> {};
+template<> class numeric_limits<const ::variant&>: numeric_limits<double> {};
 
 }  // namespace std
 
@@ -837,8 +810,8 @@ namespace enigma {
 //       between ArithmeticType and NumericType, as we've defined them.
 template<> struct ArithmeticTypeEnabler<const var&>
     : EnabledType<const var&>     {};
-template<> struct ArithmeticTypeEnabler<const variant&>
-    : EnabledType<const variant&> {};
+template<> struct ArithmeticTypeEnabler<const ::variant&>
+    : EnabledType<const ::variant&> {};
 
 }  // namespace enigma
 

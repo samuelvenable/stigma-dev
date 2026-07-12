@@ -15,9 +15,9 @@
  * the terms of the GNU General Public License as published by the Free Software
  * Foundation, version 3 of the License, or (at your option) any later version.
  * 
- * JustDefineIt is distributed in the hope that it will be useful, but WITHOUT ANY 
- * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
- * PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ * JustDefineIt is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for details.
  * 
  * You should have received a copy of the GNU General Public License along with
  * JustDefineIt. If not, see <http://www.gnu.org/licenses/>.
@@ -185,11 +185,11 @@ namespace jdi {
         friend iterator ref_stack::begin() const; ///< Let the begin() function use this constructor.
         friend iterator ref_stack::end() const; ///< Let the end() function use this constructor.
       public:
-        node* operator*(); ///< Get the current node pointer.
-        node* operator->(); ///< Treat iterator as current node pointer.
+        node* operator*() const; ///< Get the current node pointer.
+        node* operator->() const; ///< Treat iterator as current node pointer.
         iterator operator++(int); ///< Increment iterator; move to next element on the stack. @return Return copy of iterator before call.
         iterator &operator++(); ///< Increment iterator; move to next element on the stack. @return Returns self.
-        operator bool(); ///< Allow quick checking for invalidity; this iterator class does not use sentinel nodes.
+        operator bool() const; ///< Allow quick checking for invalidity; this iterator class does not use sentinel nodes.
     };
     
     string name; ///< The name of the object with the contained referencers.
@@ -215,7 +215,7 @@ namespace jdi {
   /// Parameter storage type; contains type info and other important parameter info.
   struct ref_stack::parameter: full_type {
     bool variadic; ///< True if this parameter can be passed several values; in C/C++, this is mandated to be the last parameter.
-    AST *default_value; ///< An AST if a default value was given. NULL otherwise.
+    AST *default_value; ///< An AST if a default value was given. nullptr otherwise.
     
     parameter(); ///< Default constructor.
     parameter(const full_type& ft, AST *default_value); ///< Construct by copying a full_type and accepting an optional default value AST.
