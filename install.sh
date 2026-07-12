@@ -14,11 +14,10 @@ grab_latest() {
 
 mkdir -p "plugins/shared"
 
-#This is some ancient jna version we depend on 
 if [ -f "plugins/shared/jna.jar" ]; then
   echo -e "plugins/shared/jna.jar \e[32mAlready up to date, skipping...\e[0m"
 else
-  jnaJar='https://enigma-dev.org/bin/jna.jar'
+  jnaJar='https://github.com/java-native-access/jna/raw/refs/heads/master/dist/jna.jar'
   echo -e "\e[32mAttempting to download jna.jar to ${PWD}/plugins/shared/jna.jar from $jnaJar \e[0m"
   curl -k -L -o "plugins/shared/jna.jar" "$jnaJar"
 fi
