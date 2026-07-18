@@ -37,12 +37,12 @@
 
 namespace enigma_user {
 
-#if (defined(_WIN32) && !defined(_WIN64))
-const int os_windows = os_win32;
-#elif (defined(_WIN32) && defined(_WIN64))
-const int os_windows = os_win64;
-#else
-int os_windows = os_unknown;
+#if (defined(_WIN32) && !defined(_WIN64) && !defined(os_windows))
+#define os_windows os_win32
+#elif (defined(_WIN32) && defined(_WIN64) && !defined(os_windows))
+#define os_windows os_win64
+#elif !defined(os_windows)
+#define os_windows os_unknown
 #endif
 #if (defined(_WIN32) && !defined(_WIN64))
 const int os_type = os_win32;
