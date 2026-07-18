@@ -64,19 +64,6 @@ namespace enigma {
   
 namespace enigma_user {
 
-extern int os_unknown;
-extern int os_win32;
-extern int os_win64;
-extern int os_macosx;
-extern int os_linux;
-extern int os_freebsd;
-extern int os_dragonfly;
-extern int os_netbsd;
-extern int os_openbsd;
-extern int os_sunos;
-extern int os_windows;
-extern int os_type;
-
 extern std::string keyboard_string;
 extern double fps;
 extern unsigned long delta_time;
