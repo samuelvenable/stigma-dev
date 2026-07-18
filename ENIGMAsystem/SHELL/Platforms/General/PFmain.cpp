@@ -37,18 +37,18 @@
 
 namespace enigma_user {
 
-int os_unknown   = -1;
-int os_win32     =  0;
-int os_win64     =  1;
-int os_macosx    =  2;
-int os_linux     =  3;
-int os_android   =  4;
-int os_freebsd   =  5;
-int os_dragonfly =  6;
+const int os_unknown   = -1;
+const int os_win32     =  0;
+const int os_win64     =  1;
+const int os_macosx    =  2;
+const int os_linux     =  3;
+const int os_android   =  4;
+const int os_freebsd   =  5;
+const int os_dragonfly =  6;
 #if (defined(_WIN32) && !defined(_WIN64))
-int os_windows = os_win32;
+const int os_windows = os_win32;
 #elif (defined(_WIN32) && defined(_WIN64))
-int os_windows = os_win64;
+const int os_windows = os_win64;
 #else
 int os_windows = os_unknown;
 #endif
