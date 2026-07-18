@@ -24,6 +24,17 @@ using std::string;
 namespace enigma_user {
 
 enum {
+  os_unknown = -1,
+  os_win32 = 0,
+  os_win64 = 1,
+  os_macosx = 2,
+  os_linux = 3,
+  os_android = 4,
+  os_freebsd = 5,
+  os_dragonfly = 6,
+};
+
+enum {
   browser_not_a_browser = -1,
   browser_unknown = 0,
   browser_ie = 1,
