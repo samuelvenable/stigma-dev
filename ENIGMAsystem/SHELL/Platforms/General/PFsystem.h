@@ -26,7 +26,6 @@ namespace enigma_user {
 #if !defined(os_unknown)
 #define os_unknown -1
 #endif
-
 #if !defined(os_win32)
 #define os_win32 0
 #endif
