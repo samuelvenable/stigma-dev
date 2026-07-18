@@ -407,35 +407,6 @@ int enigma_main(int argc, char** argv) {
 
 namespace enigma_user {
 
-#if (defined(_WIN32) && !defined(_WIN64) && !defined(os_windows))
-#define os_windows os_win32
-#elif (defined(_WIN32) && defined(_WIN64) && !defined(os_windows))
-#define os_windows os_win64
-#elif !defined(os_windows)
-#define os_windows os_unknown
-#endif
-#if (defined(_WIN32) && !defined(_WIN64))
-const int os_type = os_win32;
-#elif (defined(_WIN32) && defined(_WIN64))
-const int os_type = os_win64;
-#elif (defined(__APPLE__) && defined(__MACH__))
-const int os_type = os_macosx;
-#elif defined(__linux__)
-const int os_type = os_linux;
-#elif defined(__FreeBSD__)
-const int os_type = os_freebsd;
-#elif defined(__DragonFly__)
-const int os_type = os_dragonfly;
-#elif defined(__NetBSD__)
-const int os_type = os_netbsd;
-#elif defined(__OpenBSD__)
-const int os_type = os_openbsd;
-#elif defined(__sun)
-const int os_type = os_sunos;
-#else
-const int os_type = os_unknown;
-#endif
-
 std::string keyboard_string = "";
 double fps = 0;
 unsigned long delta_time = 0;
