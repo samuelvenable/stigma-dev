@@ -42,7 +42,7 @@ int os_win32     =  0;
 int os_win64     =  1;
 int os_macosx    =  2;
 int os_linux     =  3;
-int os_android   =  4
+int os_android   =  4;
 int os_freebsd   =  5;
 int os_dragonfly =  6;
 #if (defined(_WIN32) && !defined(_WIN64))
