@@ -44,10 +44,6 @@ using std::vector;
 using enigma_user::file_exists;
 using enigma_user::directory_exists;
 
-namespace enigma_user {
-const int os_type = os_windows;
-} // namespace enigma_user
-
 namespace enigma
 {
 
