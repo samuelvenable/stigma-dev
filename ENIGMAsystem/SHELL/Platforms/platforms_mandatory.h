@@ -41,6 +41,7 @@ typedef std::string wid_t;
 namespace enigma_user {
   extern unsigned long current_time; // milliseconds since the start of the game
   extern unsigned long delta_time; // microseconds since the last step event
+  extern const int os_type;
 }
 
 namespace enigma
