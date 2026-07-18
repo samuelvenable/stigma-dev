@@ -23,6 +23,19 @@ using std::string;
 
 namespace enigma_user {
 
+enum {
+  os_unknown = -1,
+  os_win32 = 0,
+  os_win64 = 1,
+  os_macosx = 2,
+  os_linux = 3,
+  os_freebsd = 4,
+  os_dragonfly = 5,
+  os_netbsd = 6,
+  os_openbsd = 7,
+  os_sunos = 8,
+};
+
 string os_get_config();
 int os_get_info();
 string os_get_language();
@@ -32,6 +45,6 @@ bool os_is_paused();
 void os_lock_orientation(bool enable);
 void os_powersave_enable(bool enable);
 
-}
+} // enigma_user
 
 #endif //ENIGMA_PLATFORM_SYSTEM_H
