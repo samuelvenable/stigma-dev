@@ -53,21 +53,21 @@ int os_windows = os_win64;
 int os_windows = os_unknown;
 #endif
 #if (defined(_WIN32) && !defined(_WIN64))
-int os_type = os_win32;
+const int os_type = os_win32;
 #elif (defined(_WIN32) && defined(_WIN64))
-int os_type = os_win64;
+const int os_type = os_win64;
 #elif (defined(__APPLE__) && defined(__MACH__))
-int os_type = os_macosx;
+const int os_type = os_macosx;
 #elif (defined(__linux__) && !defined(__ANDROID__))
-int os_type = os_linux;
+const int os_type = os_linux;
 #elif (defined(__linux__) && defined(__ANDROID__))
-int os_type = os_android;
+const int os_type = os_android;
 #elif defined(__FreeBSD__)
-int os_type = os_freebsd;
+const int os_type = os_freebsd;
 #elif defined(__DragonFly__)
-int os_type = os_dragonfly;
+const int os_type = os_dragonfly;
 #else
-int os_type = os_unknown;
+const int os_type = os_unknown;
 #endif
 
 std::string filename_addslash(const std::string& dir) {
