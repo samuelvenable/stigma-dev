@@ -37,6 +37,39 @@
 
 namespace enigma_user {
 
+int os_unknown   = -1;
+int os_win32     =  0;
+int os_win64     =  1;
+int os_macosx    =  2;
+int os_linux     =  3;
+int os_android   =  4
+int os_freebsd   =  5;
+int os_dragonfly =  6;
+#if (defined(_WIN32) && !defined(_WIN64))
+int os_windows = os_win32;
+#elif (defined(_WIN32) && defined(_WIN64))
+int os_windows = os_win64;
+#else
+int os_windows = os_unknown;
+#endif
+#if (defined(_WIN32) && !defined(_WIN64))
+int os_type = os_win32;
+#elif (defined(_WIN32) && defined(_WIN64))
+int os_type = os_win64;
+#elif (defined(__APPLE__) && defined(__MACH__))
+int os_type = os_macosx;
+#elif (defined(__linux__) && !defined(__ANDROID__))
+int os_type = os_linux;
+#elif (defined(__linux__) && defined(__ANDROID__))
+int os_type = os_android;
+#elif defined(__FreeBSD__)
+int os_type = os_freebsd;
+#elif defined(__DragonFly__)
+int os_type = os_dragonfly;
+#else
+int os_type = os_unknown;
+#endif
+
 std::string filename_addslash(const std::string& dir) {
   #if (defined(_WIN32) || defined(_WIN64))
   if (!dir.empty() && *dir.rbegin() != '\\') return dir + '\\';
