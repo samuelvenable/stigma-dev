@@ -1,4 +1,3 @@
-#pragma once
 #include "PFmain.h"
 
 #include "PFwindow.h"
