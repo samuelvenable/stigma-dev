@@ -215,8 +215,10 @@ static inline void change_relative_to_kde() {
   cancel_pressed = false;
   setenv("WAYLAND_DISPLAY", "", 1);
   if (dm_dialogengine == dm_x11) {
-    string currdesktop = getenv("XDG_CURRENT_DESKTOP") ? getenv("XDG_CURRENT_DESKTOP") : "";
-    bool isKDE = (currdesktop == "KDE");
+    const char *ptr = getenv("XDG_CURRENT_DESKTOP");
+    string str = ptr ? ptr : "";
+    std::transform(str.begin(), str.end(), str.begin(), ::toupper);
+    bool isKDE = (str.find("KDE") != string::npos);
     if (isKDE) dm_dialogengine = dm_kdialog;
     else dm_dialogengine = dm_zenity;
   }
