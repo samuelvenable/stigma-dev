@@ -90,12 +90,6 @@
 #endif
 #if ((defined(_WIN32) || defined(_WIN64)) && defined(_MSC_VER))
 #pragma comment(lib, "ntdll.lib")
-#if (defined(USE_SDL_POLLEVENT) || defined(USE_SDL2_POLLEVENT))
-#pragma comment(lib, "SDL2.lib")
-#endif
-#if defined(USE_SDL3_POLLEVENT)
-#pragma comment(lib, "SDL3.lib")
-#endif
 #endif
 
 namespace {
