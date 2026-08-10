@@ -22,18 +22,15 @@
 using std::string;
 
 namespace enigma {
-
-void extension_async_init();
-
+  void extension_async_init();
 } // namespace enigma
 
 namespace enigma_user {
   extern unsigned async_load;
-
   int show_message_async(string str);
   int show_question_async(string str);
   int get_string_async(string str, string def);
   int get_integer_async(string str, double def);
-}
+} // namespace enigma_user
 
 #endif // ENIGMA_ASYNCDIALOG_H
