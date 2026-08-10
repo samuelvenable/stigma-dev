@@ -34,7 +34,6 @@ namespace enigma_user {
   int show_question_async(string str);
   int get_string_async(string str, string def);
   int get_integer_async(string str, double def);
-  int get_login_async(string username, string password);
 }
 
 #endif // ENIGMA_ASYNCDIALOG_H
