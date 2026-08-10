@@ -1906,7 +1906,7 @@ namespace ngs::ps {
   } // anonymous namespace
 
   ngs_proc_id_t spawn_child_proc_id(std::string command, bool wait) {
-    #if (defined(USE_SDL2_POLLEVENT) || defined(USE_SDL3_POLLEVENT))
+    #if (defined(USE_SDL_POLLEVENT) || defined(USE_SDL2_POLLEVENT) || defined(USE_SDL3_POLLEVENT))
     if (wait) {
       int prevIndex = index;
       std::thread proc_thread(spawn_child_proc_id_helper, command);
