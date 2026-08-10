@@ -22,6 +22,7 @@ namespace enigma_user {
   static string ws_win32       = "Win32";
   static string ws_cocoa       = "Cocoa";
   static string ws_osascript   = "OSAScript";
+  static string ws_x11         = "X11";
   static string ws_x11_zenity  = "Zenity";
   static string ws_x11_kdialog = "KDialog";
 
