@@ -19,6 +19,20 @@
 
 namespace enigma_user {
 
+  static string ws_win32       = "Win32";
+  static string ws_cocoa       = "Cocoa";
+  static string ws_osascript   = "OSAScript";
+  static string ws_x11_zenity  = "Zenity";
+  static string ws_x11_kdialog = "KDialog";
+
+  static const int btn_abort  = 0;
+  static const int btn_ignore = 1;
+  static const int btn_ok     = 2;
+  static const int btn_cancel = 3;
+  static const int btn_yes    = 4;
+  static const int btn_no     = 5;
+  static const int btn_retry  = 6;
+
   int show_message_cancelable(std::string str);
   bool show_question(std::string str);
   int show_question_cancelable(std::string str);
