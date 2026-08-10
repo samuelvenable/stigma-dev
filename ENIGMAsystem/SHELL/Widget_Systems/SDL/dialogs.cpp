@@ -63,7 +63,7 @@ void show_info(string info, int bgcolor, int left, int top, int width, int heigh
 
 void show_info() { }
 
-void show_debug_message(string errortext, MESSAGE_TYPE type) {
+int show_debug_message(string errortext, MESSAGE_TYPE type) {
   #ifndef DEBUG_MODE
   errortext += "\n";
   fputs(errortext.c_str(), stderr);
@@ -93,6 +93,7 @@ void show_debug_message(string errortext, MESSAGE_TYPE type) {
     environment_set_variable("IMGUI_NO", no);
     if (question) abort();
   }
+  return -1;
 }
 
 int show_message(const string &message) {
