@@ -87,12 +87,12 @@ namespace enigma_user {
 
 bool show_question(std::string str);
 
-void show_debug_message(std::string msg, MESSAGE_TYPE type = M_INFO);
+int show_debug_message(std::string msg, MESSAGE_TYPE type = M_INFO);
 
 // This obviously displays an error message.
 // It should offer a button to end the game, and if not fatal, a button to ignore the error.
-inline void show_error(std::string msg, const bool fatal) {
-   show_debug_message(msg, (fatal) ? M_FATAL_USER_ERROR : M_USER_ERROR);
+inline int show_error(std::string msg, const bool fatal) {
+   return show_debug_message(msg, (fatal) ? M_FATAL_USER_ERROR : M_USER_ERROR);
 }
 
 void show_error(string errortext, const bool fatal);
