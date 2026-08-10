@@ -43,7 +43,7 @@ void show_info(string info, int bgcolor, int left, int top, int width, int heigh
 
 void show_info() { }
 
-void show_debug_message(string errortext, MESSAGE_TYPE type) {
+int show_debug_message(string errortext, MESSAGE_TYPE type) {
   enigma::widget_system_initialize();
   int result = -1;
   #ifndef DEBUG_MODE
