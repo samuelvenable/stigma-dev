@@ -45,6 +45,7 @@ void show_info() { }
 
 void show_debug_message(string errortext, MESSAGE_TYPE type) {
   enigma::widget_system_initialize();
+  int result = -1;
   #ifndef DEBUG_MODE
   errortext += "\n";
   fputs(errortext.c_str(), stderr);
@@ -54,16 +55,17 @@ void show_debug_message(string errortext, MESSAGE_TYPE type) {
     type == MESSAGE_TYPE::M_FATAL_USER_ERROR) {
     std::string caption = dialog_module::widget_get_caption();
     dialog_module::widget_set_caption("Fatal Error");
-    dialog_module::show_error(errortext, true);
+    result = dialog_module::show_error(errortext, true);
     dialog_module::widget_set_caption(caption);
     abort();
   } else if (type == MESSAGE_TYPE::M_ERROR || 
     type == MESSAGE_TYPE::M_USER_ERROR) {
     std::string caption = dialog_module::widget_get_caption();
     dialog_module::widget_set_caption("Error");
-    dialog_module::show_error(errortext, false);
+    result = dialog_module::show_error(errortext, false);
     dialog_module::widget_set_caption(caption);
   }
+  return result;
 }
 
 int show_message(const string &message) {
