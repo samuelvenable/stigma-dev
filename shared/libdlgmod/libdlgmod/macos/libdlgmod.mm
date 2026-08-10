@@ -1636,7 +1636,7 @@ namespace dialog_module {
   void widget_set_system(const char *sys) {
     if (!strcmp(sys, "OSAScript")) {
       ws = "OSAScript";
-    } else {
+    } else if (!strcmp(sys, "Cocoa")) {
       ws = "Cocoa";
     }
   }
