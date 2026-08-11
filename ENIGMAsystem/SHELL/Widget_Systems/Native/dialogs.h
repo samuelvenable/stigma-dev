@@ -1,4 +1,4 @@
-/** Copyright (C) 2024 Samuel Venable
+/** Copyright (C) 2026 Samuel Venable
 ***
 *** This file is a part of the ENIGMA Development Environment.
 ***
@@ -19,12 +19,12 @@
 
 namespace enigma_user {
 
-  static string ws_win32       = "Win32";
-  static string ws_cocoa       = "Cocoa";
-  static string ws_osascript   = "OSAScript";
-  static string ws_x11         = "X11";
-  static string ws_x11_zenity  = "Zenity";
-  static string ws_x11_kdialog = "KDialog";
+  static std::string ws_win32       = "Win32";
+  static std::string ws_cocoa       = "Cocoa";
+  static std::string ws_osascript   = "OSAScript";
+  static std::string ws_x11         = "X11";
+  static std::string ws_x11_zenity  = "Zenity";
+  static std::string ws_x11_kdialog = "KDialog";
 
   static const int btn_abort  = 0;
   static const int btn_ignore = 1;
