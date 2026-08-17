@@ -23,34 +23,34 @@ ifeq ($(OS), Darwin)
  		override LDFLAGS += "/usr/local/lib/libSDL2.a" "/opt/local/lib/libz.a" "/opt/local/lib/libpng.a" "/usr/local/lib/libwebm.a" "/usr/local/lib/libvpx.a" -liconv -Wl,-framework,CoreAudio -Wl,-framework,AudioToolbox -Wl,-weak_framework,CoreHaptics -Wl,-weak_framework,GameController -Wl,-framework,ForceFeedback -lobjc -Wl,-framework,CoreVideo -Wl,-framework,Cocoa -Wl,-framework,Carbon -Wl,-framework,IOKit -Wl,-weak_framework,QuartzCore -Wl,-weak_framework,Metal -framework CoreFoundation -framework CoreGraphics -framework AppKit -Xlinker -no_warn_duplicate_libraries
  		override LDLIBS += "/usr/local/lib/libSDL2.a" "/opt/local/lib/libz.a" "/opt/local/lib/libpng.a" "/usr/local/lib/libwebm.a" "/usr/local/lib/libvpx.a" -liconv -Wl,-framework,CoreAudio -Wl,-framework,AudioToolbox -Wl,-weak_framework,CoreHaptics -Wl,-weak_framework,GameController -Wl,-framework,ForceFeedback -lobjc -Wl,-framework,CoreVideo -Wl,-framework,Cocoa -Wl,-framework,Carbon -Wl,-framework,IOKit -Wl,-weak_framework,QuartzCore -Wl,-weak_framework,Metal -framework CoreFoundation -framework CoreGraphics -framework AppKit -Xlinker -no_warn_duplicate_libraries
  	endif
-	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.dylib" ]; then echo '"libdlgmod.dylib" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; mv -f libdlgmod/libdlgmod-gm.dylib libdlgmod/libdlgmod.dylib; chmod u+x libdlgmod/libdlgmod.dylib; fi)
+	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.dylib" ]; then echo '"libdlgmod.dylib" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; rm -f libdlgmod/libdlgmod.a; mv -f libdlgmod/libdlgmod-gm.dylib libdlgmod/libdlgmod.dylib; chmod u+x libdlgmod/libdlgmod.dylib; fi)
 else ifeq ($(OS), Linux)
 	override CXXFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override CFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override LDFLAGS += $(shell pkg-config --libs x11) $(shell pkg-config --libs sdl2) -lpthread -lz -lm -lpng -lxcb -lXrandr -lXinerama -lXext
-	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
+	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; rm -f libdlgmod/libdlgmod.a; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
 else ifeq ($(OS), FreeBSD)  
 	override CXXFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override CFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override LDFLAGS += $(shell pkg-config --libs x11) $(shell pkg-config --libs sdl2) -lc -lpthread -lelf -lkvm -lz -lm -linotify -lm -lpng -lxcb -lXrandr -lXinerama -lXext
-	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
+	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; rm -f libdlgmod/libdlgmod.a; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
 else ifeq ($(OS), DragonFly)
 	override CXXFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override CFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override LDFLAGS += $(shell pkg-config --libs x11) $(shell pkg-config --libs sdl2) -lc -lpthread -lkvm -lz -lm -linotify -lm -lpng -lxcb -lXrandr -lXinerama -lXext
-	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
+	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; rm -f libdlgmod/libdlgmod.a; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
 else ifeq ($(OS), OpenBSD)
 	ALUREREPOS := $(shell cd "alure";cmake .;make;cd ..)
 	override CXXFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override CFLAGS += $(shell pkg-config --cflags x11) $(shell pkg-config --cflags sdl2)
 	override LDFLAGS += $(shell pkg-config --libs x11) $(shell pkg-config --libs sdl2) -lc -lpthread -lkvm -lz -lm -linotify -lm -lpng -lxcb -lXrandr -lXinerama -lXext
-	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
+	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.so" ]; then echo '"libdlgmod.so" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; rm -f libdlgmod/libdlgmod.a; mv -f libdlgmod/libdlgmod-gm.so libdlgmod/libdlgmod.so; chmod u+x libdlgmod/libdlgmod.so; fi)
 else
 	override CXXFLAGS += $(shell pkg-config --cflags sdl2)
 	override CFLAGS += $(shell pkg-config --cflags sdl2)
 	override LDLIBS += -lmingw32 -lshell32 -lole32 -luuid -lsetupapi -lImm32 -lversion -loleaut32 -lwinmm -luser32 -lntdll $(shell pkg-config --libs sdl2)
 	override LDFLAGS += -lmingw32 -lshell32 -lole32 -luuid -lsetupapi -lImm32 -lversion -loleaut32 -lwinmm -luser32 -lntdll $(shell pkg-config --libs sdl2)
-	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.dll" ]; then echo '"libdlgmod.dll" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; mv -f libdlgmod/libdlgmod-gm.dll libdlgmod/libdlgmod.dll; chmod u+x libdlgmod/libdlgmod.dll; fi)
+	LDLGREPOS := $(shell if [ -f "libdlgmod/libdlgmod.dll" ]; then echo '"libdlgmod.dll" exists'; else chmod u+x libdlgmod/libdlgmod-gm.sh; libdlgmod/libdlgmod-gm.sh; rm -f libdlgmod/libdlgmod.a; mv -f libdlgmod/libdlgmod-gm.dll libdlgmod/libdlgmod.dll; chmod u+x libdlgmod/libdlgmod.dll; fi)
 endif
 
 ifeq ($(UNIX_BASED), true)
