@@ -213,17 +213,20 @@ static inline void SetErrorHandlers() {
 
 static inline void change_relative_to_kde() {
   cancel_pressed = false;
-  setenv("WAYLAND_DISPLAY", "", 1);
   if (dm_dialogengine == dm_x11) {
     const char *ptr = getenv("XDG_CURRENT_DESKTOP");
     string str = ptr ? ptr : "";
     std::transform(str.begin(), str.end(), str.begin(), ::toupper);
     bool isKDE = (str.find("KDE") != string::npos);
-    if (isKDE) dm_dialogengine = dm_kdialog;
-    else dm_dialogengine = dm_zenity;
+    if (isKDE) {
+      setenv("QT_QPA_PLATFORM", "xcb", 1);
+      dm_dialogengine = dm_kdialog;
+    } else {
+      setenv("GDK_BACKEND", "x11", 1);
+      dm_dialogengine = dm_zenity;
+    }
   }
 }
-
 
 // set dialog transient; set title caption.
 static inline void modify_shell_dialog(PROCID pid) {
