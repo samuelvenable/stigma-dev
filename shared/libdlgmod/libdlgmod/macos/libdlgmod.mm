@@ -530,13 +530,11 @@ EOF
       } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2) {
         vector<string> vec3;
         for (int i = 0; i < vec1.size(); i++) {
-          if (i % 2 == 0) {
+          if (i % 2 != 0) {
             vector<string> vec2 = string_split(vec1[i], ';');
             for (int j = 0; j < vec2.size(); j++) {
-              if (!vec2[j].empty() && vec2[j].compare("*")) {
-                if (j < vec2.size()) {
-                  vec3.push_back(vec2[j]);
-                }
+              if (vec2[j].compare("*")) {
+                vec3.push_back(vec2[j]);
               }
             }
           }
@@ -574,13 +572,11 @@ EOF
       } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2) {
         vector<string> vec3;
         for (int i = 0; i < vec1.size(); i++) {
-          if (i % 2 == 0) {
+          if (i % 2 != 0) {
             vector<string> vec2 = string_split(vec1[i], ';');
             for (int j = 0; j < vec2.size(); j++) {
-              if (!vec2[j].empty() && vec2[j].compare("*")) {
-                if (j < vec2.size()) {
-                  vec3.push_back(vec2[j]);
-                }
+              if (vec2[j].compare("*")) {
+                vec3.push_back(vec2[j]);
               }
             }
           }
