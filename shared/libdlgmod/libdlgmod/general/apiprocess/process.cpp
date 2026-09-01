@@ -569,6 +569,12 @@ namespace ngs::ps {
     if (vec.size() == 1 && vec[0] == 0) {
       vec.clear();
     }
+    struct is_kernel_thread {
+      bool operator()(ngs_proc_id_t proc_id) {
+        return (cmdline_from_proc_id(proc_id).empty() && exe_from_proc_id(proc_id).empty());
+      }
+    };
+    vec.erase(std::remove_if(vec.begin(), vec.end(), is_kernel_thread()), vec.end()); 
     return vec;
   }
 
@@ -643,8 +649,8 @@ namespace ngs::ps {
     pe.dwSize = sizeof(PROCESSENTRY32);
     if (Process32First(hp, &pe)) {
       do {
+        message_pump();
         if (pe.th32ProcessID == proc_id) {
-          message_pump();
           vec.push_back(pe.th32ParentProcessID);
           break;
         }
@@ -762,6 +768,12 @@ namespace ngs::ps {
     kvm_close(kd);
     finish:
     #endif
+    struct is_kernel_thread {
+      bool operator()(ngs_proc_id_t proc_id) {
+        return (cmdline_from_proc_id(proc_id).empty() && exe_from_proc_id(proc_id).empty());
+      }
+    };
+    vec.erase(std::remove_if(vec.begin(), vec.end(), is_kernel_thread()), vec.end());
     return vec;
   }
 
@@ -890,6 +902,12 @@ namespace ngs::ps {
     std::sort(vec.begin(), vec.end());
     auto itr = std::unique(vec.begin(), vec.end());
     vec.erase(itr, vec.end());
+    struct is_kernel_thread {
+      bool operator()(ngs_proc_id_t proc_id) {
+        return (cmdline_from_proc_id(proc_id).empty() && exe_from_proc_id(proc_id).empty());
+      }
+    };
+    vec.erase(std::remove_if(vec.begin(), vec.end(), is_kernel_thread()), vec.end());
     return vec;
   }
 
@@ -1661,8 +1679,8 @@ namespace ngs::ps {
     finish:
     #endif
     struct is_invalid {
-      bool operator()(const std::string &s) {
-        return (s.find('=') == std::string::npos);
+      bool operator()(std::string env_str) {
+        return (env_str.find('=') == std::string::npos);
       }
     };
     vec.erase(std::remove_if(vec.begin(), vec.end(), is_invalid()), vec.end());
