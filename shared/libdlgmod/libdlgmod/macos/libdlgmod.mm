@@ -516,7 +516,7 @@ const char *cocoa_get_open_filename(const char *filter, const char *fname, const
     if (mselect) {
       string exts = string_replace_all(filter, "*.", "");
       vector<string> vec1 = string_split(exts, '|');
-      if (string(filter).empty() || (!vec1.empty() && vec1.size() >= 2 && vec1[1] == "*")) {
+      if (string(filter).empty() || (!vec1.empty() && vec1.size() == 2 && vec1[1] == "*")) {
         script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
@@ -527,13 +527,25 @@ end repeat
 return output
 EOF
 )");
-      } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2 && vec1[1] != "*") {
-        vector<string> vec2 = string_split(vec1[1], ';');
-        for (int i = 0; i < vec2.size(); i++) {
-          if (i < vec2.size() - 1) {
-            extensions += string("\"") + vec2[i] + string("\", ");
+      } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2) {
+        vector<string> vec3;
+        for (int i = 0; i < vec1.size(); i++) {
+          if (i % 2 == 0) {
+            vector<string> vec2 = string_split(vec1[i], ';');
+            for (int j = 0; j < vec2.size(); j++) {
+              if (!vec2[j].empty() && vec2[j].compare("*")) {
+                if (j < vec2.size()) {
+                  vec3.push_back(vec2[j]);
+                }
+              }
+            }
+          }
+        }
+        for (int i = 0; i < vec3.size(); i++) {
+          if (i < vec3.size() - 1) {
+            extensions += string("\"") + vec3[i] + string("\", ");
           } else {
-            extensions += string("\"") + vec2[i] + string("\"");
+            extensions += string("\"") + vec3[i] + string("\"");
           }
         }
         script = string(R"(osascript 2> /dev/null << 'EOF'
@@ -550,7 +562,7 @@ EOF
     } else {
       string exts = string_replace_all(filter, "*.", "");
       vector<string> vec1 = string_split(exts, '|');
-      if (string(filter).empty() || (!vec1.empty() && vec1.size() >= 2 && vec1[1] == "*")) {
+      if (string(filter).empty() || (!vec1.empty() && vec1.size() == 2 && vec1[1] == "*")) {
         script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
@@ -559,13 +571,25 @@ set output to (POSIX path of aFile) & linefeed
 return output
 EOF
 )");
-      } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2 && vec1[1] != "*") {
-        vector<string> vec2 = string_split(vec1[1], ';');
-        for (int i = 0; i < vec2.size(); i++) {
-          if (i < vec2.size() - 1) {
-            extensions += string("\"") + vec2[i] + string("\", ");
+      } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2) {
+        vector<string> vec3;
+        for (int i = 0; i < vec1.size(); i++) {
+          if (i % 2 == 0) {
+            vector<string> vec2 = string_split(vec1[i], ';');
+            for (int j = 0; j < vec2.size(); j++) {
+              if (!vec2[j].empty() && vec2[j].compare("*")) {
+                if (j < vec2.size()) {
+                  vec3.push_back(vec2[j]);
+                }
+              }
+            }
+          }
+        }
+        for (int i = 0; i < vec3.size(); i++) {
+          if (i < vec3.size() - 1) {
+            extensions += string("\"") + vec3[i] + string("\", ");
           } else {
-            extensions += string("\"") + vec2[i] + string("\"");
+            extensions += string("\"") + vec3[i] + string("\"");
           }
         }
         script = string(R"(osascript 2> /dev/null << 'EOF'
