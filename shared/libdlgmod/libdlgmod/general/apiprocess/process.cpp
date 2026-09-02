@@ -61,6 +61,10 @@ SOFTWARE.
 #include <libproc.h>
 #elif (defined(__linux__) || defined(__ANDROID__))
 #include <dirent.h>
+#if __has_include(<linux/sched.h>)
+// For defining PF_KTHREAD when possible...
+#include <linux/sched.h>
+#endif
 #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__OpenBSD__))
 #include <sys/param.h>
 #include <sys/sysctl.h>
@@ -93,6 +97,7 @@ SOFTWARE.
 #endif
 #if (defined(__linux__) || defined(__ANDROID__))
 #if !defined(PF_KTHREAD)
+// Normally defined in <linux/sched.h> when present...
 #define PF_KTHREAD 0x00200000
 #endif
 #endif
@@ -525,6 +530,8 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
+        // I am not aware of any reliable way to filter out the kernel threads on Windows...
+        // Checking whether getting the EXE file path from the PID fails is *probably* wrong...
         if (!exe_from_proc_id(pe.th32ProcessID).empty()) {
           vec.push_back(pe.th32ProcessID);
         }
@@ -534,6 +541,8 @@ namespace ngs::ps {
     #elif (defined(__APPLE__) && defined(__MACH__))
     std::vector<ngs_proc_id_t> proc_info;
     proc_info.resize(proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0));
+    // The proc_listpids(...) API does not include kernel threads...
+    // Use the sysctl(...) API instead if you need to include kernel threads...
     int cntp = proc_listpids(PROC_ALL_PIDS, 0, &proc_info[0], sizeof(ngs_proc_id_t) * proc_info.size());
     for (int i = cntp - 1; i >= 0; i--) {
       if (proc_info[i] > 0) {
@@ -548,6 +557,9 @@ namespace ngs::ps {
     while ((ent = readdir(proc))) {
       if (isdigit(*ent->d_name)) {
         tgid = strtoul(ent->d_name, nullptr, 10);
+        // Checks if the PF_KTHREAD flag is not present on Linux...
+        // Checks if the PR_ISSYS flag is not present on Solaris / illumos...
+        // If these flags are not set then the process is not a kernel thread...
         if (!proc_id_is_kernel_thread(tgid)) {
           vec.push_back(tgid);
         }
@@ -562,8 +574,13 @@ namespace ngs::ps {
     const char *memf   = "/dev/null";
     kd = kvm_openfiles(nlistf, memf, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
+    // Using KERN_PROC_PROC instead of KERN_PROC_ALL on FreeBSD omits kernel threads...
+    // Checking if the P_SYSTEM flag is not set on the iterated process does the same thing...
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_PROC, 0, &cntp))) {
       for (int i = 0; i < cntp; i++) {
+        // FreeBSD considers a PID of one to be a kernel thread for some reason...
+        // For consistency with the other Unix-like platforms we do not omit a PID of one...
+        // The Unix-like system init process, (a PID of one), is not a kernel thread...
         if (!(proc_info[i].ki_flag & P_SYSTEM) || proc_info[i].ki_pid == 1) {
           vec.push_back(proc_info[i].ki_pid);
         }
@@ -580,6 +597,9 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, &cntp))) {
       for (int i = 0; i < cntp; i++) {
+        // DragonFly BSD considers a PID of one to be a kernel thread for some reason...
+        // For consistency with the other Unix-like platforms we do not omit a PID of one...
+        // The Unix-like system init process, (a PID of one), is not a kernel thread...
         if (!(proc_info[i].kp_flags & P_SYSTEM) || proc_info[i].kp_pid == 1) {
           vec.push_back(proc_info[i].kp_pid);
         }
@@ -606,6 +626,8 @@ namespace ngs::ps {
     kinfo_proc *proc_info = nullptr;
     kd = kvm_openfiles(nullptr, nullptr, nullptr, KVM_NO_FILES, nullptr);
     if (!kd) return vec;
+    // Using KERN_PROC_ALL instead of KERN_PROC_KTHREAD on OpenBSD omits kernel threads...
+    // Checking if the P_SYSTEM flag is not set on the iterated process does the same thing...
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc), &cntp))) {
       for (int i = cntp - 1; i >= 0; i--) {
         if (!(proc_info[i].p_flag & P_SYSTEM)) {
@@ -625,6 +647,8 @@ namespace ngs::ps {
     kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     while ((proc_info = kvm_nextproc(kd))) {
+      // The Solaris / illumos SSYS flag is basically the same thing as the P_SYSTEM flag on *BSD platforms...
+      // If the SSYS flag is not set on the currently iterated process, that means it is not a kernel thread...
       if (!(proc_info->p_flag & SSYS)) {
         if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
           vec.insert(vec.begin(), cur_pid.pid_id);
@@ -720,6 +744,8 @@ namespace ngs::ps {
       do {
         message_pump();
         if (pe.th32ProcessID == proc_id) {
+          // I am not aware of any reliable way to filter out the kernel threads on Windows...
+          // Checking whether getting the EXE file path from the PID fails is *probably* wrong...
           if (!exe_from_proc_id(pe.th32ParentProcessID).empty()) {
             vec.push_back(pe.th32ParentProcessID);
           }
@@ -730,6 +756,8 @@ namespace ngs::ps {
     CloseHandle(hp);
     #elif (defined(__APPLE__) && defined(__MACH__))
     proc_bsdinfo proc_info;
+    // The proc_pidinfo(...) API does not include kernel threads...
+    // Use the sysctl(...) API instead if you need to include kernel threads...
     if (proc_pidinfo(proc_id, PROC_PIDTBSDINFO, 0, &proc_info, sizeof(proc_info)) > 0) {
       vec.push_back(proc_info.pbi_ppid);
     }
@@ -752,7 +780,11 @@ namespace ngs::ps {
             ((token = strtok(nullptr, " "))) &&
             ((token = strtok(nullptr, " ")))) {
             ngs_proc_id_t parent_proc_id = strtoul(token, nullptr, 10);
-            vec.push_back(parent_proc_id);
+            // Checks if the PF_KTHREAD flag is not present...
+            // If this flag is not set then the process is not a kernel thread...
+            if (!proc_id_is_kernel_thread(parent_proc_id)) {
+              vec.push_back(parent_proc_id);
+            }
           }
         }
         fclose(file);
@@ -767,6 +799,9 @@ namespace ngs::ps {
     kd = kvm_openfiles(nlistf, memf, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_PID, proc_id, &cntp))) {
+      // FreeBSD considers a PID of one to be a kernel thread for some reason...
+      // For consistency with the other Unix-like platforms we do not omit a PID of one...
+      // The Unix-like system init process, (a PID of one), is not a kernel thread...
       if (!(proc_info->ki_flag & P_SYSTEM) || proc_info->ki_ppid == 1) {
         vec.push_back(proc_info->ki_ppid);
       }
@@ -781,6 +816,9 @@ namespace ngs::ps {
     kd = kvm_openfiles(nlistf, memf, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_PID, proc_id, &cntp))) {
+      // DragonFly BSD considers a PID of one to be a kernel thread for some reason...
+      // For consistency with the other Unix-like platforms we do not omit a PID of one...
+      // The Unix-like system init process, (a PID of one), is not a kernel thread...
       if (!(proc_info->kp_flags & P_SYSTEM) || proc_info->kp_ppid == 1) {
         vec.push_back(proc_info->kp_ppid);
       }
@@ -823,7 +861,11 @@ namespace ngs::ps {
       int fd = open(procfs_path.c_str(), O_RDONLY);
       if (fd != -1) {
         if (read(fd, &status, sizeof(pstatus_t)) > 0) {
-          vec.push_back(status.pr_ppid);
+          // Checks if the PR_ISSYS flag is not present...
+          // If this flag is not set then the process is not a kernel thread...
+          if (!proc_id_is_kernel_thread(status.pr_ppid)) {
+            vec.push_back(status.pr_ppid);
+          }
         }
         close(fd);
       }
@@ -836,6 +878,8 @@ namespace ngs::ps {
     kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     if ((proc_info = kvm_getproc(kd, proc_id))) {
+      // The Solaris / illumos SSYS flag is basically the same thing as the P_SYSTEM flag on *BSD platforms...
+      // If the SSYS flag is not set on the currently iterated process, that means it is not a kernel thread...
       if (!(proc_info->p_flag & SSYS)) {
         vec.push_back(proc_info->p_ppid);
       }
@@ -845,6 +889,9 @@ namespace ngs::ps {
     #endif
     struct is_invalid {
       bool operator()(ngs_proc_id_t proc_id) {
+        // The proc_id_exists(...) API uses proc_id_enum(...) under-the-hood...
+        // This is slower than sending a signal of zero with kill(...), and more prone to race conditions...
+        // However, this will remove kernel threads from the resulting vector, unlike sending a signal...
         return (!proc_id_exists(proc_id));
       }
     };
