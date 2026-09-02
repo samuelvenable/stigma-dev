@@ -651,15 +651,19 @@ namespace ngs::ps {
   }
 
   bool proc_id_exists(ngs_proc_id_t proc_id) {
-    if (proc_id < 0) return false;
     std::vector<ngs_proc_id_t> vec;
+    #if (!defined(_WIN32) && !defined(_WIN64))
+    if (proc_id < 0) return vec;
+    #endif
     vec = proc_id_enum();
     auto itr = std::find(vec.begin(), vec.end(), proc_id);
     return (itr != vec.end());
   }
 
   bool proc_id_suspend(ngs_proc_id_t proc_id) {
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return false;
+    #endif
     #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGSTOP));
     #else
@@ -679,7 +683,9 @@ namespace ngs::ps {
   }
 
   bool proc_id_resume(ngs_proc_id_t proc_id) {
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return false;
+    #endif
     #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGCONT));
     #else
@@ -699,7 +705,9 @@ namespace ngs::ps {
   }
 
   bool proc_id_kill(ngs_proc_id_t proc_id) {
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return false;
+    #endif
     #if (!defined(_WIN32) && !defined(_WIN64))
     return (!kill(proc_id, SIGKILL));
     #else
@@ -713,7 +721,9 @@ namespace ngs::ps {
 
   std::vector<ngs_proc_id_t> parent_proc_id_from_proc_id(ngs_proc_id_t proc_id) {
     std::vector<ngs_proc_id_t> vec;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return vec;
+    #endif
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE hp = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (!hp) return vec;
@@ -860,7 +870,9 @@ namespace ngs::ps {
 
   std::vector<ngs_proc_id_t> proc_id_from_parent_proc_id(ngs_proc_id_t parent_proc_id) {
     std::vector<ngs_proc_id_t> vec;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (parent_proc_id < 0) return vec;
+    #endif
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE hp = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (!hp) return vec;
@@ -996,8 +1008,7 @@ namespace ngs::ps {
   }
 
   std::vector<ngs_proc_id_t> proc_id_from_exe(std::string exe) {
-    std::vector<ngs_proc_id_t> vec;
-    if (exe.empty()) return vec;
+    std::vector<ngs_proc_id_t> vec; if (exe.empty()) return vec;
     auto fnamecmp = [](std::string fname1, std::string fname2) {
       #if (defined(_WIN32) || defined(_WIN64))
       std::transform(fname1.begin(), fname1.end(), fname1.begin(), ::toupper);
@@ -1028,8 +1039,7 @@ namespace ngs::ps {
   }
 
   std::vector<ngs_proc_id_t> proc_id_from_cwd(std::string cwd) {
-    std::vector<ngs_proc_id_t> vec;
-    if (cwd.empty()) return vec;
+    std::vector<ngs_proc_id_t> vec; if (cwd.empty()) return vec;
     auto fnamecmp = [](std::string fname1, std::string fname2) {
       #if (defined(_WIN32) || defined(_WIN64))
       std::transform(fname1.begin(), fname1.end(), fname1.begin(), ::toupper);
@@ -1049,7 +1059,9 @@ namespace ngs::ps {
 
   std::string exe_from_proc_id(ngs_proc_id_t proc_id) {
     std::string path;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return path;
+    #endif
     #if (defined(_WIN32) || defined(_WIN64))
     if (proc_id == proc_id_from_self()) {
       wchar_t buffer[MAX_PATH];
@@ -1315,7 +1327,9 @@ namespace ngs::ps {
 
   std::string cwd_from_proc_id(ngs_proc_id_t proc_id) {
     std::string path;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return path;
+    #endif
     #if (defined(_WIN32) || defined(_WIN64))
     if (proc_id == proc_id_from_self()) {
       wchar_t buffer[MAX_PATH];
@@ -1525,22 +1539,24 @@ namespace ngs::ps {
   }
 
   std::string comm_from_proc_id(ngs_proc_id_t proc_id) {
-    std::string exe = exe_from_proc_id(proc_id);
-    if (exe.empty()) return "";
+    std::string comm = exe_from_proc_id(proc_id);
+    if (comm.empty()) return "";
     #if (!defined(_WIN32) && !defined(_WIN64))
-    std::size_t pos = exe.find_last_of("/");
+    std::size_t pos = comm.find_last_of("/");
     #else
-    std::size_t pos = exe.find_last_of("\\/");
+    std::size_t pos = comm.find_last_of("\\/");
     #endif
     if (pos != std::string::npos) {
-      return exe.substr(pos + 1);
+      return comm.substr(pos + 1);
     }
-    return exe;
+    return comm;
   }
 
   std::vector<std::string> cmdline_from_proc_id(ngs_proc_id_t proc_id) {
     std::vector<std::string> vec;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return vec;
+    #endif
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE proc = open_process_with_debug_privilege(proc_id);
     if (!proc) return vec;
@@ -1656,7 +1672,9 @@ namespace ngs::ps {
 
   std::vector<std::string> environ_from_proc_id(ngs_proc_id_t proc_id) {
     std::vector<std::string> vec;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return vec;
+    #endif
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE proc = open_process_with_debug_privilege(proc_id);
     if (!proc) return vec;
@@ -1773,7 +1791,9 @@ namespace ngs::ps {
 
   std::string envvar_value_from_proc_id(ngs_proc_id_t proc_id, std::string name) {
     std::string value;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return value;
+    #endif
     std::vector<std::string> vec = environ_from_proc_id(proc_id);
     if (!vec.empty()) {
       for (std::size_t i = 0; i < vec.size(); i++) {
@@ -1796,7 +1816,9 @@ namespace ngs::ps {
 
   bool envvar_exists_from_proc_id(ngs_proc_id_t proc_id, std::string name) {
     bool exists = false;
+    #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return exists;
+    #endif
     std::vector<std::string> vec = environ_from_proc_id(proc_id);
     if (!vec.empty()) {
       for (std::size_t i = 0; i < vec.size(); i++) {
