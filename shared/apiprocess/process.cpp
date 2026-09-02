@@ -64,7 +64,6 @@ SOFTWARE.
 #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__OpenBSD__))
 #include <sys/param.h>
 #include <sys/sysctl.h>
-#include <sys/proc.h>
 #include <sys/user.h>
 #include <kvm.h>
 #elif defined(__NetBSD__)
