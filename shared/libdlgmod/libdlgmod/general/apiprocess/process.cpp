@@ -477,18 +477,18 @@ namespace {
     } else {
       procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/stat");
     }
-    std::ifstream stat_file(procfs_path);
-    if (!stat_file.is_open()) {
+    std::ifstream file(procfs_path);
+    if (!file.is_open()) {
       return false;
     }
     std::string content;
-    std::getline(stat_file, content);
+    std::getline(file, content);
     size_t last_closing_parentheses = content.rfind(')');
     if (last_closing_parentheses == std::string::npos || last_closing_parentheses + 2 >= content.length()) {
       return false;
     }
-    std::string rest_of_stat = content.substr(last_closing_parentheses + 2);
-    std::istringstream iss(rest_of_stat);
+    std::string rest_of_file = content.substr(last_closing_parentheses + 2);
+    std::istringstream iss(rest_of_file);
     std::string token;
     int current_field_index = 3; 
     unsigned long flags = 0;
@@ -536,10 +536,9 @@ namespace ngs::ps {
     proc_info.resize(proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0));
     int cntp = proc_listpids(PROC_ALL_PIDS, 0, &proc_info[0], sizeof(ngs_proc_id_t) * proc_info.size());
     for (int i = cntp - 1; i >= 0; i--) {
-      if (proc_info[i] <= 0) {
-        continue;
+      if (proc_info[i] > 0) {
+        vec.push_back(proc_info[i]);
       }
-      vec.push_back(proc_info[i]);
     }
     #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     DIR *proc = opendir("/proc");
@@ -547,14 +546,12 @@ namespace ngs::ps {
     ngs_proc_id_t tgid = 0;
     if (!proc) return vec;
     while ((ent = readdir(proc))) {
-      if (!isdigit(*ent->d_name)) {
-        continue;
+      if (isdigit(*ent->d_name)) {
+        tgid = strtoul(ent->d_name, nullptr, 10);
+        if (!proc_id_is_kernel_thread(tgid)) {
+          vec.push_back(tgid);
+        }
       }
-      tgid = strtoul(ent->d_name, nullptr, 10);
-      if (proc_id_is_kernel_thread(tgid)) {
-        continue;
-      }
-      vec.push_back(tgid);
     }
     closedir(proc);
     #elif (defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
@@ -567,10 +564,9 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_PROC, 0, &cntp))) {
       for (int i = 0; i < cntp; i++) {
-        if (proc_info[i].ki_flag & P_SYSTEM) {
-          continue;
+        if (!(proc_info[i].ki_flag & P_SYSTEM)) {
+          vec.push_back(proc_info[i].ki_pid);
         }
-        vec.push_back(proc_info[i].ki_pid);
       }
     }
     kvm_close(kd);
@@ -584,10 +580,9 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, &cntp))) {
       for (int i = 0; i < cntp; i++) {
-        if (proc_info[i].kp_flags & P_SYSTEM) {
-          continue;
+        if (!(proc_info[i].kp_flags & P_SYSTEM)) {
+          vec.push_back(proc_info[i].kp_pid);
         }
-        vec.push_back(proc_info[i].kp_pid);
       }
     }
     kvm_close(kd);
@@ -599,10 +594,9 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getproc2(kd, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc2), &cntp))) {
       for (int i = cntp - 1; i >= 0; i--) {
-        if (proc_info[i].p_flag & P_SYSTEM) {
-          continue;
+        if (!(proc_info[i].p_flag & P_SYSTEM)) {
+          vec.push_back(proc_info[i].p_pid);
         }
-        vec.push_back(proc_info[i].p_pid);
       }
     }
     kvm_close(kd);
@@ -614,10 +608,9 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc), &cntp))) {
       for (int i = cntp - 1; i >= 0; i--) {
-        if (proc_info[i].p_flag & P_SYSTEM) {
-          continue;
+        if (!(proc_info[i].p_flag & P_SYSTEM)) {
+          vec.push_back(proc_info[i].p_pid);
         }
-        vec.push_back(proc_info[i].p_pid);
       }
     }
     kvm_close(kd);
@@ -632,11 +625,10 @@ namespace ngs::ps {
     kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     while ((proc_info = kvm_nextproc(kd))) {
-      if (proc_info->p_flag & SSYS) {
-        continue;
-      }
-      if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
-        vec.insert(vec.begin(), cur_pid.pid_id);
+      if (!(proc_info->p_flag & SSYS)) {
+        if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
+          vec.insert(vec.begin(), cur_pid.pid_id);
+        }
       }
     }
     kvm_close(kd);
@@ -744,15 +736,15 @@ namespace ngs::ps {
     #elif (defined(__linux__) || defined(__ANDROID__))
     if (!proc_id_is_kernel_thread(proc_id)) {
       char buffer[BUFSIZ];
+      FILE *file = nullptr;
       std::string procfs_path;
       if (proc_id == proc_id_from_self()) {
         procfs_path = "/proc/self/stat";
       } else {
         procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/stat");
       }
-      FILE *stat = fopen(procfs_path.c_str(), "r");
-      if (stat) {
-        std::size_t size = fread(buffer, sizeof(char), sizeof(buffer), stat);
+      if ((file = fopen(procfs_path.c_str(), "r"))) {
+        std::size_t size = fread(buffer, sizeof(char), sizeof(buffer), file);
         if (size > 0) {
           char *token = nullptr;
           if (((token = strtok(buffer, " "))) &&
@@ -763,7 +755,7 @@ namespace ngs::ps {
             vec.push_back(parent_proc_id);
           }
         }
-        fclose(stat);
+        fclose(file);
       }
     }
     #elif (defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
@@ -886,10 +878,9 @@ namespace ngs::ps {
     proc_info.resize(proc_listpids(PROC_PPID_ONLY, (uint32_t)parent_proc_id, nullptr, 0));
     int cntp = proc_listpids(PROC_PPID_ONLY, (uint32_t)parent_proc_id, &proc_info[0], sizeof(ngs_proc_id_t) * proc_info.size());
     for (int i = cntp - 1; i >= 0; i--) {
-      if (proc_info[i] <= 0) {
-        continue;
+      if (proc_info[i] > 0) {
+        vec.push_back(proc_info[i]);
       }
-      vec.push_back(proc_info[i]);
     }
     #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     std::vector<ngs_proc_id_t> proc_id = proc_id_enum();
@@ -909,11 +900,10 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_PROC, 0, &cntp))) {
       for (int i = 0; i < cntp; i++) {
-        if (proc_info[i].ki_flag & P_SYSTEM) {
-          continue;
-        }
-        if (proc_info[i].ki_ppid == parent_proc_id) {
-          vec.push_back(proc_info[i].ki_pid);
+        if (!(proc_info[i].ki_flag & P_SYSTEM)) {
+          if (proc_info[i].ki_ppid == parent_proc_id) {
+            vec.push_back(proc_info[i].ki_pid);
+          }
         }
       }
     }
@@ -928,11 +918,10 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, &cntp))) {
       for (int i = 0; i < cntp; i++) {
-        if (proc_info[i].kp_flags & P_SYSTEM) {
-          continue;
-        }
-        if (proc_info[i].kp_ppid == parent_proc_id) {
-          vec.push_back(proc_info[i].kp_pid);
+        if (!(proc_info[i].kp_flags & P_SYSTEM)) {
+          if (proc_info[i].kp_ppid == parent_proc_id) {
+            vec.push_back(proc_info[i].kp_pid);
+          }
         }
       }
     }
@@ -945,11 +934,10 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getproc2(kd, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc2), &cntp))) {
       for (int i = cntp - 1; i >= 0; i--) {
-        if (proc_info[i].p_flag & P_SYSTEM) {
-          continue;
-        }
-        if (proc_info[i].p_ppid == parent_proc_id) {
-          vec.push_back(proc_info[i].p_pid);
+        if (!(proc_info[i].p_flag & P_SYSTEM)) {
+          if (proc_info[i].p_ppid == parent_proc_id) {
+            vec.push_back(proc_info[i].p_pid);
+          }
         }
       }
     }
@@ -962,11 +950,10 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc), &cntp))) {
       for (int i = cntp - 1; i >= 0; i--) {
-        if (proc_info[i].p_flag & P_SYSTEM) {
-          continue;
-        }
-        if (proc_info[i].p_ppid == parent_proc_id) {
-          vec.push_back(proc_info[i].p_pid);
+        if (!(proc_info[i].p_flag & P_SYSTEM)) {
+          if (proc_info[i].p_ppid == parent_proc_id) {
+            vec.push_back(proc_info[i].p_pid);
+          }
         }
       }
     }
@@ -982,12 +969,11 @@ namespace ngs::ps {
     kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     while ((proc_info = kvm_nextproc(kd))) {
-      if (proc_info->p_flag & SSYS) {
-        continue;
-      }
-      if (proc_info->p_ppid == parent_proc_id) {
-        if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
-          vec.insert(vec.begin(), cur_pid.pid_id);
+      if (!(proc_info->p_flag & SSYS)) {
+        if (proc_info->p_ppid == parent_proc_id) {
+          if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
+            vec.insert(vec.begin(), cur_pid.pid_id);
+          }
         }
       }
     }
@@ -1568,12 +1554,13 @@ namespace ngs::ps {
     vec = cmd_env_from_proc_id(proc_id, MEMCMD);
     #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     FILE *file = nullptr;
-    if (proc_id == proc_id_from_self()) { 
-      file = fopen("/proc/self/cmdline", "rb");
+    std::string procfs_path;
+    if (proc_id == proc_id_from_self()) {
+      procfs_path = "/proc/self/cmdline";
     } else {
-      file = fopen(("/proc/" + std::to_string(proc_id) + "/cmdline").c_str(), "rb");
+      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/cmdline");
     }
-    if (file) {
+    if ((file = fopen(procfs_path.c_str(), "r"))) {
       char *cmd = nullptr;
       std::size_t size = 0;
       while (getdelim(&cmd, &size, 0, file) != -1) {
@@ -1683,12 +1670,13 @@ namespace ngs::ps {
     vec = cmd_env_from_proc_id(proc_id, MEMENV);
     #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     FILE *file = nullptr;
-    if (proc_id == proc_id_from_self()) { 
-      file = fopen("/proc/self/environ", "rb");
+    std::string procfs_path;
+    if (proc_id == proc_id_from_self()) {
+      procfs_path = "/proc/self/environ";
     } else {
-      file = fopen(("/proc/" + std::to_string(proc_id) + "/environ").c_str(), "rb");
+      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/environ");
     }
-    if (file) {
+    if ((file = fopen(procfs_path.c_str(), "r"))) {
       char *env = nullptr;
       std::size_t size = 0;
       while (getdelim(&env, &size, 0, file) != -1) {
