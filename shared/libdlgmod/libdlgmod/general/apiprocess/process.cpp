@@ -848,6 +848,12 @@ namespace ngs::ps {
     kvm_close(kd);
     finish:
     #endif
+    struct is_invalid {
+      bool operator()(ngs_proc_id_t proc_id) {
+        return (!proc_id_exists(proc_id)));
+      }
+    };
+    vec.erase(std::remove_if(vec.begin(), vec.end(), is_invalid()), vec.end());
     return vec;
   }
 
@@ -1756,8 +1762,8 @@ namespace ngs::ps {
     finish:
     #endif
     struct is_invalid {
-      bool operator()(std::string env_str) {
-        return (env_str.find('=') == std::string::npos);
+      bool operator()(std::string environ) {
+        return (environ.find('=') == std::string::npos);
       }
     };
     vec.erase(std::remove_if(vec.begin(), vec.end(), is_invalid()), vec.end());
