@@ -549,8 +549,9 @@ namespace ngs::ps {
     ngs_proc_id_t tgid = 0;
     if (!proc) return vec;
     while ((ent = readdir(proc))) {
-      if (!isdigit(*ent->d_name))
+      if (!isdigit(*ent->d_name)) {
         continue;
+      }
       tgid = strtoul(ent->d_name, nullptr, 10);
       if (proc_id_is_kernel_thread(tgid)) {
         continue;
