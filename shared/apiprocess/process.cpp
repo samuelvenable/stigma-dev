@@ -526,10 +526,9 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
-        if (pe.th32ProcessID == 0 || pe.th32ProcessID == 4) {
-          continue;
+        if (!exe_from_proc_id(pe.th32ProcessID).empty()) {
+          vec.push_back(pe.th32ProcessID);
         }
-        vec.push_back(pe.th32ProcessID);
       } while (Process32Next(hp, &pe));
     }
     CloseHandle(hp);
@@ -729,11 +728,10 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
-        if (pe.th32ProcessID == 0 || pe.th32ProcessID == 4) {
-          continue;
-        }
         if (pe.th32ProcessID == proc_id) {
-          vec.push_back(pe.th32ParentProcessID);
+          if (!exe_from_proc_id(pe.th32ParentProcessID).empty()) {
+            vec.push_back(pe.th32ParentProcessID);
+          }
           break;
         }
       } while (Process32Next(hp, &pe));
@@ -876,11 +874,10 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
-        if (pe.th32ProcessID == 0 || pe.th32ProcessID == 4) {
-          continue;
-        }
         if (pe.th32ParentProcessID == parent_proc_id) {
-          vec.push_back(pe.th32ProcessID);
+          if (!exe_from_proc_id(pe.th32ProcessID).empty()) {
+            vec.push_back(pe.th32ProcessID);
+          }
         }
       } while (Process32Next(hp, &pe));
     }
