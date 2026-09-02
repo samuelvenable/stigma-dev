@@ -899,6 +899,7 @@ namespace ngs::ps {
     return vec;
   }
 
+  // This function is extremely slow on Windows and macOS, (especially Windows)...
   std::vector<ngs_proc_id_t> proc_id_from_parent_proc_id(ngs_proc_id_t parent_proc_id) {
     std::vector<ngs_proc_id_t> vec;
     #if (!defined(_WIN32) && !defined(_WIN64))
