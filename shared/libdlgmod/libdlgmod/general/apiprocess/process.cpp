@@ -945,7 +945,7 @@ namespace ngs::ps {
         // Checks if the PR_ISSYS flag is not present on Solaris / illumos...
         // If these flags are not set then the process is not a kernel thread...
         if (!proc_id_is_kernel_thread(tgid)) {
-          std::vector<ngs_proc_id_t> ppid = parent_proc_id_from_proc_id(proc_id[i]);
+          std::vector<ngs_proc_id_t> ppid = parent_proc_id_from_proc_id(tgid);
           if (!ppid.empty() && ppid[0] == parent_proc_id) {
             vec.push_back(tgid);
           }
