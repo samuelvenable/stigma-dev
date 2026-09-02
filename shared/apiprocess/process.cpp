@@ -885,6 +885,12 @@ namespace ngs::ps {
     kvm_close(kd);
     finish:
     #endif
+	#if (defined(_WIN32) || defined(_WIN64))
+    // Removes a PID of four, (it is not a user-level process on Windows)...
+    if (!vec.empty() && vec[0] == 4) {
+      vec.clear();
+    }
+	#endif
     // Removes a PID of zero, (it is not a user-level process)...
     if (!vec.empty() && vec[0] == 0) {
       vec.clear();
