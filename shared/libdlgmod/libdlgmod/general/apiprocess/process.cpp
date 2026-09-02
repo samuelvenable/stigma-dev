@@ -495,7 +495,7 @@ namespace {
     unsigned long flags = 0;
     while (iss >> token) {
       if (current_field_index == 9) {
-        flags = strtoul(token, nullptr, 10);
+        flags = strtoul(token.c_str(), nullptr, 10);
         break;
       }
       current_field_index++;
