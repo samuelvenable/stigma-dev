@@ -659,6 +659,14 @@ namespace ngs::ps {
     kvm_close(kd);
     finish:
     #endif
+	#if (defined(_WIN32) || defined(_WIN64))
+    // Removes a PID of four, (it is not a user-level process on Windows)...
+    auto itr = std::remove(vec.begin(), vec.end(), 4);
+    vec.erase(itr, vec.end());
+	#endif
+    // Removes a PID of zero, (it is not a user-level process)...
+    auto itr = std::remove(vec.begin(), vec.end(), 0);
+    vec.erase(itr, vec.end());
     std::sort(vec.begin(), vec.end());
     return vec;
   }
@@ -1055,6 +1063,14 @@ namespace ngs::ps {
     kvm_close(kd);
     finish:
     #endif
+	#if (defined(_WIN32) || defined(_WIN64))
+    // Removes a PID of four, (it is not a user-level process on Windows)...
+    auto itr = std::remove(vec.begin(), vec.end(), 4);
+    vec.erase(itr, vec.end());
+	#endif
+    // Removes a PID of zero, (it is not a user-level process)...
+    auto itr = std::remove(vec.begin(), vec.end(), 0);
+    vec.erase(itr, vec.end());
     std::sort(vec.begin(), vec.end());
     return vec;
   }
