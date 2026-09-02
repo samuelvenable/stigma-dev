@@ -70,6 +70,9 @@ SOFTWARE.
 #include <sys/sysctl.h>
 #include <sys/user.h>
 #include <kvm.h>
+#if ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__OpenBSD__))
+#include <sys/proc.h>
+#endif
 #elif defined(__NetBSD__)
 #include <sys/param.h>
 #include <sys/sysctl.h>
