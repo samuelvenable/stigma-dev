@@ -440,6 +440,30 @@ namespace {
     }
     return vec;
   }
+
+  bool proc_id_is_kernel_thread(ngs::ps::ngs_proc_id_t proc_id) {
+    auto proc_pstatus_get = [](pstatus_t *pstatus, ngs::ps::ngs_proc_id_t proc_id) {
+	  int fd = -1, retval = -1;
+      std::string procfs_path;
+      if (proc_id == ngs::ps::proc_id_from_self()) {
+        procfs_path = "/proc/self/status";
+      } else {
+        procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/status");
+      }
+	  if ((fd = open(fname, O_RDONLY)) >= 0) {
+        if (read(fd, pstatus, sizeof(*pstatus)) == sizeof(*pstatus)) {
+	      retval = 0;
+        }
+	    close(fd);
+	  }
+	  return retval;
+    };
+    pstatus_t pstatus;
+    if (!proc_pstatus_get(&pstatus, proc_id)) {
+      return (pstatus.pr_flags & PR_ISSYS);
+    }
+    return false;
+  }
   #endif
 
 } // anonymous namespace
@@ -464,6 +488,9 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
+        if (pe.th32ProcessID == 0 || pe.th32ProcessID == 4) {
+          continue;
+        }
         vec.push_back(pe.th32ProcessID);
       } while (Process32Next(hp, &pe));
     }
@@ -487,6 +514,9 @@ namespace ngs::ps {
       if (!isdigit(*ent->d_name))
         continue;
       tgid = strtoul(ent->d_name, nullptr, 10);
+      if (proc_id_is_kernel_thread(tgid)) {
+        continue;
+      }
       vec.push_back(tgid);
     }
     closedir(proc);
@@ -567,6 +597,9 @@ namespace ngs::ps {
     kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     while ((proc_info = kvm_nextproc(kd))) {
+      if (proc_info->p_flag & SSYS) {
+        continue;
+      }
       if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
         vec.insert(vec.begin(), cur_pid.pid_id);
       }
@@ -575,14 +608,6 @@ namespace ngs::ps {
     finish:
     #endif
     std::sort(vec.begin(), vec.end());
-    auto itr = std::unique(vec.begin(), vec.end());
-    vec.erase(itr, vec.end());
-    struct is_kernel_thread {
-      bool operator()(ngs_proc_id_t proc_id) {
-        return (cmdline_from_proc_id(proc_id).empty() && exe_from_proc_id(proc_id).empty());
-      }
-    };
-    vec.erase(std::remove_if(vec.begin(), vec.end(), is_kernel_thread()), vec.end()); 
     return vec;
   }
 
@@ -658,6 +683,9 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
+        if (pe.th32ProcessID == 0 || pe.th32ProcessID == 4) {
+          continue;
+        }
         if (pe.th32ProcessID == proc_id) {
           vec.push_back(pe.th32ParentProcessID);
           break;
@@ -671,27 +699,29 @@ namespace ngs::ps {
       vec.push_back(proc_info.pbi_ppid);
     }
     #elif (defined(__linux__) || defined(__ANDROID__))
-    char buffer[BUFSIZ];
-    std::string procfs_path;
-    if (proc_id == proc_id_from_self()) {
-      procfs_path = "/proc/self/stat";
-    } else {
-      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/stat");
-    }
-    FILE *stat = fopen(procfs_path.c_str(), "r");
-    if (stat) {
-      std::size_t size = fread(buffer, sizeof(char), sizeof(buffer), stat);
-      if (size > 0) {
-        char *token = nullptr;
-        if (((token = strtok(buffer, " "))) &&
-          ((token = strtok(nullptr, " "))) &&
-          ((token = strtok(nullptr, " "))) &&
-          ((token = strtok(nullptr, " ")))) {
-          ngs_proc_id_t parent_proc_id = strtoul(token, nullptr, 10);
-          vec.push_back(parent_proc_id);
-        }
+    if (!proc_id_is_kernel_thread(proc_id)) {
+      char buffer[BUFSIZ];
+      std::string procfs_path;
+      if (proc_id == proc_id_from_self()) {
+        procfs_path = "/proc/self/stat";
+      } else {
+        procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/stat");
       }
-      fclose(stat);
+      FILE *stat = fopen(procfs_path.c_str(), "r");
+      if (stat) {
+        std::size_t size = fread(buffer, sizeof(char), sizeof(buffer), stat);
+        if (size > 0) {
+          char *token = nullptr;
+          if (((token = strtok(buffer, " "))) &&
+            ((token = strtok(nullptr, " "))) &&
+            ((token = strtok(nullptr, " "))) &&
+            ((token = strtok(nullptr, " ")))) {
+            ngs_proc_id_t parent_proc_id = strtoul(token, nullptr, 10);
+            vec.push_back(parent_proc_id);
+          }
+        }
+        fclose(stat);
+      }
     }
     #elif (defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
     int cntp = 0;
@@ -749,19 +779,21 @@ namespace ngs::ps {
     kvm_close(kd);
     #endif
     #if (defined(__sun) && defined(__SVR4))
-    pstatus_t status;
-    std::string procfs_path;
-    if (proc_id == proc_id_from_self()) {
-      procfs_path = "/proc/self/status";
-    } else {
-      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/status");
-    }
-    int fd = open(procfs_path.c_str(), O_RDONLY);
-    if (fd != -1) {
-      if (read(fd, &status, sizeof(pstatus_t)) > 0) {
-        vec.push_back(status.pr_ppid);
+    if (!proc_id_is_kernel_thread(proc_id)) {
+      pstatus_t status;
+      std::string procfs_path;
+      if (proc_id == proc_id_from_self()) {
+        procfs_path = "/proc/self/status";
+      } else {
+        procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/status");
       }
-      close(fd);
+      int fd = open(procfs_path.c_str(), O_RDONLY);
+      if (fd != -1) {
+        if (read(fd, &status, sizeof(pstatus_t)) > 0) {
+          vec.push_back(status.pr_ppid);
+        }
+        close(fd);
+      }
     }
     kvm_t *kd = nullptr;
     struct proc *proc_info = nullptr;
@@ -771,17 +803,13 @@ namespace ngs::ps {
     kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     if ((proc_info = kvm_getproc(kd, proc_id))) {
-      vec.push_back(proc_info->p_ppid);
+      if (!(proc_info->p_flag & SSYS)) {
+        vec.push_back(proc_info->p_ppid);
+      }
     }
     kvm_close(kd);
     finish:
     #endif
-    struct is_kernel_thread {
-      bool operator()(ngs_proc_id_t proc_id) {
-        return (cmdline_from_proc_id(proc_id).empty() && exe_from_proc_id(proc_id).empty());
-      }
-    };
-    vec.erase(std::remove_if(vec.begin(), vec.end(), is_kernel_thread()), vec.end());
     return vec;
   }
 
@@ -796,6 +824,9 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
+        if (pe.th32ProcessID == 0 || pe.th32ProcessID == 4) {
+          continue;
+        }
         if (pe.th32ParentProcessID == parent_proc_id) {
           vec.push_back(pe.th32ProcessID);
         }
@@ -903,6 +934,9 @@ namespace ngs::ps {
     kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     while ((proc_info = kvm_nextproc(kd))) {
+      if (proc_info->p_flag & SSYS) {
+        continue;
+      }
       if (proc_info->p_ppid == parent_proc_id) {
         if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
           vec.insert(vec.begin(), cur_pid.pid_id);
@@ -913,14 +947,6 @@ namespace ngs::ps {
     finish:
     #endif
     std::sort(vec.begin(), vec.end());
-    auto itr = std::unique(vec.begin(), vec.end());
-    vec.erase(itr, vec.end());
-    struct is_kernel_thread {
-      bool operator()(ngs_proc_id_t proc_id) {
-        return (cmdline_from_proc_id(proc_id).empty() && exe_from_proc_id(proc_id).empty());
-      }
-    };
-    vec.erase(std::remove_if(vec.begin(), vec.end(), is_kernel_thread()), vec.end());
     return vec;
   }
 
