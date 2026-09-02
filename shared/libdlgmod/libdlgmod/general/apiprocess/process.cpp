@@ -857,32 +857,6 @@ namespace ngs::ps {
     #if (!defined(_WIN32) && !defined(_WIN64))
     if (parent_proc_id < 0) return vec;
     #endif
-    #if (defined(_WIN32) || defined(_WIN64))
-    HANDLE hp = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (!hp) return vec;
-    PROCESSENTRY32 pe;
-    pe.dwSize = sizeof(PROCESSENTRY32);
-    if (Process32First(hp, &pe)) {
-      do {
-        message_pump();
-        if (pe.th32ParentProcessID == parent_proc_id) {
-          if (!exe_from_proc_id(pe.th32ProcessID).empty()) {
-            vec.push_back(pe.th32ProcessID);
-          }
-        }
-      } while (Process32Next(hp, &pe));
-    }
-    CloseHandle(hp);
-    #elif (defined(__APPLE__) && defined(__MACH__))
-    std::vector<ngs_proc_id_t> proc_info;
-    proc_info.resize(proc_listpids(PROC_PPID_ONLY, (uint32_t)parent_proc_id, nullptr, 0));
-    int cntp = proc_listpids(PROC_PPID_ONLY, (uint32_t)parent_proc_id, &proc_info[0], sizeof(ngs_proc_id_t) * proc_info.size());
-    for (int i = cntp - 1; i >= 0; i--) {
-      if (proc_info[i] > 0) {
-        vec.push_back(proc_info[i]);
-      }
-    }
-    #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     std::vector<ngs_proc_id_t> proc_id = proc_id_enum();
     for (std::size_t i = 0; i < proc_id.size(); i++) {
       std::vector<ngs_proc_id_t> ppid = parent_proc_id_from_proc_id(proc_id[i]);
@@ -890,97 +864,6 @@ namespace ngs::ps {
         vec.push_back(proc_id[i]);
       }
     }
-    #elif (defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
-    int cntp = 0;
-    kvm_t *kd = nullptr;
-    kinfo_proc *proc_info = nullptr;
-    const char *nlistf = "/dev/null";
-    const char *memf   = "/dev/null";
-    kd = kvm_openfiles(nlistf, memf, nullptr, O_RDONLY, nullptr);
-    if (!kd) return vec;
-    if ((proc_info = kvm_getprocs(kd, KERN_PROC_PROC, 0, &cntp))) {
-      for (int i = 0; i < cntp; i++) {
-        if (!(proc_info[i].ki_flag & P_SYSTEM)) {
-          if (proc_info[i].ki_ppid == parent_proc_id) {
-            vec.push_back(proc_info[i].ki_pid);
-          }
-        }
-      }
-    }
-    kvm_close(kd);
-    #elif defined(__DragonFly__)
-    int cntp = 0;
-    kvm_t *kd = nullptr;
-    kinfo_proc *proc_info = nullptr;
-    const char *nlistf = "/dev/null";
-    const char *memf   = "/dev/null";
-    kd = kvm_openfiles(nlistf, memf, nullptr, O_RDONLY, nullptr);
-    if (!kd) return vec;
-    if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, &cntp))) {
-      for (int i = 0; i < cntp; i++) {
-        if (!(proc_info[i].kp_flags & P_SYSTEM) || proc_info[i].kp_ppid == 1) {
-          if (proc_info[i].kp_ppid == parent_proc_id) {
-            vec.push_back(proc_info[i].kp_pid);
-          }
-        }
-      }
-    }
-    kvm_close(kd);
-    #elif defined(__NetBSD__)
-    int cntp = 0;
-    kvm_t *kd = nullptr;
-    kinfo_proc2 *proc_info = nullptr;
-    kd = kvm_openfiles(nullptr, nullptr, nullptr, KVM_NO_FILES, nullptr);
-    if (!kd) return vec;
-    if ((proc_info = kvm_getproc2(kd, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc2), &cntp))) {
-      for (int i = cntp - 1; i >= 0; i--) {
-        if (!(proc_info[i].p_flag & P_SYSTEM)) {
-          if (proc_info[i].p_ppid == parent_proc_id) {
-            vec.push_back(proc_info[i].p_pid);
-          }
-        }
-      }
-    }
-    kvm_close(kd);
-    #elif defined(__OpenBSD__)
-    int cntp = 0;
-    kvm_t *kd = nullptr;
-    kinfo_proc *proc_info = nullptr;
-    kd = kvm_openfiles(nullptr, nullptr, nullptr, KVM_NO_FILES, nullptr);
-    if (!kd) return vec;
-    if ((proc_info = kvm_getprocs(kd, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc), &cntp))) {
-      for (int i = cntp - 1; i >= 0; i--) {
-        if (!(proc_info[i].p_flag & P_SYSTEM)) {
-          if (proc_info[i].p_ppid == parent_proc_id) {
-            vec.push_back(proc_info[i].p_pid);
-          }
-        }
-      }
-    }
-    kvm_close(kd);
-    #endif
-    #if (defined(__sun) && defined(__SVR4))
-    struct pid cur_pid;
-    kvm_t *kd = nullptr;
-    struct proc *proc_info = nullptr;
-    if (!vec.empty()) { 
-      goto finish;
-    }
-    kd = kvm_open(nullptr, nullptr, nullptr, O_RDONLY, nullptr);
-    if (!kd) return vec;
-    while ((proc_info = kvm_nextproc(kd))) {
-      if (!(proc_info->p_flag & SSYS)) {
-        if (proc_info->p_ppid == parent_proc_id) {
-          if (kvm_kread(kd, (std::uintptr_t)proc_info->p_pidp, &cur_pid, sizeof(cur_pid)) != -1) {
-            vec.insert(vec.begin(), cur_pid.pid_id);
-          }
-        }
-      }
-    }
-    kvm_close(kd);
-    finish:
-    #endif
-    std::sort(vec.begin(), vec.end());
     return vec;
   }
 
