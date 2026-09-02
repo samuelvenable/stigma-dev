@@ -542,9 +542,9 @@ namespace ngs::ps {
     }
     #elif ((defined(__linux__) || defined(__ANDROID__)) || (defined(__sun) && defined(__SVR4)))
     DIR *proc = opendir("/proc");
+    if (!proc) return vec;
     struct dirent *ent = nullptr;
     ngs_proc_id_t tgid = 0;
-    if (!proc) return vec;
     while ((ent = readdir(proc))) {
       if (isdigit(*ent->d_name)) {
         tgid = strtoul(ent->d_name, nullptr, 10);
