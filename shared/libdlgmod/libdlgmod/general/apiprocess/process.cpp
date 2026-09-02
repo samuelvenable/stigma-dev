@@ -28,6 +28,7 @@ SOFTWARE.
 #if defined(__apiprocess_supported__)
 #include <unordered_map>
 #include <algorithm>
+#include <fstream>
 #include <sstream>
 #include <thread>
 #include <mutex>
@@ -90,6 +91,11 @@ SOFTWARE.
 #endif
 #if ((defined(_WIN32) || defined(_WIN64)) && defined(_MSC_VER))
 #pragma comment(lib, "ntdll.lib")
+#endif
+#if (defined(__linux__) || defined(__ANDROID__))
+#if !defined(PF_KTHREAD)
+#define PF_KTHREAD 0x00200000
+#endif
 #endif
 
 namespace {
@@ -450,7 +456,7 @@ namespace {
       } else {
         procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/status");
       }
-	  if ((fd = open(fname, O_RDONLY)) >= 0) {
+	  if ((fd = open(procfs_path.c_str(), O_RDONLY)) >= 0) {
         if (read(fd, pstatus, sizeof(*pstatus)) == sizeof(*pstatus)) {
 	      retval = 0;
         }
@@ -463,6 +469,38 @@ namespace {
       return (pstatus.pr_flags & PR_ISSYS);
     }
     return false;
+  }
+  #elif (defined(__linux__) || defined(__ANDROID__))
+  bool proc_id_is_kernel_thread(ngs::ps::ngs_proc_id_t proc_id) {
+    std::string procfs_path;
+    if (proc_id == ngs::ps::proc_id_from_self()) {
+      procfs_path = "/proc/self/stat";
+    } else {
+      procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/stat");
+    }
+    std::ifstream stat_file(procfs_path);
+    if (!stat_file.is_open()) {
+      return false;
+    }
+    std::string content;
+    std::getline(stat_file, content);
+    size_t last_closing_parentheses = content.rfind(')');
+    if (last_closing_parentheses == std::string::npos || last_closing_parentheses + 2 >= content.length()) {
+      return false;
+    }
+    std::string rest_of_stat = content.substr(last_closing_parentheses + 2);
+    std::istringstream iss(rest_of_stat);
+    std::string token;
+    int current_field_index = 3; 
+    unsigned long flags = 0;
+    while (iss >> token) {
+      if (current_field_index == 9) {
+        flags = strtoul(token, nullptr, 10);
+        break;
+      }
+      current_field_index++;
+    }
+    return (flags & PF_KTHREAD);
   }
   #endif
 
