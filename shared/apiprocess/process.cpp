@@ -1763,8 +1763,8 @@ namespace ngs::ps {
     finish:
     #endif
     struct is_invalid {
-      bool operator()(std::string environ) {
-        return (environ.find('=') == std::string::npos);
+      bool operator()(std::string envp) {
+        return (envp.find('=') == std::string::npos);
       }
     };
     vec.erase(std::remove_if(vec.begin(), vec.end(), is_invalid()), vec.end());
