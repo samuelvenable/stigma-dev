@@ -530,9 +530,10 @@ namespace ngs::ps {
     if (Process32First(hp, &pe)) {
       do {
         message_pump();
-        // I am not aware of any reliable way to filter out the kernel threads on Windows...
-        // Checking whether getting the EXE file path from the PID fails is *probably* wrong...
-        if (!exe_from_proc_id(pe.th32ProcessID).empty()) {
+        // If the szExeFile member of the PROCESSENTRY32 structure has 
+		// no *.exe file extension, that means it is a kernel thread...
+	    std::string comm = pe.szExeFile; std::size_t len = comm.length();
+        if (len < 4 || (len >= 4 && !comm.substr(len - 4).compare(".exe"))) {
           vec.push_back(pe.th32ProcessID);
         }
       } while (Process32Next(hp, &pe));
@@ -744,9 +745,10 @@ namespace ngs::ps {
       do {
         message_pump();
         if (pe.th32ProcessID == proc_id) {
-          // I am not aware of any reliable way to filter out the kernel threads on Windows...
-          // Checking whether getting the EXE file path from the PID fails is *probably* wrong...
-          if (!exe_from_proc_id(pe.th32ParentProcessID).empty()) {
+          // If the szExeFile member of the PROCESSENTRY32 structure has 
+		  // no *.exe file extension, that means it is a kernel thread...
+	      std::string comm = pe.szExeFile; std::size_t len = comm.length();
+          if (len < 4 || (len >= 4 && !comm.substr(len - 4).compare(".exe"))) {
             vec.push_back(pe.th32ParentProcessID);
           }
           break;
@@ -899,7 +901,6 @@ namespace ngs::ps {
     return vec;
   }
 
-  // This function is extremely slow on Windows and macOS, (especially Windows)...
   std::vector<ngs_proc_id_t> proc_id_from_parent_proc_id(ngs_proc_id_t parent_proc_id) {
     std::vector<ngs_proc_id_t> vec;
     #if (!defined(_WIN32) && !defined(_WIN64))
