@@ -589,9 +589,7 @@ namespace ngs::ps {
         if (proc_info[i].kp_flag & P_SYSTEM) {
           continue;
         }
-        if (proc_info[i].kp_pid > 0) {
-          vec.push_back(proc_info[i].kp_pid);
-        }
+        vec.push_back(proc_info[i].kp_pid);
       }
     }
     kvm_close(kd);
@@ -795,9 +793,7 @@ namespace ngs::ps {
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_PID, proc_id, &cntp))) {
       if (!(proc_info->kp_flag & P_SYSTEM)) {
-        if (proc_info->kp_ppid > 0) {
-          vec.push_back(proc_info->kp_ppid);
-        }
+        vec.push_back(proc_info->kp_ppid);
       }
     }
     kvm_close(kd);
@@ -939,7 +935,7 @@ namespace ngs::ps {
         if (proc_info[i].kp_flag & P_SYSTEM) {
           continue;
         }
-        if (proc_info[i].kp_pid > 0 && proc_info[i].kp_ppid > 0 && proc_info[i].kp_ppid == parent_proc_id) {
+        if (proc_info[i].kp_ppid == parent_proc_id) {
           vec.push_back(proc_info[i].kp_pid);
         }
       }
