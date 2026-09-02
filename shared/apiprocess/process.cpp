@@ -383,7 +383,7 @@ namespace {
       } else {
         procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/psinfo");
       }
-      if ((fd = open(procfs_path.c_str(), O_RDONLY)) < 0) {
+      if ((fd = open(procfs_path.c_str(), O_RDONLY)) == -1) {
         return ESRCH;
       }
       if (pread(fd, psinfo, sizeof(psinfo_t), 0) != sizeof(psinfo_t)) {
@@ -412,7 +412,7 @@ namespace {
     } else {
       procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/as");
     }
-    if ((fd = open(procfs_path.c_str(), O_RDONLY)) < 0) {
+    if ((fd = open(procfs_path.c_str(), O_RDONLY)) == -1) {
       free(args);
       goto finish;
     }
@@ -460,7 +460,7 @@ namespace {
       } else {
         procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/status");
       }
-	  if ((fd = open(procfs_path.c_str(), O_RDONLY)) >= 0) {
+	  if ((fd = open(procfs_path.c_str(), O_RDONLY)) != -1) {
         if (read(fd, pstatus, sizeof(*pstatus)) == sizeof(*pstatus)) {
 	      retval = 0;
         }
@@ -851,6 +851,7 @@ namespace ngs::ps {
     #endif
     #if (defined(__sun) && defined(__SVR4))
     if (!proc_id_is_kernel_thread(proc_id)) {
+      int fd = -1;
       pstatus_t status;
       std::string procfs_path;
       if (proc_id == proc_id_from_self()) {
@@ -858,8 +859,7 @@ namespace ngs::ps {
       } else {
         procfs_path = std::string("/proc/") + std::to_string(proc_id) + std::string("/status");
       }
-      int fd = open(procfs_path.c_str(), O_RDONLY);
-      if (fd != -1) {
+      if ((fd = open(procfs_path.c_str(), O_RDONLY)) != -1) {
         if (read(fd, &status, sizeof(pstatus_t)) > 0) {
           // Checks if the PR_ISSYS flag is not present...
           // If this flag is not set then the process is not a kernel thread...
