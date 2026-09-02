@@ -651,11 +651,10 @@ namespace ngs::ps {
   }
 
   bool proc_id_exists(ngs_proc_id_t proc_id) {
-    std::vector<ngs_proc_id_t> vec;
     #if (!defined(_WIN32) && !defined(_WIN64))
     if (proc_id < 0) return false;
     #endif
-    vec = proc_id_enum();
+    std::vector<ngs_proc_id_t> vec = proc_id_enum();
     auto itr = std::find(vec.begin(), vec.end(), proc_id);
     return (itr != vec.end());
   }
