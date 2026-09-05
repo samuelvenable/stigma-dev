@@ -1294,7 +1294,7 @@ namespace apiprocess {
     kd = kvm_openfiles(nlistf, memf, nullptr, O_RDONLY, nullptr);
     if (!kd) return vec;
     if ((proc_info = kvm_getprocs(kd, KERN_PROC_PID, proc_id, &cntp))) {
-      if (!(proc_info->kp_flags & P_SYSTEM) || proc_info->ki_pid == 1) {
+      if (!(proc_info->ki_flag & P_SYSTEM) || proc_info->ki_pid == 1) {
         if (!proc_id_is_kernel_thread(proc_info->ki_ppid)) {
           if (proc_id_and_parent_proc_id_compare_creation_time(proc_info->ki_pid, proc_info->ki_ppid)) {
             vec.push_back(proc_info->ki_ppid);
