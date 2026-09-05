@@ -199,7 +199,7 @@ string EnvironmentGetVariable(string name) {
 }
 
 string EnvironmentGetVariableEx(PROCID procId, string name) {
-  return ngs::ps::envvar_value_from_proc_id(procId, name);
+  return apiprocess::envvar_value_from_proc_id(procId, name);
 }
 
 bool EnvironmentGetVariableExists(string name) {
@@ -207,7 +207,7 @@ bool EnvironmentGetVariableExists(string name) {
 }
 
 bool EnvironmentGetVariableExistsEx(PROCID procId, string name) {
-  return ngs::ps::envvar_exists_from_proc_id(procId, name);
+  return apiprocess::envvar_exists_from_proc_id(procId, name);
 }
 
 bool EnvironmentSetVariable(string name, string value) {
