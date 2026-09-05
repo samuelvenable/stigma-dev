@@ -46,7 +46,7 @@ SOFTWARE.
 
 #include "xprocess.hpp"
 
-using namespace ngs::ps;
+using namespace apiprocess;
 
 namespace {
 
