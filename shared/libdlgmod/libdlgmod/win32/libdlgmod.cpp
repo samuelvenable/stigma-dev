@@ -640,7 +640,7 @@ namespace dialog_module {
       if (result < Evaluation.length()) { fclose(fp); return ""; }
       else { fclose(fp); }
       MoveFileW(wbuff, (wbuff + wstring(L".vbs")).c_str());
-      ngs::ps::ngs_proc_id_t proc_id = ngs::ps::spawn_child_proc_id((string("cscript.exe /nologo \"") + narrow(wbuff) + string(".vbs\"")).c_str(), false);
+      apiprocess::proc_id_t proc_id = apiprocess::spawn_child_proc_id((string("cscript.exe /nologo \"") + narrow(wbuff) + string(".vbs\"")).c_str(), false);
       int window_ids_length = 0;
       char **window_ids = nullptr;
       xprocess::window_id_from_proc_id(proc_id, &window_ids, &window_ids_length);
@@ -681,7 +681,7 @@ namespace dialog_module {
       }
       if (window_ids) xprocess::free_window_id(window_ids);
       EnableWindow(owner_window(), false);
-      while (proc_id != 0 && !ngs::ps::child_proc_id_is_complete(proc_id)) {
+      while (proc_id != 0 && !apiprocess::child_proc_id_is_complete(proc_id)) {
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
           TranslateMessage(&msg);
@@ -689,14 +689,14 @@ namespace dialog_module {
         }  
       }
       InputBoxResult.clear();
-      InputBoxResult = ngs::ps::read_from_stdout_for_child_proc_id(proc_id);
+      InputBoxResult = apiprocess::read_from_stdout_for_child_proc_id(proc_id);
       while (!InputBoxResult.empty() && (InputBoxResult.back() == ' ' || 
         InputBoxResult.back() == '\t' || InputBoxResult.back() == '\r' || InputBoxResult.back() == '\n'))
         InputBoxResult.pop_back();
       static string strResult;
       strResult = InputBoxResult;
-      ngs::ps::free_stdout_for_child_proc_id(proc_id);
-      ngs::ps::free_stdin_for_child_proc_id(proc_id);
+      apiprocess::free_stdout_for_child_proc_id(proc_id);
+      apiprocess::free_stdin_for_child_proc_id(proc_id);
       DeleteFileW((wbuff + wstring(L".vbs")).c_str());
       EnableWindow(owner_window(), true);
       #endif
