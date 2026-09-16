@@ -305,6 +305,9 @@ vector<vector<string>> nfd_filter(string input) {
         if (last != string::npos)
           str.erase(first, last - first + 1);
       }
+      if (!str.empty() && str.back() == ' ') {
+        str.pop_back();
+      }
       vec.push_back(str);
     } else {
       vec.push_back(string_replace_all(string_replace_all(str, ";", ","), "*.", ""));
