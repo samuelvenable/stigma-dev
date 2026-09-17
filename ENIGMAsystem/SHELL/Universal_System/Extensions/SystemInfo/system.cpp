@@ -1564,14 +1564,30 @@ std::string cpu_core_count() {
   if (numcoreserror)
     return pointer_null();
   #if defined(_WIN32)
-  std::string tmp = read_output("C:\\Windows\\System32\\wbem\\WMIC.exe cpu get NumberOfCores");
-  if (!tmp.empty()) {
-    tmp = std::regex_replace(tmp, std::regex("NumberOfCores"), "");
-    tmp = std::regex_replace(tmp, std::regex(" "), "");
-    tmp = std::regex_replace(tmp, std::regex("\t"), "");
-    tmp = std::regex_replace(tmp, std::regex("\r"), "");
-    tmp = std::regex_replace(tmp, std::regex("\n"), "");
-    numcores = (int)strtol(tmp.c_str(), nullptr, 10);
+  DWORD sz = 0;
+  numcores = -1;
+  if (GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &sz)) {
+    numcoreserror = true;
+    numcores = -1;
+  } else if (GetLastError() == ERROR_INSUFFICIENT_BUFFER && sz > 0) {
+    std::vector<BYTE> buf(sz);
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX info = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)buf.data();
+    if (GetLogicalProcessorInformationEx(RelationProcessorCore, info, &sz)) {
+      DWORD offset = 0;
+      while (offset < sz) {
+        PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX entry = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)(buf.data() + offset);
+        if (entry->Relationship == RelationProcessorCore) {
+          if (numcores == -1) {
+            numcores++;
+          }
+          numcores++;
+        }
+        if (!entry->Size) {
+          break;
+        }
+        offset += entry->Size;
+      }
+    }
   }
   #elif (defined(__APPLE__) && defined(__MACH__))
   int buf = -1;
