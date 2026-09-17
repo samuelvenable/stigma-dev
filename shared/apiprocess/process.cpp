@@ -596,6 +596,7 @@ namespace {
     return retval;
   }
 
+  // Linux does not support the precision necessary for this function to consistently be relied upon in a cross-platform context:
   bool proc_id_and_parent_proc_id_compare_creation_time(apiprocess::proc_id_t proc_id, apiprocess::proc_id_t parent_proc_id) {
     #if (defined(_WIN32) || defined(_WIN64))
     HANDLE proc_handle = nullptr, parent_proc_handle = nullptr;
