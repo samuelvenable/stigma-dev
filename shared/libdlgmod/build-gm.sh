@@ -4,11 +4,11 @@ cd "${0%/*}";
 if [ "$OS" = "Windows_NT" ]; then
   g++ "libdlgmod/libdlgmod.cpp" "libdlgmod/win32/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" -o "libdlgmod-gm.dll" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -shared -static-libgcc -static-libstdc++ -static -lntdll -lgdiplus -lcomctl32 -lshlwapi -lcomdlg32 -lole32 -loleaut32 -luuid -fPIC;
 elif [ `uname` = "Darwin" ]; then
-  clang++ "libdlgmod/libdlgmod.cpp" "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod-gm.dylib" -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -shared -ObjC++ -framework AppKit -framework UniformTypeIdentifiers -mmacos-version-min=10.13 -arch arm64 -arch x86_64 -fPIC;
+  clang++ "libdlgmod/libdlgmod.cpp" "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod-gm.dylib" -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -shared -ObjC++ -framework AppKit -framework UniformTypeIdentifiers -mmacos-version-min=14.0 -arch arm64 -arch x86_64 -fPIC;
 elif [ `uname` = "Linux" ]; then
   g++ "libdlgmod/libdlgmod.cpp" "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" "libdlgmod/xlib/nfd/src/nfd_portal.cpp" -o "libdlgmod-gm.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -std=c++17 -shared -static-libgcc -static-libstdc++ `pkg-config --cflags --libs x11` `pkg-config --cflags --libs dbus-1` -lpthread -fPIC;
 elif [ `uname` = "FreeBSD" ]; then
-  clang++ "libdlgmod/libdlgmod.cpp" "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" "libdlgmod/xlib/nfd/src/nfd_portal.cpp" -o "libdlgmod-gm.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -std=c++17 -shared `pkg-config --cflags --libs x11` `pkg-config --cflags --libs dbus-1` -lkvm -lc -lpthread -fPIC;
+  clang++ "libdlgmod/libdlgmod.cpp" "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" -o "libdlgmod-gm.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -shared `pkg-config --cflags --libs x11` -lkvm -lc -lpthread -fPIC;
 elif [ `uname` = "DragonFly" ]; then
   g++ "libdlgmod/libdlgmod.cpp" "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" -o "libdlgmod-gm.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -shared -static-libgcc `pkg-config --cflags --libs x11` -lkvm -lc -lpthread -fPIC;
 elif [ `uname` = "NetBSD" ]; then
@@ -29,8 +29,8 @@ if [ "$OS" = "Windows_NT" ]; then
   ar rc "libdlgmod-gm.a" "libdlgmod/libdlgmod.o" "libdlgmod/win32/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o";
   rm -rf "libdlgmod/libdlgmod.o" "libdlgmod/win32/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o";
 elif [ `uname` = "Darwin" ]; then
-  clang++ -c "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod/macos/libdlgmod.o" -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -ObjC++ -mmacos-version-min=10.13 -arch arm64 -arch x86_64 -fPIC;
-  clang++ -c "libdlgmod/libdlgmod.cpp" -o "libdlgmod/libdlgmod.o" -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -ObjC++ -mmacos-version-min=10.13 -arch arm64 -arch x86_64 -fPIC;
+  clang++ -c "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod/macos/libdlgmod.o" -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -ObjC++ -mmacos-version-min=14.0 -arch arm64 -arch x86_64 -fPIC;
+  clang++ -c "libdlgmod/libdlgmod.cpp" -o "libdlgmod/libdlgmod.o" -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -std=c++17 -ObjC++ -mmacos-version-min=14.0 -arch arm64 -arch x86_64 -fPIC;
   ar rc "libdlgmod-gm.a" "libdlgmod/libdlgmod.o" "libdlgmod/macos/libdlgmod.o";
   rm -rf "libdlgmod/libdlgmod.o" "libdlgmod/macos/libdlgmod.o";
 elif [ `uname` = "Linux" ]; then
@@ -43,14 +43,13 @@ elif [ `uname` = "Linux" ]; then
   ar rc "libdlgmod-gm.a" "libdlgmod/libdlgmod.o" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
   rm -rf "libdlgmod/libdlgmod.o" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
 elif [ `uname` = "FreeBSD" ]; then
-  clang++ -c "libdlgmod/xlib/libdlgmod.cpp" -o "libdlgmod/xlib/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/general/apiprocess/process.cpp" -o "libdlgmod/general/apiprocess/process.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/general/xprocess.cpp" -o "libdlgmod/general/xprocess.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/general/lodepng.cpp" -o "libdlgmod/general/lodepng.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/libdlgmod.cpp" -o "libdlgmod/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/xlib/nfd/src/nfd_portal.cpp" -o "libdlgmod/xlib/nfd/src/nfd_portal.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  ar rc "libdlgmod-gm.a" "libdlgmod/libdlgmod.o" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
-  rm -rf "libdlgmod/libdlgmod.o" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
+  clang++ -c "libdlgmod/xlib/libdlgmod.cpp" -o "libdlgmod/xlib/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  clang++ -c "libdlgmod/general/apiprocess/process.cpp" -o "libdlgmod/general/apiprocess/process.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  clang++ -c "libdlgmod/general/xprocess.cpp" -o "libdlgmod/general/xprocess.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  clang++ -c "libdlgmod/general/lodepng.cpp" -o "libdlgmod/general/lodepng.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  clang++ -c "libdlgmod/libdlgmod.cpp" -o "libdlgmod/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  ar rc "libdlgmod-gm.a" "libdlgmod/libdlgmod.o" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o";
+  rm -rf "libdlgmod/libdlgmod.o" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o";
 elif [ `uname` = "DragonFly" ]; then
   g++ -c "libdlgmod/xlib/libdlgmod.cpp" -o "libdlgmod/xlib/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
   g++ -c "libdlgmod/general/apiprocess/process.cpp" -o "libdlgmod/general/apiprocess/process.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DDIALOG_MODULE_GAME_MAKER_BUILD -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;

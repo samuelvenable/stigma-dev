@@ -4,11 +4,11 @@ cd "${0%/*}";
 if [ "$OS" = "Windows_NT" ]; then
   g++ "libdlgmod/win32/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" -o "libdlgmod-cc.dll" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -std=c++17 -shared -static-libgcc -static-libstdc++ -static -lntdll -lgdiplus -lcomctl32 -lshlwapi -lcomdlg32 -lole32 -loleaut32 -luuid -fPIC;
 elif [ `uname` = "Darwin" ]; then
-  clang++ "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod-cc.dylib" -Ilibdlgmod/general -I. -std=c++17 -shared -ObjC++ -framework AppKit -framework UniformTypeIdentifiers -mmacos-version-min=10.13 -arch arm64 -arch x86_64 -fPIC;
+  clang++ "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod-cc.dylib" -Ilibdlgmod/general -I. -std=c++17 -shared -ObjC++ -framework AppKit -framework UniformTypeIdentifiers -mmacos-version-min=14.0 -arch arm64 -arch x86_64 -fPIC;
 elif [ `uname` = "Linux" ]; then
   g++ "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" "libdlgmod/xlib/nfd/src/nfd_portal.cpp" -o "libdlgmod-cc.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -std=c++17 -shared -static-libgcc -static-libstdc++ `pkg-config --cflags --libs x11` `pkg-config --cflags --libs dbus-1` -lpthread -fPIC;
 elif [ `uname` = "FreeBSD" ]; then
-  clang++ "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" "libdlgmod/xlib/nfd/src/nfd_portal.cpp" -o "libdlgmod-cc.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -std=c++17 -shared `pkg-config --cflags --libs x11` `pkg-config --cflags --libs dbus-1` -lkvm -lc -lpthread -fPIC;
+  clang++ "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" -o "libdlgmod-cc.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -std=c++17 -shared `pkg-config --cflags --libs x11` -lkvm -lc -lpthread -fPIC;
 elif [ `uname` = "DragonFly" ]; then
   g++ "libdlgmod/xlib/libdlgmod.cpp" "libdlgmod/general/apiprocess/process.cpp" "libdlgmod/general/xprocess.cpp" "libdlgmod/general/lodepng.cpp" -o "libdlgmod-cc.so" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -std=c++17 -shared -static-libgcc `pkg-config --cflags --libs x11` -lkvm -lc -lpthread -fPIC;
 elif [ `uname` = "NetBSD" ]; then
@@ -28,7 +28,7 @@ if [ "$OS" = "Windows_NT" ]; then
   ar rc "libdlgmod-cc.a" "libdlgmod/win32/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o";
   rm -rf "libdlgmod/win32/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o";
 elif [ `uname` = "Darwin" ]; then
-  clang++ -c "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod/macos/libdlgmod.o" -Ilibdlgmod/general -I. -std=c++17 -ObjC++ -mmacos-version-min=10.13 -arch arm64 -arch x86_64 -fPIC;
+  clang++ -c "libdlgmod/macos/libdlgmod.mm" -o "libdlgmod/macos/libdlgmod.o" -Ilibdlgmod/general -I. -std=c++17 -ObjC++ -mmacos-version-min=14.0 -arch arm64 -arch x86_64 -fPIC;
   ar rc "libdlgmod-cc.a" "libdlgmod/macos/libdlgmod.o";
   rm -rf "libdlgmod/macos/libdlgmod.o";
 elif [ `uname` = "Linux" ]; then
@@ -40,13 +40,12 @@ elif [ `uname` = "Linux" ]; then
   ar rc "libdlgmod-cc.a" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
   rm -rf "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
 elif [ `uname` = "FreeBSD" ]; then
-  clang++ -c "libdlgmod/xlib/libdlgmod.cpp" -o "libdlgmod/xlib/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/general/apiprocess/process.cpp" -o "libdlgmod/general/apiprocess/process.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/general/xprocess.cpp" -o "libdlgmod/general/xprocess.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/general/lodepng.cpp" -o "libdlgmod/general/lodepng.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. -I/usr/local/include `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  clang++ -c "libdlgmod/xlib/nfd/src/nfd_portal.cpp" -o "libdlgmod/xlib/nfd/src/nfd_portal.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -DUSE_XDG_DESKTOP_PORTAL -Ilibdlgmod/general -Ilibdlgmod/xlib/nfd/src/include -I. `pkg-config --cflags dbus-1` -std=c++17 -fPIC;
-  ar rc "libdlgmod-cc.a" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
-  rm -rf "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o" "libdlgmod/xlib/nfd/src/nfd_portal.o";
+  clang++ -c "libdlgmod/xlib/libdlgmod.cpp" -o "libdlgmod/xlib/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  clang++ -c "libdlgmod/general/apiprocess/process.cpp" -o "libdlgmod/general/apiprocess/process.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  clang++ -c "libdlgmod/general/xprocess.cpp" -o "libdlgmod/general/xprocess.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  clang++ -c "libdlgmod/general/lodepng.cpp" -o "libdlgmod/general/lodepng.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
+  ar rc "libdlgmod-cc.a" "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o";
+  rm -rf "libdlgmod/xlib/libdlgmod.o" "libdlgmod/general/apiprocess/process.o" "libdlgmod/general/xprocess.o" "libdlgmod/general/lodepng.o";
 elif [ `uname` = "DragonFly" ]; then
   g++ -c "libdlgmod/xlib/libdlgmod.cpp" -o "libdlgmod/xlib/libdlgmod.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
   g++ -c "libdlgmod/general/apiprocess/process.cpp" -o "libdlgmod/general/apiprocess/process.o" -DPROCESS_GUIWINDOW_IMPL -DNULLIFY_STDERR -Ilibdlgmod/general -I. -I/usr/local/include -std=c++17 -fPIC;
