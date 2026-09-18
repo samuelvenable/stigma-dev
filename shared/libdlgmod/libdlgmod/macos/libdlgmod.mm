@@ -222,7 +222,7 @@ int cocoa_show_question(const char *str, bool has_cancel, const char *icon, cons
       butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_NO) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\""));
     }
     if (!butres.compare(cocoa_widget_get_button_name(BUTTON_YES))) {
-        qstres = 1;
+      qstres = 1;
     } else if (!butres.compare(cocoa_widget_get_button_name(BUTTON_NO))) {
       qstres = 0;
     } else {
@@ -523,7 +523,7 @@ const char *cocoa_get_open_filename(const char *filter, const char *fname, const
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
-    string script;
+    static string script;
     string extensions;
     theOpenResult.clear();
     const char *home = getenv("HOME");
@@ -1000,7 +1000,7 @@ const char *cocoa_get_save_filename(const char *filter, const char *fname, const
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
-    string script;
+    static string script;
     theSaveResult.clear();
     const char *home = getenv("HOME");
     string location = ((!string(dir).empty()) ? dir : ((home) ? home : "/"));
@@ -1315,7 +1315,7 @@ const char *cocoa_get_directory(const char *capt, const char *root) {
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
-    string script;
+    static string script;
     theFolderResult.clear();
     const char *home = getenv("HOME");
     string location = ((!string(root).empty()) ? root : ((home) ? home : "/"));
