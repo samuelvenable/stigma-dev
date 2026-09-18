@@ -98,6 +98,18 @@ vector<string> string_split(string str, char delimiter) {
 
 string osascript(bool type, string script) {
   string result;
+  if (!type && [NSThread isMainThread]) {
+    NSDictionary *errorInfo = nullptr;
+    NSString *sourceCode = [NSString stringWithUTF8String:script.c_str()];
+    NSAppleScript *appleScript = [[NSAppleScript alloc] initWithSource:sourceCode];
+    NSAppleEventDescriptor *resultDescriptor = [appleScript executeAndReturnError:&errorInfo];
+    if (!errorInfo) {
+      NSString *resultString = [resultDescriptor stringValue];
+      result = (([resultString UTF8String]) ? [resultString UTF8String] : "");
+    }
+    [appleScript release];
+    return result;
+  }
   char buf[BUFSIZ];
   ssize_t nRead = 0;
   FILE *fp = nullptr;
@@ -127,7 +139,7 @@ string osascript(bool type, string script) {
     }
     pclose(fp);
   }
- return result;
+  return result;
 }
 
 const char *cocoa_widget_get_owner() {
@@ -149,7 +161,7 @@ int cocoa_show_message(const char *str, bool has_cancel, const char *icon, const
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
-    string butres;
+    static string butres;
     if (has_cancel) {
       butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_OK) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_OK) + string("\""));
     } else {
@@ -159,7 +171,7 @@ int cocoa_show_message(const char *str, bool has_cancel, const char *icon, const
       msgres = 1;
     } else {
       msgres = -1;
-    }
+    }      
     return msgres;
   }
   ws = "Cocoa";
@@ -203,19 +215,19 @@ int cocoa_show_question(const char *str, bool has_cancel, const char *icon, cons
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
-    string butres;
+    static string butres;
     if (has_cancel) {
       butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_NO) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\""));
     } else {
       butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_NO) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\""));
     }
     if (!butres.compare(cocoa_widget_get_button_name(BUTTON_YES))) {
-      qstres = 1;
+        qstres = 1;
     } else if (!butres.compare(cocoa_widget_get_button_name(BUTTON_NO))) {
       qstres = 0;
     } else {
       qstres = -1;
-    }
+    }     
     return qstres;
   }
   ws = "Cocoa";
@@ -265,12 +277,13 @@ int cocoa_show_attempt(const char *str, const char *icon, const char *title) {
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
-    string butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + cocoa_widget_get_button_name(BUTTON_RETRY) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_RETRY) + string("\""));
+    static string butres;
+    strres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + cocoa_widget_get_button_name(BUTTON_RETRY) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_RETRY) + string("\""));
     if (!butres.compare(cocoa_widget_get_button_name(BUTTON_RETRY))) {
       attemptres = 0;
     } else {
       attemptres = -1;
-    }
+    }   
     return attemptres;
   }
   ws = "Cocoa";
@@ -316,7 +329,7 @@ int cocoa_show_error(const char *str, bool _abort, const char *icon, const char 
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
-    string butres;
+    static string butres;
     if (!_abort) {
       butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + cocoa_widget_get_button_name(BUTTON_ABORT) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_IGNORE) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_ABORT) + string("\""));
     } else {
@@ -326,7 +339,7 @@ int cocoa_show_error(const char *str, bool _abort, const char *icon, const char 
       exit(0);
     } else {
       errorres = -1;
-    }
+    } 
     return errorres;
   }
   ws = "Cocoa";
@@ -371,6 +384,7 @@ const char *cocoa_input_box(const char *str, const char *def, const char *icon, 
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
+    static string strres;
     strres = osascript(true, string("text returned of (display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" default answer \"") + string(def) + string("\")"));
     if (!strres.empty()) {
       cancel_pressed = false;
@@ -437,6 +451,7 @@ const char *cocoa_password_box(const char *str, const char *def, const char *ico
 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
+    static string strres;
     strres = osascript(true, string("text returned of (display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" default answer \"") + string(def) + string("\" with hidden answer)"));
     if (!strres.empty()) {
       cancel_pressed = false;
@@ -517,7 +532,17 @@ const char *cocoa_get_open_filename(const char *filter, const char *fname, const
       string exts = string_replace_all(filter, "*.", "");
       vector<string> vec1 = string_split(exts, '|');
       if (string(filter).empty() || (!vec1.empty() && vec1.size() == 2 && vec1[1] == "*")) {
-        script = string(R"(osascript 2> /dev/null << 'EOF'
+        if ([NSThread isMainThread]) {
+          script = string(R"(set output to ""
+set targetFolder to (POSIX file ")") + location + string(R"(") as alias
+set theFiles to choose file with prompt ")") + string(title) + string(R"(" with multiple selections allowed default location targetFolder
+repeat with aFile in theFiles
+    set output to output & (POSIX path of aFile) & linefeed
+end repeat
+return output
+)");
+        } else {
+          script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set theFiles to choose file with prompt ")") + string(title) + string(R"(" with multiple selections allowed default location targetFolder
@@ -527,6 +552,7 @@ end repeat
 return output
 EOF
 )");
+        }
       } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2) {
         vector<string> vec3;
         for (int i = 0; i < vec1.size(); i++) {
@@ -546,7 +572,17 @@ EOF
             extensions += string("\"") + vec3[i] + string("\"");
           }
         }
-        script = string(R"(osascript 2> /dev/null << 'EOF'
+        if ([NSThread isMainThread]) {
+          script = string(R"(set output to ""
+set targetFolder to (POSIX file ")") + location + string(R"(") as alias
+set theFiles to choose file with prompt ")") + string(title) + string(R"(" of type {)") + extensions + string(R"(} with multiple selections allowed default location targetFolder
+repeat with aFile in theFiles
+    set output to output & (POSIX path of aFile) & linefeed
+end repeat
+return output
+)");
+        } else {
+          script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set theFiles to choose file with prompt ")") + string(title) + string(R"(" of type {)") + extensions + string(R"(} with multiple selections allowed default location targetFolder
@@ -556,12 +592,21 @@ end repeat
 return output
 EOF
 )");
+        }
       }
     } else {
       string exts = string_replace_all(filter, "*.", "");
       vector<string> vec1 = string_split(exts, '|');
       if (string(filter).empty() || (!vec1.empty() && vec1.size() == 2 && vec1[1] == "*")) {
-        script = string(R"(osascript 2> /dev/null << 'EOF'
+        if ([NSThread isMainThread]) {
+          script = string(R"(set output to ""
+set targetFolder to (POSIX file ")") + location + string(R"(") as alias
+set aFile to choose file with prompt ")") + string(title) + string(R"(" default location targetFolder
+set output to (POSIX path of aFile) & linefeed
+return output
+)");
+        } else {
+          script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set aFile to choose file with prompt ")") + string(title) + string(R"(" default location targetFolder
@@ -569,6 +614,7 @@ set output to (POSIX path of aFile) & linefeed
 return output
 EOF
 )");
+        }
       } else if (!string(filter).empty() && !vec1.empty() && vec1.size() >= 2) {
         vector<string> vec3;
         for (int i = 0; i < vec1.size(); i++) {
@@ -588,7 +634,15 @@ EOF
             extensions += string("\"") + vec3[i] + string("\"");
           }
         }
-        script = string(R"(osascript 2> /dev/null << 'EOF'
+        if ([NSThread isMainThread]) {
+          script = string(R"(set output to ""
+set targetFolder to (POSIX file ")") + location + string(R"(") as alias
+set aFile to choose file with prompt ")") + string(title) + string(R"(" of type {)") + extensions + string(R"(} default location targetFolder
+set output to (POSIX path of aFile) & linefeed
+return output
+)");
+        } else {
+          script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set aFile to choose file with prompt ")") + string(title) + string(R"(" of type {)") + extensions + string(R"(} default location targetFolder
@@ -596,6 +650,7 @@ set output to (POSIX path of aFile) & linefeed
 return output
 EOF
 )");
+        }
       }
     }
     theOpenResult = osascript(false, script);
@@ -949,7 +1004,16 @@ const char *cocoa_get_save_filename(const char *filter, const char *fname, const
     theSaveResult.clear();
     const char *home = getenv("HOME");
     string location = ((!string(dir).empty()) ? dir : ((home) ? home : "/"));
-    script = string(R"(osascript 2> /dev/null << 'EOF'
+    if ([NSThread isMainThread]) {
+      script = string(R"(set output to ""
+set targetFile to ")") + string(fname) + string(R"("
+set targetFolder to (POSIX file ")") + location + string(R"(") as alias
+set aFile to choose file name with prompt ")") + string(title) + string(R"(" default name targetFile default location targetFolder
+set output to (POSIX path of aFile) & linefeed
+return output
+)");
+    } else {
+      script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFile to ")") + string(fname) + string(R"("
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
@@ -957,7 +1021,8 @@ set aFile to choose file name with prompt ")") + string(title) + string(R"(" def
 set output to (POSIX path of aFile) & linefeed
 return output
 EOF
-)");
+)"); 
+    }
     theSaveResult = osascript(false, script);
     return theSaveResult.c_str();
   }
@@ -1254,7 +1319,15 @@ const char *cocoa_get_directory(const char *capt, const char *root) {
     theFolderResult.clear();
     const char *home = getenv("HOME");
     string location = ((!string(root).empty()) ? root : ((home) ? home : "/"));
-    script = string(R"(osascript 2> /dev/null << 'EOF'
+    if ([NSThread isMainThread]) {
+      script = string(R"(set output to ""
+set targetFolder to (POSIX file ")") + location + string(R"(") as alias
+set aFile to choose folder with prompt ")") + string(capt) + string(R"(" default location targetFolder
+set output to (POSIX path of aFile) & linefeed
+return output
+)");
+    } else {
+      script = string(R"(osascript 2> /dev/null << 'EOF'
 set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set aFile to choose folder with prompt ")") + string(capt) + string(R"(" default location targetFolder
@@ -1262,6 +1335,7 @@ set output to (POSIX path of aFile) & linefeed
 return output
 EOF
 )");
+    }
     theFolderResult = osascript(false, script);
     return theFolderResult.c_str();
   }
@@ -1313,7 +1387,21 @@ int cocoa_get_color(int defcol, const char *title) {
     int newRedValue = (int)((redValue / 255) * 65535);
     int newGreenValue = (int)((greenValue / 255) * 65535);
     int newBlueValue = (int)((blueValue / 255) * 65535);
-    string strcol = osascript(false, string(R"(osascript 2> /dev/null << 'EOF'
+    string strcol;
+    if ([NSThread isMainThread]) {
+      strcol = osascript(false, string(R"(set standardColor to choose color )") + 
+string("default color {") + std::to_string(newRedValue) + string(", ") + std::to_string(newGreenValue) + string(", ") + std::to_string(newBlueValue) + string(R"(}
+set r16 to item 1 of standardColor
+set g16 to item 2 of standardColor
+set b16 to item 3 of standardColor
+set r8 to round (r16 / 65535 * 255)
+set g8 to round (g16 / 65535 * 255)
+set b8 to round (b16 / 65535 * 255)
+set rgbResult to "" & r8 & "," & g8 & "," & b8
+return rgbResult
+)"));
+    } else {
+      strcol = osascript(false, string(R"(osascript 2> /dev/null << 'EOF'
 set standardColor to choose color )") + string("default color {") + std::to_string(newRedValue) + string(", ") + std::to_string(newGreenValue) + string(", ") + std::to_string(newBlueValue) + string(R"(}
 set r16 to item 1 of standardColor
 set g16 to item 2 of standardColor
@@ -1325,6 +1413,7 @@ set rgbResult to "" & r8 & "," & g8 & "," & b8
 return rgbResult
 EOF
 )"));
+    }
     if (!strcol.empty()) {
       int r = 0, g = 0, b = 0;
       std::vector<string> stringVec = string_split(strcol, ',');
