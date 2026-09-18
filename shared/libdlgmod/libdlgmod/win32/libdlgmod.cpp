@@ -77,11 +77,12 @@ namespace dialog_module {
 
     // window handles
     void *owner = nullptr;
+    HWND parent = nullptr;
     HWND dlg = nullptr;
     HWND win = nullptr;
 
     // hook procs
-    bool init = false;
+    vector<HWND> hwnds;
     HHOOK hhook = nullptr;
 
     // error msgs
@@ -179,10 +180,32 @@ namespace dialog_module {
       return str;
     }
 
+    LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+      switch (msg) {
+        case WM_DESTROY:
+          return 0;
+        default:
+          return DefWindowProc(hWnd, msg, wParam, lParam);
+      }
+    }
+
     HWND owner_window() {
+      hwnds.clear();
       win = owner ? (HWND)owner : GetForegroundWindow();
       win = (unsigned long long)win ? win : GetDesktopWindow();
-      return win;
+      if (parent) return parent;
+      WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
+      wc.lpfnWndProc = WndProc;
+      wc.lpszClassName = L"OwnerWindow";
+      wc.hInstance = GetModuleHandleW(nullptr);
+      if (!RegisterClassExW(&wc)) return nullptr;
+      HWND ret = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"", WS_VISIBLE | WS_POPUP,
+      0, 0, 0, 0, win, nullptr, nullptr, nullptr);
+      SetParent(parent, win);
+      ShowWindow(parent, SW_SHOW);
+      UpdateWindow(parent);
+      parent = ret;
+      return ret;
     }
 
     int show_message_helper(const char *str, bool cancelable) {
@@ -194,7 +217,8 @@ namespace dialog_module {
       UINT flags = MB_DEFBUTTON1 | MB_APPLMODAL;
       flags |= cancelable ? (MB_OKCANCEL | MB_ICONQUESTION) : (MB_OK | MB_ICONINFORMATION);
 
-      int result = MessageBoxW(owner_window(), wstr.c_str(), wtitle.c_str(), flags);
+      HWND o = owner_window();
+      int result = MessageBoxW(o, wstr.c_str(), wtitle.c_str(), flags);
       return cancelable ? ((result == IDOK) ? 1 : -1) : 1;
     }
 
@@ -207,7 +231,8 @@ namespace dialog_module {
       UINT flags = MB_DEFBUTTON1 | MB_APPLMODAL | MB_ICONQUESTION;
       flags |= cancelable ? MB_YESNOCANCEL : MB_YESNO;
 
-      int result = MessageBoxW(owner_window(), wstr.c_str(), wtitle.c_str(), flags);
+      HWND o = owner_window();
+      int result = MessageBoxW(o, wstr.c_str(), wtitle.c_str(), flags);
       return cancelable ? ((result == IDYES) ? 1 : ((result == IDNO) ? 0 : -1)) : (result == IDYES);
     }
 
@@ -219,12 +244,14 @@ namespace dialog_module {
 
       if (attempt) {
         UINT flags = MB_RETRYCANCEL | MB_ICONERROR | MB_DEFBUTTON1 | MB_APPLMODAL;
-        int result = MessageBoxW(owner_window(), wstr.c_str(), wtitle.c_str(), flags);
+        HWND o = owner_window();
+        int result = MessageBoxW(o, wstr.c_str(), wtitle.c_str(), flags);
         return (result == IDRETRY) ? 0 : -1;
       }
 
       UINT flags = (abort ? MB_OK : MB_OKCANCEL) | MB_ICONERROR | MB_DEFBUTTON1 | MB_APPLMODAL;
-      int result = MessageBoxW(owner_window(), wstr.c_str(), wtitle.c_str(), flags);
+      HWND o = owner_window();
+      int result = MessageBoxW(o, wstr.c_str(), wtitle.c_str(), flags);
       result = abort ? 1 : ((result == IDOK) ? 1 : -1);
 
       if (result == 1) exit(0);
@@ -324,15 +351,35 @@ namespace dialog_module {
         return CallNextHookEx(hhook, nCode, wParam, lParam);
 
       if (nCode == HCBT_CREATEWND) {
-        cancel_pressed = false;
         CBT_CREATEWNDW *cbtcr = (CBT_CREATEWNDW *)lParam;
-        if (win == GetDesktopWindow() ||
-          (win != (HWND)wParam && cbtcr->lpcs->hwndParent == win)) {
-          dlg = (HWND)wParam;
-          init = true;
+        if (cbtcr->lpcs->hwndParent == parent) {
+          hwnds.push_back((HWND)wParam);
         }
       }
-
+      
+      for (int i = 0; i < hwnds.size(); i++) {
+        dlg = hwnds[i];
+        if (IsWindow(dlg)) {
+          if (hidden == true) {
+            SendDlgItemMessageW(dlg, 1000, EM_SETPASSWORDCHAR, L'\x25cf', 0);
+          }
+          wstring cpp_wstr_icon = widen(tstr_icon);
+          if (PathFileExistsW(cpp_wstr_icon.c_str())) {
+            HICON hIcon;
+            ULONG_PTR m_gdiplusToken;
+            Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+            Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, nullptr);
+            Bitmap *png = Bitmap::FromFile(cpp_wstr_icon.c_str());
+            png->GetHICON(&hIcon);
+            PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+            delete png;
+            Gdiplus::GdiplusShutdown(m_gdiplusToken);
+          } else {
+            HICON hIcon = GetIcon(win);
+            PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+          }
+        }
+      }
       if (nCode == HCBT_SETFOCUS) {
         POINT pt;
         if (GetCursorPos(&pt) && ScreenToClient(dlg, &pt) && 
@@ -342,29 +389,6 @@ namespace dialog_module {
           cancel_pressed = false;
         }
       }
-
-      if (dlg != nullptr) {
-        if (nCode == HCBT_ACTIVATE && init == true) {
-          if (hidden == true)
-            SendDlgItemMessageW(dlg, 1000, EM_SETPASSWORDCHAR, L'\x25cf', 0);
-          init = false;
-        }
-        wstring cpp_wstr_icon = widen(tstr_icon);
-        if (PathFileExistsW(cpp_wstr_icon.c_str())) {
-          HICON hIcon;
-          ULONG_PTR m_gdiplusToken;
-          Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-          Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, nullptr);
-          Bitmap *png = Bitmap::FromFile(cpp_wstr_icon.c_str());
-          png->GetHICON(&hIcon);
-          PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-          delete png;
-          Gdiplus::GdiplusShutdown(m_gdiplusToken);
-        } else {
-          HICON hIcon = GetIcon(win);
-          PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-        }
-      }
       return CallNextHookEx(hhook, nCode, wParam, lParam);
     }
     #endif
@@ -372,15 +396,17 @@ namespace dialog_module {
     LRESULT CALLBACK MessageBoxProc(int nCode, WPARAM wParam, LPARAM lParam) {
       if (nCode < HC_ACTION)
         return CallNextHookEx(hhook, nCode, wParam, lParam);
+
       if (nCode == HCBT_CREATEWND) {
-        cancel_pressed = false;
         CBT_CREATEWNDW *cbtcr = (CBT_CREATEWNDW *)lParam;
-        if (win == GetDesktopWindow() ||
-          (win != (HWND)wParam && cbtcr->lpcs->hwndParent == win)) {
-          dlg = (HWND)wParam;
-          init = true;
+        if (cbtcr->lpcs->hwndParent == parent) {
+          hwnds.push_back((HWND)wParam);
         }
-        if (dlg != nullptr && init) {
+      }
+      
+      for (int i = 0; i < hwnds.size(); i++) {
+        dlg = hwnds[i];
+        if (IsWindow(dlg)) {
           wstring wstr_ok = widen(btn_array[BUTTON_OK]);
           wstring wstr_yes = widen(btn_array[BUTTON_YES]);
           wstring wstr_no = widen(btn_array[BUTTON_NO]);
@@ -414,15 +440,17 @@ namespace dialog_module {
     LRESULT CALLBACK ShowErrorProc(int nCode, WPARAM wParam, LPARAM lParam) {
       if (nCode < HC_ACTION)
         return CallNextHookEx(hhook, nCode, wParam, lParam);
+
       if (nCode == HCBT_CREATEWND) {
-        cancel_pressed = false;
         CBT_CREATEWNDW *cbtcr = (CBT_CREATEWNDW *)lParam;
-        if (win == GetDesktopWindow() ||
-          (win != (HWND)wParam && cbtcr->lpcs->hwndParent == win)) {
-          dlg = (HWND)wParam;
-          init = true;
+        if (cbtcr->lpcs->hwndParent == parent) {
+          hwnds.push_back((HWND)wParam);
         }
-        if (dlg != nullptr && init) {
+      }
+      
+      for (int i = 0; i < hwnds.size(); i++) {
+        dlg = hwnds[i];
+        if (IsWindow(dlg)) {
           wstring wstr_abort = widen(btn_array[BUTTON_ABORT]);
           wstring wstr_ignore = widen(btn_array[BUTTON_IGNORE]);
           SetDlgItemTextW(dlg, IDOK, wstr_abort.c_str());
@@ -452,32 +480,31 @@ namespace dialog_module {
         return CallNextHookEx(hhook, nCode, wParam, lParam);
 
       if (nCode == HCBT_CREATEWND) {
-        cancel_pressed = false;
         CBT_CREATEWNDW *cbtcr = (CBT_CREATEWNDW *)lParam;
-        if (win == GetDesktopWindow() ||
-          (win != (HWND)wParam && cbtcr->lpcs->hwndParent == win)) {
-          dlg = (HWND)wParam;
-          init = true;
+        if (cbtcr->lpcs->hwndParent == parent) {
+          hwnds.push_back((HWND)wParam);
         }
       }
-
-      if (nCode == HCBT_ACTIVATE && init) {
-        init = false;
-      }
-      wstring cpp_wstr_icon = widen(tstr_icon);
-      if (PathFileExistsW(cpp_wstr_icon.c_str())) {
-        HICON hIcon;
-        ULONG_PTR m_gdiplusToken;
-        Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-        Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, nullptr);
-        Bitmap *png = Bitmap::FromFile(cpp_wstr_icon.c_str());
-        png->GetHICON(&hIcon);
-        PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-        delete png;
-        Gdiplus::GdiplusShutdown(m_gdiplusToken);
-      } else {
-        HICON hIcon = GetIcon(win);
-        PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+      
+      for (int i = 0; i < hwnds.size(); i++) {
+        dlg = hwnds[i];
+        if (IsWindow(dlg)) {
+          wstring cpp_wstr_icon = widen(tstr_icon);
+          if (PathFileExistsW(cpp_wstr_icon.c_str())) {
+            HICON hIcon;
+            ULONG_PTR m_gdiplusToken;
+            Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+            Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, nullptr);
+            Bitmap *png = Bitmap::FromFile(cpp_wstr_icon.c_str());
+           png->GetHICON(&hIcon);
+            PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+            delete png;
+            Gdiplus::GdiplusShutdown(m_gdiplusToken);
+          } else {
+            HICON hIcon = GetIcon(win);
+            PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+          }
+        }
       }
       return CallNextHookEx(hhook, nCode, wParam, lParam);
     }
@@ -517,57 +544,57 @@ namespace dialog_module {
 
       if (nCode == HCBT_CREATEWND) {
         CBT_CREATEWNDW *cbtcr = (CBT_CREATEWNDW *)lParam;
-        if (win == GetDesktopWindow() ||
-          (win != (HWND)wParam && cbtcr->lpcs->hwndParent == win)) {
-          dlg = (HWND)wParam;
-          init = true;
+        if (cbtcr->lpcs->hwndParent == parent) {
+          hwnds.push_back((HWND)wParam);
         }
       }
-
-      if (nCode == HCBT_ACTIVATE && init) {
-        textbox = FindWindowEx(dlg, nullptr, "DUIViewWndClassName", nullptr);
-        textbox = FindWindowEx(textbox, nullptr, "DirectUIHWND", nullptr);
-        textbox = FindWindowEx(textbox, nullptr, "FloatNotifySink", nullptr);
-        textbox = FindWindowEx(textbox, nullptr, "ComboBox", nullptr);
-        textbox = FindWindowEx(textbox, nullptr, "Edit", nullptr);
-        wchar_t *textstr = new wchar_t[MAX_PATH]();
-        GetWindowTextW(textbox, textstr, MAX_PATH);
-        bool equalsext = false;
-        vector<string> pipesplit = string_split(narrow(pipefilter), '|');
-        for (unsigned i = 0; i < pipesplit.size(); i++) {
-          if (i % 2 != 0) {
-            vector<string> semicolonsplit = string_split(pipesplit[i], ';');
-            for (int j = 0; j < semicolonsplit.size(); j++) {
-              semicolonsplit[j] = string_replace_all(semicolonsplit[j], "*.*", "");
-              semicolonsplit[j] = string_replace_all(semicolonsplit[j], "*", "");
-              if (filename_ext(narrow(textstr)) == semicolonsplit[j]) {
-                equalsext = true;
+      
+      for (int i = 0; i < hwnds.size(); i++) {
+        dlg = hwnds[i];
+        if (IsWindow(dlg)) {
+          textbox = FindWindowEx(dlg, nullptr, "DUIViewWndClassName", nullptr);
+          textbox = FindWindowEx(textbox, nullptr, "DirectUIHWND", nullptr);
+          textbox = FindWindowEx(textbox, nullptr, "FloatNotifySink", nullptr);
+          textbox = FindWindowEx(textbox, nullptr, "ComboBox", nullptr);
+          textbox = FindWindowEx(textbox, nullptr, "Edit", nullptr);
+          wchar_t *textstr = new wchar_t[MAX_PATH]();
+          GetWindowTextW(textbox, textstr, MAX_PATH);
+          bool equalsext = false;
+          vector<string> pipesplit = string_split(narrow(pipefilter), '|');
+          for (unsigned i = 0; i < pipesplit.size(); i++) {
+            if (i % 2 != 0) {
+              vector<string> semicolonsplit = string_split(pipesplit[i], ';');
+              for (int j = 0; j < semicolonsplit.size(); j++) {
+                semicolonsplit[j] = string_replace_all(semicolonsplit[j], "*.*", "");
+                semicolonsplit[j] = string_replace_all(semicolonsplit[j], "*", "");
+                if (filename_ext(narrow(textstr)) == semicolonsplit[j]) {
+                  equalsext = true;
+                }
+              }
+              if (!equalsext && filename_ext(narrow(textstr)) == "" && semicolonsplit.size()) {
+                wstring textwstr = widen(filename_change_ext(narrow(textstr), semicolonsplit[0]));
+                SetWindowTextW(textbox, textwstr.c_str());
               }
             }
-            if (!equalsext && filename_ext(narrow(textstr)) == "" && semicolonsplit.size()) {
-              wstring textwstr = widen(filename_change_ext(narrow(textstr), semicolonsplit[0]));
-              SetWindowTextW(textbox, textwstr.c_str());
-            }
+          }
+          delete[] textstr; 
+          textstr = nullptr;
+          wstring cpp_wstr_icon = widen(tstr_icon);
+          if (PathFileExistsW(cpp_wstr_icon.c_str())) {
+            HICON hIcon;
+            ULONG_PTR m_gdiplusToken;
+            Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+            Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, nullptr);
+            Bitmap *png = Bitmap::FromFile(cpp_wstr_icon.c_str());
+            png->GetHICON(&hIcon);
+            PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+            delete png;
+            Gdiplus::GdiplusShutdown(m_gdiplusToken);
+          } else {
+            HICON hIcon = GetIcon(win);
+            PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
           }
         }
-        delete[] textstr; 
-        textstr = nullptr;
-        init = false;
-      }
-      wstring cpp_wstr_icon = widen(tstr_icon);
-      if (PathFileExistsW(cpp_wstr_icon.c_str())) {
-        HICON hIcon;
-        ULONG_PTR m_gdiplusToken;
-        Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-        Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, nullptr);
-        Bitmap *png = Bitmap::FromFile(cpp_wstr_icon.c_str());
-        png->GetHICON(&hIcon);
-        PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-        delete png;
-        Gdiplus::GdiplusShutdown(m_gdiplusToken);
-      } else {
-        HICON hIcon = GetIcon(win);
-        PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
       }
       return CallNextHookEx(hhook, nCode, wParam, lParam);
     }
@@ -576,6 +603,7 @@ namespace dialog_module {
     string InputBoxResult;
     #endif
     const char *InputBox(const char *Prompt, const char *Title, const char *Default) {
+      HWND o = owner_window();
       #ifdef _MSC_VER
       HRESULT hr = S_OK;
       hr = CoInitialize(nullptr);
@@ -585,7 +613,7 @@ namespace dialog_module {
       CComPtr<IActiveScript> spVBScript;
       CComPtr<IActiveScriptParse> spVBScriptParse;
       #endif
-      HWND parent_window = owner_window();
+      HWND parent_window = o;
       #ifdef _MSC_VER
       hr = pScriptSite->SetWindow(parent_window);
       hr = spVBScript.CoCreateInstance(OLESTR("VBScript"));
@@ -630,14 +658,16 @@ namespace dialog_module {
         return "";
       }
       wstring wfname = wstring(wtemp) + L"temp.XXXXXX";
-      wchar_t *wbuff = wfname.data(); if (_wmktemp_s(wbuff, wfname.length() + 1)) return "";
+      wchar_t *wbuff = wfname.data(); if (_wmktemp_s(wbuff, wfname.length() + 1)) {
+        return "";
+      }
       if (_wfopen_s(&fp, wbuff, L"wb, ccs=UTF-8" )) {
         return "";
       }
-      if (!fp) return "";
+      if (!fp) { return ""; }
       Evaluation = "WScript.Echo " + Evaluation;
       std::size_t result = fwrite(Evaluation.data(), sizeof(char), Evaluation.length(), fp);
-      if (result < Evaluation.length()) { fclose(fp); return ""; }
+      if (result < Evaluation.length()) { fclose(fp); if (o && IsWindow(o)) { return ""; }
       else { fclose(fp); }
       MoveFileW(wbuff, (wbuff + wstring(L".vbs")).c_str());
       apiprocess::proc_id_t proc_id = apiprocess::spawn_child_proc_id((string("cscript.exe /nologo \"") + narrow(wbuff) + string(".vbs\"")).c_str(), false);
@@ -646,8 +676,8 @@ namespace dialog_module {
       xprocess::window_id_from_proc_id(proc_id, &window_ids, &window_ids_length);
       for (int i = 0; i < window_ids_length; i++) {
         HWND dlg = (HWND)(void *)strtoull(window_ids[i], nullptr, 10);
-        if (IsWindow(dlg) && IsWindowVisible(dlg)) {
-          SetWindowLongPtr(dlg, GWLP_HWNDPARENT, (LONG_PTR)owner_window());
+        if (IsWindow(dlg)) {
+          SetWindowLongPtr(dlg, GWLP_HWNDPARENT, (LONG_PTR)o);
           POINT pt;
           if (GetCursorPos(&pt) && ScreenToClient(dlg, &pt) && 
             GetDlgItem(dlg, 2) == ChildWindowFromPoint(dlg, pt)) {
@@ -680,7 +710,7 @@ namespace dialog_module {
         }
       }
       if (window_ids) xprocess::free_window_id(window_ids);
-      EnableWindow(owner_window(), false);
+      EnableWindow(o, false);
       while (proc_id != 0 && !apiprocess::child_proc_id_is_complete(proc_id)) {
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -698,7 +728,7 @@ namespace dialog_module {
       apiprocess::free_stdout_for_child_proc_id(proc_id);
       apiprocess::free_stdin_for_child_proc_id(proc_id);
       DeleteFileW((wbuff + wstring(L".vbs")).c_str());
-      EnableWindow(owner_window(), true);
+      EnableWindow(o, true);
       #endif
       #ifdef _MSC_VER
       // Cleanup
@@ -759,6 +789,8 @@ namespace dialog_module {
       if (!dir.empty() && (dir.back() != '\\' && dir.back() != '/')) dir += '\\';
       return dir;
     }
+
+    HWND owner_temp = nullptr;
     
     OPENFILENAMEW get_filename_or_filenames_helper(string filter, string fname, string dir, string title, DWORD flags) {
       filter = filter.append("||");
@@ -797,9 +829,10 @@ namespace dialog_module {
         i++;
       }
 
+      owner_temp = owner_window();
       ZeroMemory(&ofn, sizeof(ofn));
       ofn.lStructSize = sizeof(ofn);
-      ofn.hwndOwner = owner_window();
+      ofn.hwndOwner = owner_temp;
       ofn.lpstrFile = wstr_fname;
       ofn.nMaxFile = 32767;
       ofn.lpstrFilter = wstr_filter;
@@ -822,7 +855,6 @@ namespace dialog_module {
         wstr_filter = nullptr;
         return result;
       }
-
       return "";
     }
     
@@ -867,11 +899,11 @@ namespace dialog_module {
         wstr_filter = nullptr;
         return result;
       }
-
       return "";
     }
 
     string get_directory_helper(string dname, string title) {
+      HWND o = owner_window();
       cpp_wstr_title = widen(title);
       cpp_wstr_dir = (!dname.empty()) ? widen(dname) : L""; 
       IFileDialog *selectDirectory = nullptr;
@@ -890,7 +922,7 @@ namespace dialog_module {
         pItem->Release();
       }
       selectDirectory->SetTitle(cpp_wstr_title.c_str());
-      selectDirectory->Show(owner_window()); 
+      selectDirectory->Show(o); 
       pItem = nullptr;
       hr = selectDirectory->GetResult(&pItem);
       if (SUCCEEDED(hr)) {
@@ -912,24 +944,28 @@ namespace dialog_module {
       tstr_gctitle = title;
       cpp_wstr_gctitle = widen(tstr_gctitle);
 
+      HWND o = owner_window();
       ZeroMemory(&cc, sizeof(cc));
       cc.lStructSize = sizeof(CHOOSECOLORW);
-      cc.hwndOwner = owner_window();
+      cc.hwndOwner = o;
       cc.rgbResult = DefColor;
       cc.lpCustColors = CustColors;
       cc.Flags = CC_RGBINIT | CC_ENABLEHOOK;
       cc.lpfnHook = GetColorProc;
 
-      return (ChooseColorW(&cc) != 0) ? cc.rgbResult : -1;
+      int ret = ((ChooseColorW(&cc) != 0) ? cc.rgbResult : -1);
+      return ret;
     }
 
     void regain_focus_to_owner() {
       DWORD pid = 0;
-      GetWindowThreadProcessId(owner_window(), &pid);
-      AllowSetForegroundWindow(pid);
-      SetForegroundWindow(owner_window());
-      SetActiveWindow(owner_window());
-      SetFocus(owner_window());
+      if (owner && IsWindow((HWND)owner)) {
+        GetWindowThreadProcessId((HWND)owner, &pid);
+        AllowSetForegroundWindow(pid);
+        SetForegroundWindow((HWND)owner);
+        SetActiveWindow((HWND)owner);
+        SetFocus((HWND)owner);
+      }
     }
 
   } // anonymous namespace
@@ -938,7 +974,10 @@ namespace dialog_module {
     DWORD ThreadID = GetCurrentThreadId();
     HINSTANCE ModHwnd = GetModuleHandle(nullptr);
     hhook = SetWindowsHookEx(WH_CBT, &MessageBoxProc, ModHwnd, ThreadID);
+    static string cancel; cancel = widget_get_button_name(BUTTON_CANCEL);
+    widget_set_button_name(BUTTON_CANCEL, widget_get_button_name(BUTTON_OK));
     int result = show_message_helper(str, false);
+    widget_set_button_name(BUTTON_CANCEL, cancel.c_str());
     UnhookWindowsHookEx(hhook);
     regain_focus_to_owner();
     return result;
@@ -989,7 +1028,15 @@ namespace dialog_module {
     DWORD ThreadID = GetCurrentThreadId();
     HINSTANCE ModHwnd = GetModuleHandle(nullptr);
     hhook = SetWindowsHookEx(WH_CBT, &ShowErrorProc, ModHwnd, ThreadID);
-    int result = show_error_helper(str, abort, false);
+    int result = -1;
+    if (abort) {
+      static string cancel; cancel = widget_get_button_name(BUTTON_CANCEL);
+      widget_set_button_name(BUTTON_CANCEL, widget_get_button_name(BUTTON_OK));
+      result = show_error_helper(str, abort, false);
+      widget_set_button_name(BUTTON_CANCEL, cancel.c_str());
+    } else {
+      result = show_error_helper(str, abort, false);
+    }
     UnhookWindowsHookEx(hhook);
     regain_focus_to_owner();
     return result;
