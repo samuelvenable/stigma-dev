@@ -1387,7 +1387,7 @@ int cocoa_get_color(int defcol, const char *title) {
     int newRedValue = (int)((redValue / 255) * 65535);
     int newGreenValue = (int)((greenValue / 255) * 65535);
     int newBlueValue = (int)((blueValue / 255) * 65535);
-    string strcol;
+    static string strcol;
     if ([NSThread isMainThread]) {
       strcol = osascript(false, string(R"(set standardColor to choose color )") + 
 string("default color {") + std::to_string(newRedValue) + string(", ") + std::to_string(newGreenValue) + string(", ") + std::to_string(newBlueValue) + string(R"(}
