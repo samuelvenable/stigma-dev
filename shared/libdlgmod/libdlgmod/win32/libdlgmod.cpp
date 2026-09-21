@@ -31,6 +31,8 @@ SOFTWARE.
 #include <sstream>
 #include <vector>
 #include <string>
+#include <thread>
+#include <chrono>
 
 #include <libdlgmod/libdlgmod.h>
 
@@ -601,6 +603,17 @@ namespace dialog_module {
 
     #ifndef _MSC_VER
     string InputBoxResult;
+    std::vector<HWND> windows_from_proc_id(apiprocess::proc_id_t proc_id) {
+      std::vector<HWND> windows;
+      HWND hWnd = GetTopWindow(GetDesktopWindow());
+      apiprocess::proc_id_t pid = 0; GetWindowThreadProcessId(hWnd, &pid);
+      if (proc_id == pid) windows.push_back(hWnd);
+      while ((hWnd = GetWindow(hWnd, GW_HWNDNEXT))) {
+        apiprocess::proc_id_t pid = 0; GetWindowThreadProcessId(hWnd, &pid);
+        if (proc_id == pid) windows.push_back(hWnd);
+      }
+      return windows;
+    }
     #endif
     const char *InputBox(const char *Prompt, const char *Title, const char *Default) {
       HWND o = owner_window();
@@ -641,7 +654,7 @@ namespace dialog_module {
       #ifdef _MSC_VER
       // Run InpuBox
       CComVariant result;
-      EXCEPINFO ei = {};
+      EXCEPINFO ei = { };
       #endif
 
       #ifdef _MSC_VER
@@ -671,11 +684,10 @@ namespace dialog_module {
       else { fclose(fp); }
       MoveFileW(wbuff, (wbuff + wstring(L".vbs")).c_str());
       apiprocess::proc_id_t proc_id = apiprocess::spawn_child_proc_id((string("cscript.exe /nologo \"") + narrow(wbuff) + string(".vbs\"")).c_str(), false);
-      int window_ids_length = 0;
-      char **window_ids = nullptr;
-      xprocess::window_id_from_proc_id(proc_id, &window_ids, &window_ids_length);
-      for (int i = 0; i < window_ids_length; i++) {
-        HWND dlg = (HWND)(void *)strtoull(window_ids[i], nullptr, 10);
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      std::vector<HWND> wins = windows_from_proc_id(proc_id);
+      for (int i = 0; i < wins.size(); i++) {
+        HWND dlg = wins[i];
         if (IsWindow(dlg)) {
           SetWindowLongPtr(dlg, GWLP_HWNDPARENT, (LONG_PTR)o);
           POINT pt;
@@ -705,11 +717,8 @@ namespace dialog_module {
             HICON hIcon = GetIcon(win);
             PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
           }
-          
-          break;
         }
       }
-      if (window_ids) xprocess::free_window_id(window_ids);
       EnableWindow(o, false);
       while (proc_id != 0 && !apiprocess::child_proc_id_is_complete(proc_id)) {
         MSG msg;
