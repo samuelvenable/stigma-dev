@@ -717,6 +717,7 @@ namespace dialog_module {
             HICON hIcon = GetIcon(win);
             PostMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
           }
+          break;
         }
       }
       EnableWindow(o, false);
