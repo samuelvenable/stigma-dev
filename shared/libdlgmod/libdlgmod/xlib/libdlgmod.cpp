@@ -688,39 +688,43 @@ const char *get_open_filename_ext(const char *filter, const char *fname, const c
     res.clear();
   }
   NFD_Quit();
-  return res.c_str();
-  #else
-  change_relative_to_kde();
-  string str_command; string pwd;
-  string caption_previous = caption;
-  if (dm_dialogengine == dm_zenity) {
-    string str_title = add_escaping(title, true, "Open");
-    caption = (str_title == "Open") ? "Open" : title;
-    string str_fname = filename_name(fname);
-    string str_dir = dir;
-    string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-    else str_path = string("$HOME/") + str_fname;
-    str_command = string("ans=$(zenity ") +
-    string("--file-selection --title=\"") + str_title + string("\" --filename=\"") +
-    add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter) + string(");echo $ans");
-  } else if (dm_dialogengine == dm_kdialog) {
-    string str_title = add_escaping(title, true, "Open");
-    caption = (str_title == "Open") ? "Open" : title;
-    string str_fname = filename_name(fname);
-    string str_dir = dir;
-    string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-    if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
-    else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
-    str_command = string("ans=$(kdialog ") +
-    string("--getopenfilename ") + pwd + kdialog_filter(filter) +
-    string(" --title \"") + str_title + string("\"") + string(");echo $ans");
+  if (nfdresult != NFD_ERROR) {
+    return res.c_str();
+  } else {
+  #endif
+    change_relative_to_kde();
+    string str_command; string pwd;
+    string caption_previous = caption;
+    if (dm_dialogengine == dm_zenity) {
+      string str_title = add_escaping(title, true, "Open");
+      caption = (str_title == "Open") ? "Open" : title;
+      string str_fname = filename_name(fname);
+      string str_dir = dir;
+      string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
+      else str_path = string("$HOME/") + str_fname;
+      str_command = string("ans=$(zenity ") +
+      string("--file-selection --title=\"") + str_title + string("\" --filename=\"") +
+      add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter) + string(");echo $ans");
+    } else if (dm_dialogengine == dm_kdialog) {
+      string str_title = add_escaping(title, true, "Open");
+      caption = (str_title == "Open") ? "Open" : title;
+      string str_fname = filename_name(fname);
+      string str_dir = dir;
+      string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
+      if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
+      else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
+      str_command = string("ans=$(kdialog ") +
+      string("--getopenfilename ") + pwd + kdialog_filter(filter) +
+      string(" --title \"") + str_title + string("\"") + string(");echo $ans");
+    }
+    static string result;
+    result = create_shell_dialog(str_command);
+    caption = caption_previous;
+    if (file_exists(result))
+      return result.c_str();
+    return "";
+  #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
   }
-  static string result;
-  result = create_shell_dialog(str_command);
-  caption = caption_previous;
-  if (file_exists(result))
-    return result.c_str();
-  return "";
   #endif
 }
 
@@ -773,45 +777,49 @@ const char *get_open_filenames_ext(const char *filter, const char *fname, const 
     final_res.clear();
   }
   NFD_Quit();
-  return final_res.c_str();
-  #else
-  change_relative_to_kde();
-  string str_command; string pwd;
-  string caption_previous = caption;
-  if (dm_dialogengine == dm_zenity) {
-    string str_title = add_escaping(title, true, "Open");
-    caption = (str_title == "Open") ? "Open" : title;
-    string str_fname = filename_name(fname);
-    string str_dir = dir;
-    string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-    else str_path = string("$HOME/") + str_fname;
-    str_command = string("zenity ") +
-    string("--file-selection --multiple --separator='\n' --title=\"") + str_title + string("\" --filename=\"") +
-    add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter);
-  } else if (dm_dialogengine == dm_kdialog) {
-    string str_title = add_escaping(title, true, "Open");
-    caption = (str_title == "Open") ? "Open" : title;
-    string str_fname = filename_name(fname);
-    string str_dir = dir;
-    string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-    if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
-    else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
-    str_command = string("kdialog ") +
-    string("--getopenfilename ") + pwd + kdialog_filter(filter) +
-    string(" --multiple --separate-output --title \"") + str_title + string("\"");
+  if (nfdresult != NFD_ERROR) {
+    return final_res.c_str();
+  } else {
+  #endif
+    change_relative_to_kde();
+    string str_command; string pwd;
+    string caption_previous = caption;
+    if (dm_dialogengine == dm_zenity) {
+      string str_title = add_escaping(title, true, "Open");
+      caption = (str_title == "Open") ? "Open" : title;
+      string str_fname = filename_name(fname);
+      string str_dir = dir;
+      string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
+      else str_path = string("$HOME/") + str_fname;
+      str_command = string("zenity ") +
+      string("--file-selection --multiple --separator='\n' --title=\"") + str_title + string("\" --filename=\"") +
+      add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter);
+    } else if (dm_dialogengine == dm_kdialog) {
+      string str_title = add_escaping(title, true, "Open");
+      caption = (str_title == "Open") ? "Open" : title;
+      string str_fname = filename_name(fname);
+      string str_dir = dir;
+      string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
+      if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
+      else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
+      str_command = string("kdialog ") +
+      string("--getopenfilename ") + pwd + kdialog_filter(filter) +
+      string(" --multiple --separate-output --title \"") + str_title + string("\"");
+    }
+    static string result;
+    result = create_shell_dialog(str_command);
+    caption = caption_previous;
+    vector<string> stringVec = string_split(result, '\n');
+    bool success = true;
+    for (const string &str : stringVec) {
+      if (!file_exists(str))
+        success = false;
+    }
+    if (success)
+      return result.c_str();
+    return "";
+  #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
   }
-  static string result;
-  result = create_shell_dialog(str_command);
-  caption = caption_previous;
-  vector<string> stringVec = string_split(result, '\n');
-  bool success = true;
-  for (const string &str : stringVec) {
-    if (!file_exists(str))
-      success = false;
-  }
-  if (success)
-    return result.c_str();
-  return "";
   #endif
 }
 
@@ -853,37 +861,41 @@ const char *get_save_filename_ext(const char *filter, const char *fname, const c
     res.clear();
   }
   NFD_Quit();
-  return res.c_str();
-  #else
-  change_relative_to_kde();
-  string str_command; string pwd;
-  string caption_previous = caption;
-  if (dm_dialogengine == dm_zenity) {
-    string str_title = add_escaping(title, true, "Save As");
-    caption = (str_title == "Save As") ? "Save As" : title;
-    string str_fname = filename_name(fname);
-    string str_dir = dir;
-    string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-    else str_path = string("$HOME/") + str_fname;
-    str_command = string("ans=$(zenity ") +
-    string("--file-selection  --save --confirm-overwrite --title=\"") + str_title + string("\" --filename=\"") +
-    add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter) + string(");echo $ans");
-  } else if (dm_dialogengine == dm_kdialog) {
-    string str_title = add_escaping(title, true, "Save As");
-    caption = (str_title == "Save As") ? "Save As" : title;
-    string str_fname = filename_name(fname);
-    string str_dir = dir;
-    string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-    if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
-    else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
-    str_command = string("ans=$(kdialog ") +
-    string("--getsavefilename ") + pwd + kdialog_filter(filter) +
-    string(" --title \"") + str_title + string("\"") + string(");echo $ans");
+  if (nfdresult != NFD_ERROR) {
+    return res.c_str();
+  } else {
+  #endif
+    change_relative_to_kde();
+    string str_command; string pwd;
+    string caption_previous = caption;
+    if (dm_dialogengine == dm_zenity) {
+      string str_title = add_escaping(title, true, "Save As");
+      caption = (str_title == "Save As") ? "Save As" : title;
+      string str_fname = filename_name(fname);
+      string str_dir = dir;
+      string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
+      else str_path = string("$HOME/") + str_fname;
+      str_command = string("ans=$(zenity ") +
+      string("--file-selection  --save --confirm-overwrite --title=\"") + str_title + string("\" --filename=\"") +
+      add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter) + string(");echo $ans");
+    } else if (dm_dialogengine == dm_kdialog) {
+      string str_title = add_escaping(title, true, "Save As");
+      caption = (str_title == "Save As") ? "Save As" : title;
+      string str_fname = filename_name(fname);
+      string str_dir = dir;
+      string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
+      if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
+      else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
+      str_command = string("ans=$(kdialog ") +
+      string("--getsavefilename ") + pwd + kdialog_filter(filter) +
+      string(" --title \"") + str_title + string("\"") + string(");echo $ans");
+    }
+    static string result;
+    result = create_shell_dialog(str_command);
+    caption = caption_previous;
+    return result.c_str();
+  #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
   }
-  static string result;
-  result = create_shell_dialog(str_command);
-  caption = caption_previous;
-  return result.c_str();
   #endif
 }
 
@@ -918,38 +930,42 @@ const char *get_directory_alt(const char *capt, const char *root) {
   }
   static string final_res;
   final_res = ((res.back() != '/') ? res + string("/") : res);
-  return final_res.c_str();
-  #else
-  change_relative_to_kde();
-  string str_command; string pwd;
-  string caption_previous = caption;
-  if (dm_dialogengine == dm_zenity) {
-    string str_title = add_escaping(capt, true, "Select Directory");
-    caption = (str_title == "Select Directory") ? "Select Directory" : capt;
-    string str_dname = root;
-    if (str_dname.empty() || str_dname[0] != '/') str_dname = "$HOME";
-    string str_end = ");if [ $ans = / ] ;then echo $ans;elif [ $? = 1 ] ;then echo $ans/;else echo $ans;fi";
-    str_command = string("ans=$(zenity ") +
-    string("--file-selection --directory --title=\"") + str_title + string("\" --filename=\"") +
-    add_escaping(str_dname, false, "") + string("\"") + str_end;
-  } else if (dm_dialogengine == dm_kdialog) {
-    string str_title = add_escaping(capt, true, "Select Directory");
-    caption = (str_title == "Select Directory") ? "Select Directory" : capt;
-    string str_dname = root;
-    if (str_dname.empty() || str_dname[0] != '/') pwd = "\"$HOME/\"";
-    else pwd = string("\"") + add_escaping(str_dname, false, "") + string("\"");
-    str_command = string("ans=$(kdialog ") +
-    string("--getexistingdirectory ") + pwd + string(" --title \"") + str_title + string("\");echo $ans");
+  if (nfdresult != NFD_ERROR) {
+    return final_res.c_str();
+  } else {
+  #endif
+    change_relative_to_kde();
+    string str_command; string pwd;
+    string caption_previous = caption;
+    if (dm_dialogengine == dm_zenity) {
+      string str_title = add_escaping(capt, true, "Select Directory");
+      caption = (str_title == "Select Directory") ? "Select Directory" : capt;
+      string str_dname = root;
+      if (str_dname.empty() || str_dname[0] != '/') str_dname = "$HOME";
+      string str_end = ");if [ $ans = / ] ;then echo $ans;elif [ $? = 1 ] ;then echo $ans/;else echo $ans;fi";
+      str_command = string("ans=$(zenity ") +
+      string("--file-selection --directory --title=\"") + str_title + string("\" --filename=\"") +
+      add_escaping(str_dname, false, "") + string("\"") + str_end;
+    } else if (dm_dialogengine == dm_kdialog) {
+      string str_title = add_escaping(capt, true, "Select Directory");
+      caption = (str_title == "Select Directory") ? "Select Directory" : capt;
+      string str_dname = root;
+      if (str_dname.empty() || str_dname[0] != '/') pwd = "\"$HOME/\"";
+      else pwd = string("\"") + add_escaping(str_dname, false, "") + string("\"");
+      str_command = string("ans=$(kdialog ") +
+      string("--getexistingdirectory ") + pwd + string(" --title \"") + str_title + string("\");echo $ans");
+    }
+    static string result;
+    result = create_shell_dialog(str_command);
+    caption = caption_previous;
+    if (result.empty() || result == "/") {
+      return result.c_str();
+    }
+    static string final_result;
+    final_result = ((result.back() != '/') ? result + string("/") : result);
+    return final_result.c_str();
+  #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
   }
-  static string result;
-  result = create_shell_dialog(str_command);
-  caption = caption_previous;
-  if (result.empty() || result == "/") {
-    return result.c_str();
-  }
-  static string final_result;
-  final_result = ((result.back() != '/') ? result + string("/") : result);
-  return final_result.c_str();
   #endif
 }
 
