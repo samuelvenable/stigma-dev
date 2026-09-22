@@ -221,8 +221,8 @@ static inline void change_relative_to_kde() {
     const char *ptr = getenv("XDG_CURRENT_DESKTOP");
     string str = ptr ? ptr : "";
     std::transform(str.begin(), str.end(), str.begin(), ::toupper);
-    bool isKDE = (str.find("KDE") != string::npos);
-    if (isKDE) {
+    bool isKdeOrLxqt = (str.find("KDE") != string::npos || str.find("LXQT") != string::npos);
+    if (isKdeOrLxqt) {
       setenv("QT_QPA_PLATFORM", "xcb", 1);
       dm_dialogengine = dm_kdialog;
     } else {
