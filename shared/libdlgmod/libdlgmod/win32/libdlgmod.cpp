@@ -856,6 +856,7 @@ namespace dialog_module {
     }
 
     string get_open_filename_helper(string filter, string fname, string dir, string title) {
+      cancel_pressed = false;
       ofn = get_filename_or_filenames_helper(filter, fname, dir, title, 0);
 
       if (GetOpenFileNameW(&ofn) != 0) {
@@ -874,6 +875,7 @@ namespace dialog_module {
     }
 
     string get_open_filenames_helper(string filter, string fname, string dir, string title) {
+      cancel_pressed = false;
       files = ""; ofn = get_filename_or_filenames_helper(filter, fname, dir, title, OFN_ALLOWMULTISELECT);
       if (GetOpenFileNameW(&ofn) != 0) {
         size_t pos = 0, i = 0;
@@ -900,6 +902,7 @@ namespace dialog_module {
     }
 
     string get_save_filename_helper(string filter, string fname, string dir, string title) {
+      cancel_pressed = false;
       ofn = get_filename_or_filenames_helper(filter, fname, dir, title, OFN_OVERWRITEPROMPT);
 
       if (GetSaveFileNameW(&ofn) != 0) {
@@ -912,6 +915,7 @@ namespace dialog_module {
     }
 
     string get_directory_helper(string dname, string title) {
+      cancel_pressed = false;
       HWND o = owner_window();
       cpp_wstr_title = widen(title);
       cpp_wstr_dir = (!dname.empty()) ? widen(dname) : L""; 
