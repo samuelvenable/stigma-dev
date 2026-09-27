@@ -98,7 +98,7 @@ vector<string> string_split(string str, char delimiter) {
 
 string osascript(bool type, string script) {
   string result;
-  if (!type && [NSThread isMainThread]) {
+  if (!type && [NSThread isMainThread] && [[NSApp windows] count] > 0) {
     NSDictionary *errorInfo = nullptr;
     NSString *sourceCode = [NSString stringWithUTF8String:script.c_str()];
     NSAppleScript *appleScript = [[NSAppleScript alloc] initWithSource:sourceCode];
@@ -532,7 +532,7 @@ const char *cocoa_get_open_filename(const char *filter, const char *fname, const
       string exts = string_replace_all(filter, "*.", "");
       vector<string> vec1 = string_split(exts, '|');
       if (string(filter).empty() || (!vec1.empty() && vec1.size() == 2 && vec1[1] == "*")) {
-        if ([NSThread isMainThread]) {
+        if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
           script = string(R"(set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set theFiles to choose file with prompt ")") + string(title) + string(R"(" with multiple selections allowed default location targetFolder
@@ -572,7 +572,7 @@ EOF
             extensions += string("\"") + vec3[i] + string("\"");
           }
         }
-        if ([NSThread isMainThread]) {
+        if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
           script = string(R"(set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set theFiles to choose file with prompt ")") + string(title) + string(R"(" of type {)") + extensions + string(R"(} with multiple selections allowed default location targetFolder
@@ -598,7 +598,7 @@ EOF
       string exts = string_replace_all(filter, "*.", "");
       vector<string> vec1 = string_split(exts, '|');
       if (string(filter).empty() || (!vec1.empty() && vec1.size() == 2 && vec1[1] == "*")) {
-        if ([NSThread isMainThread]) {
+        if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
           script = string(R"(set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set aFile to choose file with prompt ")") + string(title) + string(R"(" default location targetFolder
@@ -634,7 +634,7 @@ EOF
             extensions += string("\"") + vec3[i] + string("\"");
           }
         }
-        if ([NSThread isMainThread]) {
+        if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
           script = string(R"(set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set aFile to choose file with prompt ")") + string(title) + string(R"(" of type {)") + extensions + string(R"(} default location targetFolder
@@ -1004,7 +1004,7 @@ const char *cocoa_get_save_filename(const char *filter, const char *fname, const
     theSaveResult.clear();
     const char *home = getenv("HOME");
     string location = ((!string(dir).empty()) ? dir : ((home) ? home : "/"));
-    if ([NSThread isMainThread]) {
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
       script = string(R"(set output to ""
 set targetFile to ")") + string(fname) + string(R"("
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
@@ -1319,7 +1319,7 @@ const char *cocoa_get_directory(const char *capt, const char *root) {
     theFolderResult.clear();
     const char *home = getenv("HOME");
     string location = ((!string(root).empty()) ? root : ((home) ? home : "/"));
-    if ([NSThread isMainThread]) {
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
       script = string(R"(set output to ""
 set targetFolder to (POSIX file ")") + location + string(R"(") as alias
 set aFile to choose folder with prompt ")") + string(capt) + string(R"(" default location targetFolder
@@ -1388,7 +1388,7 @@ int cocoa_get_color(int defcol, const char *title) {
     int newGreenValue = (int)((greenValue / 255) * 65535);
     int newBlueValue = (int)((blueValue / 255) * 65535);
     static string strcol;
-    if ([NSThread isMainThread]) {
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
       strcol = osascript(false, string(R"(set standardColor to choose color )") + 
 string("default color {") + std::to_string(newRedValue) + string(", ") + std::to_string(newGreenValue) + string(", ") + std::to_string(newBlueValue) + string(R"(}
 set r16 to item 1 of standardColor
