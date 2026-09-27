@@ -1,26 +1,26 @@
 /*
 
- MIT License
+MIT License
 
- Copyright © 2021-2026 Samuel Venable
+Copyright © 2021-2026 Samuel Venable
 
- Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated documentation files (the "Software"), to deal
- in the Software without restriction, including without limitation the rights
- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- copies of the Software, and to permit persons to whom the Software is
- furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 */
 
@@ -162,16 +162,36 @@ int cocoa_show_message(const char *str, bool has_cancel, const char *icon, const
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
     static string butres;
-    if (has_cancel) {
-      butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_OK) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_OK) + string("\""));
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
+      if (has_cancel) {
+        butres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + string_replace_all(title, "\"", "\\\"") + string("\" buttons {\"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_OK), "\"", "\\\"") + string("\", \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_CANCEL), "\"", "\\\"") + string("\"} default button \"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_OK), "\"", "\\\"") + string("\"\nreturn the button returned of the result\n"));
+      } else {
+        butres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + string_replace_all(title, "\"", "\\\"") + string("\" buttons {\"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_OK), "\"", "\\\"") + string("\"} default button \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_OK), "\"", "\\\"") + 
+        string("\"\nreturn the button returned of the result\n"));
+      }
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_OK))) {
+        msgres = 1;
+      } else {
+        msgres = -1;
+      }
     } else {
-      butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_OK) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_OK) + string("\""));
-    }
-    if (!butres.compare(cocoa_widget_get_button_name(BUTTON_OK))) {
-      msgres = 1;
-    } else {
-      msgres = -1;
-    }      
+      if (has_cancel) {
+        butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + 
+        cocoa_widget_get_button_name(BUTTON_OK) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + 
+        cocoa_widget_get_button_name(BUTTON_OK) + string("\""));
+      } else {
+        butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") +
+        cocoa_widget_get_button_name(BUTTON_OK) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_OK) + string("\""));
+      }
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_OK))) {
+        msgres = 1;
+      } else {
+        msgres = -1;
+      }
+    }    
     return msgres;
   }
   ws = "Cocoa";
@@ -216,18 +236,41 @@ int cocoa_show_question(const char *str, bool has_cancel, const char *icon, cons
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
     static string butres;
-    if (has_cancel) {
-      butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_NO) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\""));
+
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
+      if (has_cancel) {
+        butres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + string_replace_all(title, "\"", "\\\"") + string("\" buttons {\"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_YES), "\"", "\\\"") + string("\", \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_NO), "\"", "\\\"") + string("\", \"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_CANCEL), "\"", "\\\"") + string("\"} default button \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_YES), "\"", "\\\"") + 
+        string("\"\nreturn the button returned of the result\n"));
+      } else {
+        butres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + string_replace_all(title, "\"", "\\\"") + string("\" buttons {\"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_YES), "\"", "\\\"") + string("\", \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_NO), "\"", "\\\"") + string("\"} default button \"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_YES), "\"", "\\\"") + string("\"\nreturn the button returned of the result\n"));
+      }
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_YES))) {
+        qstres = 1;
+      } else if (!butres.compare(cocoa_widget_get_button_name(BUTTON_NO))) {
+        qstres = 0;
+      } else {
+        qstres = -1;
+      }  
     } else {
-      butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_NO) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\""));
-    }
-    if (!butres.compare(cocoa_widget_get_button_name(BUTTON_YES))) {
-      qstres = 1;
-    } else if (!butres.compare(cocoa_widget_get_button_name(BUTTON_NO))) {
-      qstres = 0;
-    } else {
-      qstres = -1;
-    }     
+      if (has_cancel) {
+        butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\", \"") + 
+        cocoa_widget_get_button_name(BUTTON_NO) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\""));
+      } else {
+        butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" buttons {\"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\", \"") + 
+        cocoa_widget_get_button_name(BUTTON_NO) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_YES) + string("\""));
+      }
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_YES))) {
+        qstres = 1;
+      } else if (!butres.compare(cocoa_widget_get_button_name(BUTTON_NO))) {
+        qstres = 0;
+      } else {
+        qstres = -1;
+      }  
+    }   
     return qstres;
   }
   ws = "Cocoa";
@@ -278,12 +321,25 @@ int cocoa_show_attempt(const char *str, const char *icon, const char *title) {
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
     static string butres;
-    strres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + cocoa_widget_get_button_name(BUTTON_RETRY) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_RETRY) + string("\""));
-    if (!butres.compare(cocoa_widget_get_button_name(BUTTON_RETRY))) {
-      attemptres = 0;
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
+      butres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + string_replace_all(title, "\"", "\\\"") + string("\" with icon caution buttons {\"") + 
+      string_replace_all(cocoa_widget_get_button_name(BUTTON_RETRY), "\"", "\\\"") + string("\", \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_CANCEL), "\"", "\\\"") + string("\"} default button \"") + 
+      string_replace_all(cocoa_widget_get_button_name(BUTTON_RETRY), "\"", "\\\"") + string("\"\nreturn the button returned of the result\n"));
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_RETRY))) {
+        attemptres = 0;
+      } else {
+        attemptres = -1;
+      }
     } else {
-      attemptres = -1;
-    }   
+      butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + 
+      cocoa_widget_get_button_name(BUTTON_RETRY) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_CANCEL) + string("\"} default button \"") + 
+      cocoa_widget_get_button_name(BUTTON_RETRY) + string("\""));
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_RETRY))) {
+        attemptres = 0;
+      } else {
+        attemptres = -1;
+      }
+    } 
     return attemptres;
   }
   ws = "Cocoa";
@@ -330,16 +386,36 @@ int cocoa_show_error(const char *str, bool _abort, const char *icon, const char 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
     static string butres;
-    if (!_abort) {
-      butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + cocoa_widget_get_button_name(BUTTON_ABORT) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_IGNORE) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_ABORT) + string("\""));
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
+      if (!_abort) {
+        butres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + string_replace_all(title, "\"", "\\\"") + string("\" with icon caution buttons {\"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_ABORT), "\"", "\\\"") + string("\", \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_IGNORE), "\"", "\\\"") + string("\"} default button \"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_ABORT), "\"", "\\\"") + string("\"\nreturn the button returned of the result\n"));
+      } else {
+        butres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + string_replace_all(title, "\"", "\\\"") + string("\" with icon caution buttons {\"") + 
+        string_replace_all(cocoa_widget_get_button_name(BUTTON_ABORT), "\"", "\\\"") + string("\"} default button \"") + string_replace_all(cocoa_widget_get_button_name(BUTTON_ABORT), "\"", "\\\"") + 
+        string("\"\nreturn the button returned of the result\n"));
+      }
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_ABORT))) {
+        exit(0);
+      } else {
+        errorres = -1;
+      }
     } else {
-      butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + cocoa_widget_get_button_name(BUTTON_ABORT) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_ABORT) + string("\""));
+      if (!_abort) {
+        butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + 
+        cocoa_widget_get_button_name(BUTTON_ABORT) + string("\", \"") + cocoa_widget_get_button_name(BUTTON_IGNORE) + string("\"} default button \"") + 
+        cocoa_widget_get_button_name(BUTTON_ABORT) + string("\""));
+      } else {
+        butres = osascript(true, string("display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" with icon caution buttons {\"") + 
+        cocoa_widget_get_button_name(BUTTON_ABORT) + string("\"} default button \"") + cocoa_widget_get_button_name(BUTTON_ABORT) + string("\""));
+      }
+      if (!butres.compare(cocoa_widget_get_button_name(BUTTON_ABORT))) {
+        exit(0);
+      } else {
+        errorres = -1;
+      }
     }
-    if (!butres.compare(cocoa_widget_get_button_name(BUTTON_ABORT))) {
-      exit(0);
-    } else {
-      errorres = -1;
-    } 
     return errorres;
   }
   ws = "Cocoa";
@@ -385,14 +461,29 @@ const char *cocoa_input_box(const char *str, const char *def, const char *icon, 
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
     static string strres;
-    strres = osascript(true, string("text returned of (display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" default answer \"") + string(def) + string("\")"));
-    if (!strres.empty()) {
-      cancel_pressed = false;
-      return strres.c_str();
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
+      strres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + 
+      string_replace_all(title, "\"", "\\\"") + string("\" default answer \"") + string_replace_all(def, "\"", "\\\"") + 
+      string("\"\nreturn the text returned of the result\n"));
+      if (!strres.empty()) {
+        cancel_pressed = false;
+        return strres.c_str();
+      } else {
+        strres.clear();
+        cancel_pressed = true;
+        return strres.c_str();
+      }
     } else {
-      strres.clear();
-      cancel_pressed = true;
-      return strres.c_str();
+      strres = osascript(true, string("text returned of (display dialog \"") + string(str) + string("\" with title \"") + string(title) + 
+      string("\" default answer \"") + string(def) + string("\")"));
+      if (!strres.empty()) {
+        cancel_pressed = false;
+        return strres.c_str();
+      } else {
+        strres.clear();
+        cancel_pressed = true;
+        return strres.c_str();
+      }
     }
   }
   ws = "Cocoa";
@@ -452,14 +543,29 @@ const char *cocoa_password_box(const char *str, const char *def, const char *ico
   if (!strcmp(ws.c_str(), "OSAScript") || !owner || ![NSThread isMainThread]) {
     ws = "OSAScript";
     static string strres;
-    strres = osascript(true, string("text returned of (display dialog \"") + string(str) + string("\" with title \"") + string(title) + string("\" default answer \"") + string(def) + string("\" with hidden answer)"));
-    if (!strres.empty()) {
-      cancel_pressed = false;
-      return strres.c_str();
+    if ([NSThread isMainThread] && [[NSApp windows] count] > 0) {
+      strres = osascript(false, string("display dialog \"") + string_replace_all(str, "\"", "\\\"") + string("\" with title \"") + 
+      string_replace_all(title, "\"", "\\\"") + string("\" default answer \"") + string_replace_all(def, "\"", "\\\"") + 
+      string("\" with hidden answer\nreturn the text returned of the result\n"));
+      if (!strres.empty()) {
+        cancel_pressed = false;
+        return strres.c_str();
+      } else {
+        strres.clear();
+        cancel_pressed = true;
+        return strres.c_str();
+      }
     } else {
-      strres.clear();
-      cancel_pressed = true;
-      return strres.c_str();
+      strres = osascript(true, string("text returned of (display dialog \"") + string(str) + string("\" with title \"") + 
+      string(title) + string("\" default answer \"") + string(def) + string("\" with hidden answer)"));
+      if (!strres.empty()) {
+        cancel_pressed = false;
+        return strres.c_str();
+      } else {
+        strres.clear();
+        cancel_pressed = true;
+        return strres.c_str();
+      }
     }
   }
   ws = "Cocoa";
