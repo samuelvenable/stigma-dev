@@ -215,15 +215,18 @@ static inline void SetErrorHandlers() {
   XSetIOErrorHandler(XIOErrorHandlerImpl);
 }
 
-static inline void change_relative_to_kde() {
+static inline void change_relative_to_qt() {
   cancel_pressed = false;
   if (dm_dialogengine == dm_x11) {
     const char *ptr = getenv("XDG_CURRENT_DESKTOP");
     string str = ptr ? ptr : "";
     std::transform(str.begin(), str.end(), str.begin(), ::toupper);
-    bool isKdeTdeOrLxqt = (str.find("KDE") != string::npos ||
-    str.find("TDE") != string::npos || str.find("LXQT") != string::npos);
-    if (isKdeTdeOrLxqt) {
+    bool is_qt = (str.find("KDE") != string::npos || str.find("TDE") != string::npos || 
+    str.find("LXQT") != string::npos || str.find("RAZOR") != string::npos || 
+    str.find("CUTEFISH") != string::npos || str.find("DEEPIN") != string::npos || 
+    str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
+    str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
+    if (is_qt) {
       setenv("QT_QPA_PLATFORM", "xcb", 1);
       dm_dialogengine = dm_kdialog;
     } else {
@@ -376,7 +379,7 @@ int make_color_rgb(unsigned char r, unsigned char g, unsigned char b) {
 }
 
 int show_message_helperfunc(const char *str) {
-  change_relative_to_kde();
+  change_relative_to_qt();
   string str_command;
   string str_title = message_cancel ? add_escaping(caption, true, "Question") : add_escaping(caption, true, "Information");
   string str_iconflag = (dm_dialogengine == dm_zenity) ? " --window-icon=\"" : " --icon \"";
@@ -422,7 +425,7 @@ int show_message_helperfunc(const char *str) {
 }
 
 int show_question_helperfunc(const char *str) {
-  change_relative_to_kde();
+  change_relative_to_qt();
   string str_command;
   string str_title = add_escaping(caption, true, "Question");
   string str_iconflag = (dm_dialogengine == dm_zenity) ? " --window-icon=\"" : " --icon \"";
@@ -480,7 +483,7 @@ int show_question_cancelable(const char *str) {
 }
 
 int show_attempt(const char *str) {
-  change_relative_to_kde();
+  change_relative_to_qt();
   string str_command;
   string str_title = add_escaping(caption, true, "Error");
   string str_iconflag = (dm_dialogengine == dm_zenity) ? " --window-icon=\"" : " --icon \"";
@@ -509,7 +512,7 @@ int show_attempt(const char *str) {
 }
 
 int show_error(const char *str, bool abort) {
-  change_relative_to_kde();
+  change_relative_to_qt();
   string str_command;
   string str_title = add_escaping(caption, true, "Error");
   string str_iconflag = (dm_dialogengine == dm_zenity) ? " --window-icon=\"" : " --icon \"";
@@ -558,7 +561,7 @@ int show_error(const char *str, bool abort) {
 }
 
 const char *get_string(const char *str, const char *def) {
-  change_relative_to_kde();
+  change_relative_to_qt();
   string str_command;
   string str_title = add_escaping(caption, true, "Input Query");
   string caption_previous = caption;
@@ -588,7 +591,7 @@ const char *get_string(const char *str, const char *def) {
 }
 
 const char *get_password(const char *str, const char *def) {
-  change_relative_to_kde();
+  change_relative_to_qt();
   string str_command;
   string str_title = add_escaping(caption, true, "Input Query");
   string str_iconflag = (dm_dialogengine == dm_zenity) ? " --window-icon=\"" : " --icon \"";
@@ -693,7 +696,7 @@ const char *get_open_filename_ext(const char *filter, const char *fname, const c
     return res.c_str();
   } else {
   #endif
-    change_relative_to_kde();
+    change_relative_to_qt();
     string str_command; string pwd;
     string caption_previous = caption;
     if (dm_dialogengine == dm_zenity) {
@@ -783,7 +786,7 @@ const char *get_open_filenames_ext(const char *filter, const char *fname, const 
     return final_res.c_str();
   } else {
   #endif
-    change_relative_to_kde();
+    change_relative_to_qt();
     string str_command; string pwd;
     string caption_previous = caption;
     if (dm_dialogengine == dm_zenity) {
@@ -868,7 +871,7 @@ const char *get_save_filename_ext(const char *filter, const char *fname, const c
     return res.c_str();
   } else {
   #endif
-    change_relative_to_kde();
+    change_relative_to_qt();
     string str_command; string pwd;
     string caption_previous = caption;
     if (dm_dialogengine == dm_zenity) {
@@ -938,7 +941,7 @@ const char *get_directory_alt(const char *capt, const char *root) {
     return final_res.c_str();
   } else {
   #endif
-    change_relative_to_kde();
+    change_relative_to_qt();
     string str_command; string pwd;
     string caption_previous = caption;
     if (dm_dialogengine == dm_zenity) {
@@ -978,7 +981,7 @@ int get_color(int defcol) {
 }
 
 int get_color_ext(int defcol, const char *title) {
-  change_relative_to_kde();
+  change_relative_to_qt();
   string str_command;
   string str_title = add_escaping(title, true, "Color");
   string caption_previous = caption;
