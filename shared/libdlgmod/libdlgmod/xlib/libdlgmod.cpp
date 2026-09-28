@@ -166,7 +166,7 @@ string string_replace_all(string str, string substr, string nstr) {
 
 vector<string> string_split(string str, char delimiter) {
   vector<string> vec;
-  std::stringstream sstr(str);
+  stringstream sstr(str);
   string tmp;
   while (std::getline(sstr, tmp, delimiter))
     vec.push_back(tmp);
@@ -221,11 +221,6 @@ static inline void change_relative_to_qt() {
     bool in_path = false;
     const char *path = getenv("PATH");
     if (path && path[0] != '\0') {
-      struct stat st;
-      std::string buf, cmd;
-      std::string cpp_path(path);
-      std::stringstream ss(cpp_path);
-      char resolved_path[PATH_MAX];
       const char *ptr = getenv("XDG_CURRENT_DESKTOP");
       if (ptr && ptr[0] != '\0') {
         string str = ptr;
@@ -236,9 +231,14 @@ static inline void change_relative_to_qt() {
           str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
           str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
         if (is_qt) {
-          cmd = "kdialog";
+          struct stat st;
+          string buf;
+          string cmd = "kdialog";
+          string cpp_path(path);
+          stringstream ss(cpp_path);
+          char resolved_path[PATH_MAX];
           while (std::getline(ss, buf, ':')) {
-            if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+            if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
               !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
               setenv("QT_QPA_PLATFORM", "xcb", 1);
               dm_dialogengine = dm_kdialog;
@@ -247,9 +247,14 @@ static inline void change_relative_to_qt() {
             }
           }
           if (!in_path) {
-            cmd = "zenity";
+            struct stat st;
+            string buf;
+            string cmd = "zenity";
+            string cpp_path(path);
+            stringstream ss(cpp_path);
+            char resolved_path[PATH_MAX];
             while (std::getline(ss, buf, ':')) {
-              if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+              if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
                 !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
                 setenv("GDK_BACKEND", "x11", 1);
                 dm_dialogengine = dm_zenity;
@@ -259,9 +264,14 @@ static inline void change_relative_to_qt() {
             }
           }
         } else {
-          cmd = "zenity";
+          struct stat st;
+          string buf;
+          string cmd = "zenity";
+          string cpp_path(path);
+          stringstream ss(cpp_path);
+          char resolved_path[PATH_MAX];
           while (std::getline(ss, buf, ':')) {
-            if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+            if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
               !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
               setenv("GDK_BACKEND", "x11", 1);
               dm_dialogengine = dm_zenity;
@@ -270,9 +280,14 @@ static inline void change_relative_to_qt() {
             }
           }
           if (!in_path) {
-            cmd = "kdialog";
+            struct stat st;
+            string buf;
+            string cmd = "kdialog";
+            string cpp_path(path);
+            stringstream ss(cpp_path);
+            char resolved_path[PATH_MAX];
             while (std::getline(ss, buf, ':')) {
-              if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+              if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
                 !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
                 setenv("QT_QPA_PLATFORM", "xcb", 1);
                 dm_dialogengine = dm_kdialog;
