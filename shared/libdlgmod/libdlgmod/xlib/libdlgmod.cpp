@@ -300,6 +300,7 @@ static inline void change_relative_to_qt() {
         }
       }
     }
+    #if !defined(LIBDLGMOD_SUPPRESS_DEPENDENCY_ERROR)
     if (!in_path) {
       Display *display = XOpenDisplay(nullptr);
       if (display) {
@@ -330,6 +331,7 @@ static inline void change_relative_to_qt() {
       }
       exit(0);
     }
+    #endif
   }
 }
 
