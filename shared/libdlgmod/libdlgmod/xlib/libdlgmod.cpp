@@ -216,6 +216,7 @@ static inline void SetErrorHandlers() {
 }
 
 static inline void change_relative_to_qt() {
+  SetErrorHandlers();
   cancel_pressed = false;
   if (dm_dialogengine == dm_x11) {
     bool in_path = false;
@@ -298,6 +299,36 @@ static inline void change_relative_to_qt() {
           }
         }
       }
+    }
+    if (!in_path) {
+      Display *display = XOpenDisplay(nullptr);
+      if (display) {
+        int screen = DefaultScreen(display);
+        Window owner = (Window)(std::intptr_t)strtoul(widget_get_owner(), nullptr, 10);
+        Window parent = ((owner) ? owner : RootWindow(display, screen));
+        Window window = XCreateSimpleWindow(display, parent, 
+        0, 0, 550, 32 * 4, 1, BlackPixel(display, screen), WhitePixel(display, screen));
+        XStoreName(display, window, "Fatal Error");
+        XSelectInput(display, window, ExposureMask | KeyPressMask);
+        XMapWindow(display, window);
+        const char *err1 = "Both zenity and kdialog are not found in your system's $PATH environment variable.";
+        const char *err2 = "Please install either zenity and/or kdialog with your system's package manager";
+        const char *err3 = "before attempting to run this application. You may press any key to abort..."; 
+        XEvent event;
+        while (true) {
+          XNextEvent(display, &event);
+          if (event.type == Expose) {
+            XDrawString(display, window, DefaultGC(display, screen), 32, 32, err1, strlen(err1));
+            XDrawString(display, window, DefaultGC(display, screen), 32, 32 * 2, err2, strlen(err2));
+            XDrawString(display, window, DefaultGC(display, screen), 32, 32 * 3, err3, strlen(err3));
+          }
+          if (event.type == KeyPress) {
+            break;
+          }
+        }
+        XCloseDisplay(display);
+      }
+      exit(0);
     }
   }
 }
