@@ -218,20 +218,71 @@ static inline void SetErrorHandlers() {
 static inline void change_relative_to_qt() {
   cancel_pressed = false;
   if (dm_dialogengine == dm_x11) {
-    const char *ptr = getenv("XDG_CURRENT_DESKTOP");
-    string str = ptr ? ptr : "";
-    std::transform(str.begin(), str.end(), str.begin(), ::toupper);
-    bool is_qt = (str.find("KDE") != string::npos || str.find("TDE") != string::npos || 
-    str.find("LXQT") != string::npos || str.find("RAZOR") != string::npos || 
-    str.find("CUTEFISH") != string::npos || str.find("DEEPIN") != string::npos || 
-    str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
-    str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
-    if (is_qt) {
-      setenv("QT_QPA_PLATFORM", "xcb", 1);
-      dm_dialogengine = dm_kdialog;
-    } else {
-      setenv("GDK_BACKEND", "x11", 1);
-      dm_dialogengine = dm_zenity;
+    bool in_path = false;
+    const char *path = getenv("PATH");
+    if (path && path[0] != '\0') {
+      struct stat st;
+      std::string buf, cmd;
+      std::string cpp_path(path);
+      std::stringstream ss(cpp_path);
+      char resolved_path[PATH_MAX];
+      const char *ptr = getenv("XDG_CURRENT_DESKTOP");
+      if (ptr && ptr[0] != '\0') {
+        string str = ptr;
+        std::transform(str.begin(), str.end(), str.begin(), ::toupper);
+        bool is_qt = (str.find("KDE") != string::npos || str.find("TDE") != string::npos || 
+          str.find("LXQT") != string::npos || str.find("RAZOR") != string::npos || 
+          str.find("CUTEFISH") != string::npos || str.find("DEEPIN") != string::npos || 
+          str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
+          str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
+        if (is_qt) {
+          cmd = "kdialog";
+          while (std::getline(ss, buf, ':')) {
+            if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+              !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+              setenv("QT_QPA_PLATFORM", "xcb", 1);
+              dm_dialogengine = dm_kdialog;
+              in_path = true;
+              break;
+            }
+          }
+          if (!in_path) {
+            cmd = "zenity";
+            while (std::getline(ss, buf, ':')) {
+              if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+                !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+                setenv("GDK_BACKEND", "x11", 1);
+                dm_dialogengine = dm_zenity;
+                in_path = true;
+                break;
+              }
+            }
+          }
+        } else {
+          cmd = "zenity";
+          while (std::getline(ss, buf, ':')) {
+            if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+              !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+              setenv("GDK_BACKEND", "x11", 1);
+              dm_dialogengine = dm_zenity;
+              in_path = true;
+              break;
+            }
+          }
+          if (!in_path) {
+            cmd = "kdialog";
+            while (std::getline(ss, buf, ':')) {
+              if (realpath((buf + std::string("/") + cmd).c_str(), resolved_path) && 
+                !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+                setenv("QT_QPA_PLATFORM", "xcb", 1);
+                dm_dialogengine = dm_kdialog;
+                in_path = true;
+                break;
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
