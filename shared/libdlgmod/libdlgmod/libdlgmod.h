@@ -24,6 +24,7 @@
 
 */
 
+#pragma once
 #if !defined(DIALOG_MODULE_GAME_MAKER_BUILD)
 #if defined(_WIN32) /* Windows */
 #define EXPORTED_FUNCTION extern "C" __declspec(dllexport)
