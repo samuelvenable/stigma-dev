@@ -599,6 +599,7 @@ namespace {
   // Linux does not support the precision necessary for this function to consistently be relied upon in a cross-platform context:
   bool proc_id_and_parent_proc_id_compare_creation_time(apiprocess::proc_id_t proc_id, apiprocess::proc_id_t parent_proc_id) {
     #if (defined(_WIN32) || defined(_WIN64))
+    bool result = false;
     HANDLE proc_handle = nullptr, parent_proc_handle = nullptr;
     if ((proc_handle = open_process_with_debug_privilege(proc_id))) {
       if ((parent_proc_handle = open_process_with_debug_privilege(parent_proc_id))) {
@@ -606,10 +607,13 @@ namespace {
         FILETIME parent_proc_creation_time, parent_proc_exit_time, parent_proc_kernel_time, parent_proc_user_time;
         if (GetProcessTimes(proc_handle, &proc_creation_time, &proc_exit_time, &proc_kernel_time, &proc_user_time) &&
           GetProcessTimes(parent_proc_handle, &parent_proc_creation_time, &parent_proc_exit_time, &parent_proc_kernel_time, &parent_proc_user_time)) {
-          return (CompareFileTime(&proc_creation_time, &parent_proc_creation_time) == 1);
+          result = (CompareFileTime(&proc_creation_time, &parent_proc_creation_time) == 1);
         }
+        CloseHandle(parent_proc_handle);
       }
+      CloseHandle(proc_handle);
     }
+    return result;
     #elif (defined(__APPLE__) && defined(__MACH__))
     std::uint64_t child_sec = 0, parent_sec = 0;
     std::uint64_t child_usec = 0, parent_usec = 0;
