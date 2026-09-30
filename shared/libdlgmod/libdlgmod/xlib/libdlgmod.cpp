@@ -759,38 +759,40 @@ const char *get_open_filename(const char *filter, const char *fname) {
 
 const char *get_open_filename_ext(const char *filter, const char *fname, const char *dir, const char *title) {
   #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
-  cancel_pressed = false;
-  NFD_Init();
   static string res;
-  nfdu8char_t *outPath;
-  setenv("QT_QPA_PLATFORM", "xcb", 1);
-  setenv("GDK_BACKEND", "x11", 1);
-  vector<vector<string>> vec;
-  vec = nfd_filter(filter);
-  vector<nfdu8filteritem_t> filters;
-  filters.reserve(vec.size());
-  for (const auto &ext : vec) {
-    if (!ext.empty() && ext.size() == 2 && ext[1].find("*") == string::npos) {
-      filters.emplace_back(nfdu8filteritem_t{ ext[0].c_str(), ext[1].c_str() });
+  cancel_pressed = false;
+  nfdresult_t nfdresult = NFD_Init();
+  if (nfdresult != NFD_ERROR) {
+    nfdu8char_t *outPath;
+    setenv("QT_QPA_PLATFORM", "xcb", 1);
+    setenv("GDK_BACKEND", "x11", 1);
+    vector<vector<string>> vec;
+    vec = nfd_filter(filter);
+    vector<nfdu8filteritem_t> filters;
+    filters.reserve(vec.size());
+    for (const auto &ext : vec) {
+      if (!ext.empty() && ext.size() == 2 && ext[1].find("*") == string::npos) {
+        filters.emplace_back(nfdu8filteritem_t{ ext[0].c_str(), ext[1].c_str() });
+      }
     }
+    nfdopendialogu8args_t args = { 0 };
+    args.filterList = filters.data();
+    args.filterCount = filters.size();
+    args.defaultPath = ((dir && strlen(dir)) ? dir : (getenv("HOME") ? getenv("HOME") : "/"));
+    args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
+    args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
+    args.title = ((title && strlen(title)) ? title : "Open");
+    args.acceptLabel = widget_get_button_name(BUTTON_OK);
+    args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
+    nfdresult = NFD_OpenDialogU8_With(&outPath, &args);
+    if (nfdresult == NFD_OKAY) {
+      res = outPath;
+      NFD_FreePathU8(outPath);
+    } else {
+      res.clear();
+    }
+    NFD_Quit();
   }
-  nfdopendialogu8args_t args = { 0 };
-  args.filterList = filters.data();
-  args.filterCount = filters.size();
-  args.defaultPath = ((dir && strlen(dir)) ? dir : (getenv("HOME") ? getenv("HOME") : "/"));
-  args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
-  args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
-  args.title = ((title && strlen(title)) ? title : "Open");
-  args.acceptLabel = widget_get_button_name(BUTTON_OK);
-  args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
-  nfdresult_t nfdresult = NFD_OpenDialogU8_With(&outPath, &args);
-  if (nfdresult == NFD_OKAY) {
-    res = outPath;
-    NFD_FreePathU8(outPath);
-  } else {
-    res.clear();
-  }
-  NFD_Quit();
   if (nfdresult != NFD_ERROR) {
     return res.c_str();
   } else {
@@ -837,50 +839,52 @@ const char *get_open_filenames(const char *filter, const char *fname) {
 
 const char *get_open_filenames_ext(const char *filter, const char *fname, const char *dir, const char *title) {
   #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
-  cancel_pressed = false;
-  NFD_Init();
   string res;
   static string final_res;
-  const nfdpathset_t *outPaths;
-  setenv("QT_QPA_PLATFORM", "xcb", 1);
-  setenv("GDK_BACKEND", "x11", 1);
-  vector<vector<string>> vec;
-  vec = nfd_filter(filter);
-  vector<nfdu8filteritem_t> filters;
-  filters.reserve(vec.size());
-  for (const auto &ext : vec) {
-    if (!ext.empty() && ext.size() == 2 && ext[1].find("*") == string::npos) {
-      filters.emplace_back(nfdu8filteritem_t{ ext[0].c_str(), ext[1].c_str() });
-    }
-  }
-  nfdopendialogu8args_t args = { 0 };
-  args.filterList = filters.data();
-  args.filterCount = filters.size();
-  args.defaultPath = ((dir && strlen(dir)) ? dir : ((getenv("HOME")) ? getenv("HOME") : "/"));
-  args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
-  args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
-  args.title = ((title && strlen(title)) ? title : "Open");
-  args.acceptLabel = widget_get_button_name(BUTTON_OK);
-  args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
-  nfdresult_t nfdresult = NFD_OpenDialogMultipleU8_With(&outPaths, &args);
-  if (nfdresult == NFD_OKAY) {
-    nfdpathsetsize_t numPaths;
-    NFD_PathSet_GetCount(outPaths, &numPaths);
-    for (nfdpathsetsize_t i = 0; i < numPaths; i++) {
-      nfdu8char_t *path;
-      NFD_PathSet_GetPath(outPaths, i, &path);
-      res += path;
-      if (i < numPaths - 1) {
-        res += string("\n");
+  cancel_pressed = false;
+  nfdresult_t nfdresult = NFD_Init();
+  if (nfdresult != NFD_ERROR) {
+    const nfdpathset_t *outPaths;
+    setenv("QT_QPA_PLATFORM", "xcb", 1);
+    setenv("GDK_BACKEND", "x11", 1);
+    vector<vector<string>> vec;
+    vec = nfd_filter(filter);
+    vector<nfdu8filteritem_t> filters;
+    filters.reserve(vec.size());
+    for (const auto &ext : vec) {
+      if (!ext.empty() && ext.size() == 2 && ext[1].find("*") == string::npos) {
+        filters.emplace_back(nfdu8filteritem_t{ ext[0].c_str(), ext[1].c_str() });
       }
-      NFD_PathSet_FreePath(path);
     }
-    NFD_PathSet_Free(outPaths);
-    final_res = res;
-  } else {
-    final_res.clear();
+    nfdopendialogu8args_t args = { 0 };
+    args.filterList = filters.data();
+    args.filterCount = filters.size();
+    args.defaultPath = ((dir && strlen(dir)) ? dir : ((getenv("HOME")) ? getenv("HOME") : "/"));
+    args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
+    args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
+    args.title = ((title && strlen(title)) ? title : "Open");
+    args.acceptLabel = widget_get_button_name(BUTTON_OK);
+    args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
+    nfdresult = NFD_OpenDialogMultipleU8_With(&outPaths, &args);
+    if (nfdresult == NFD_OKAY) {
+      nfdpathsetsize_t numPaths;
+      NFD_PathSet_GetCount(outPaths, &numPaths);
+      for (nfdpathsetsize_t i = 0; i < numPaths; i++) {
+        nfdu8char_t *path;
+        NFD_PathSet_GetPath(outPaths, i, &path);
+        res += path;
+        if (i < numPaths - 1) {
+          res += string("\n");
+        }
+        NFD_PathSet_FreePath(path);
+      }
+      NFD_PathSet_Free(outPaths);
+      final_res = res;
+    } else {
+      final_res.clear();
+    }
+    NFD_Quit();
   }
-  NFD_Quit();
   if (nfdresult != NFD_ERROR) {
     return final_res.c_str();
   } else {
@@ -933,39 +937,41 @@ const char *get_save_filename(const char *filter, const char *fname) {
 
 const char *get_save_filename_ext(const char *filter, const char *fname, const char *dir, const char *title) {
   #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
-  cancel_pressed = false;
-  NFD_Init();
   static string res;
-  nfdu8char_t *outPath;
-  setenv("QT_QPA_PLATFORM", "xcb", 1);
-  setenv("GDK_BACKEND", "x11", 1);
-  vector<vector<string>> vec;
-  vec = nfd_filter(filter);
-  vector<nfdu8filteritem_t> filters;
-  filters.reserve(vec.size());
-  for (const auto &ext : vec) {
-    if (!ext.empty() && ext.size() == 2 && ext[1].find("*") == string::npos) {
-      filters.emplace_back(nfdu8filteritem_t{ ext[0].c_str(), ext[1].c_str() });
+  cancel_pressed = false;
+  nfdresult_t nfdresult = NFD_Init();
+  if (nfdresult != NFD_ERROR) {
+    nfdu8char_t *outPath;
+    setenv("QT_QPA_PLATFORM", "xcb", 1);
+    setenv("GDK_BACKEND", "x11", 1);
+    vector<vector<string>> vec;
+    vec = nfd_filter(filter);
+    vector<nfdu8filteritem_t> filters;
+    filters.reserve(vec.size());
+    for (const auto &ext : vec) {
+      if (!ext.empty() && ext.size() == 2 && ext[1].find("*") == string::npos) {
+        filters.emplace_back(nfdu8filteritem_t{ ext[0].c_str(), ext[1].c_str() });
+      }
     }
+    nfdsavedialogu8args_t args = { 0 };
+    args.filterList = filters.data();
+    args.filterCount = filters.size();
+    args.defaultPath = ((dir && strlen(dir)) ? dir : (getenv("HOME") ? getenv("HOME") : "/"));
+    args.defaultName = ((fname && strlen(fname)) ? fname : "");
+    args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
+    args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
+    args.title = ((title && strlen(title)) ? title : "Save As");
+    args.acceptLabel = widget_get_button_name(BUTTON_OK);
+    args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
+    nfdresult = NFD_SaveDialogU8_With(&outPath, &args);
+    if (nfdresult == NFD_OKAY) {
+      res = outPath;
+      NFD_FreePathU8(outPath);
+    } else {
+      res.clear();
+    }
+    NFD_Quit();
   }
-  nfdsavedialogu8args_t args = { 0 };
-  args.filterList = filters.data();
-  args.filterCount = filters.size();
-  args.defaultPath = ((dir && strlen(dir)) ? dir : (getenv("HOME") ? getenv("HOME") : "/"));
-  args.defaultName = ((fname && strlen(fname)) ? fname : "");
-  args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
-  args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
-  args.title = ((title && strlen(title)) ? title : "Save As");
-  args.acceptLabel = widget_get_button_name(BUTTON_OK);
-  args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
-  nfdresult_t nfdresult = NFD_SaveDialogU8_With(&outPath, &args);
-  if (nfdresult == NFD_OKAY) {
-    res = outPath;
-    NFD_FreePathU8(outPath);
-  } else {
-    res.clear();
-  }
-  NFD_Quit();
   if (nfdresult != NFD_ERROR) {
     return res.c_str();
   } else {
@@ -1010,32 +1016,34 @@ const char *get_directory(const char *dname) {
 
 const char *get_directory_alt(const char *capt, const char *root) {
   #if (USE_XDG_DESKTOP_PORTAL && (defined(__linux__) && !defined(__ANDROID__)))
-  cancel_pressed = false;
-  NFD_Init();
   static string res;
-  nfdu8char_t *outPath;
-  setenv("QT_QPA_PLATFORM", "xcb", 1);
-  setenv("GDK_BACKEND", "x11", 1);
-  nfdpickfolderu8args_t args = { 0 };
-  args.defaultPath = ((root && strlen(root)) ? root : (getenv("HOME") ? getenv("HOME") : "/"));
-  args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
-  args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
-  args.title = ((capt && strlen(capt)) ? capt : "Select Directory");
-  args.acceptLabel = widget_get_button_name(BUTTON_OK);
-  args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
-  nfdresult_t nfdresult = NFD_PickFolderU8_With(&outPath, &args);
-  if (nfdresult == NFD_OKAY) {
-    res = outPath;
-    NFD_FreePathU8(outPath);
-  } else {
-    res.clear();
+  static string final_res;
+  cancel_pressed = false;
+  nfdresult_t nfdresult = NFD_Init();
+  if (nfdresult != NFD_ERROR) {
+    nfdu8char_t *outPath;
+    setenv("QT_QPA_PLATFORM", "xcb", 1);
+    setenv("GDK_BACKEND", "x11", 1);
+    nfdpickfolderu8args_t args = { 0 };
+    args.defaultPath = ((root && strlen(root)) ? root : (getenv("HOME") ? getenv("HOME") : "/"));
+    args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
+    args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
+    args.title = ((capt && strlen(capt)) ? capt : "Select Directory");
+    args.acceptLabel = widget_get_button_name(BUTTON_OK);
+    args.cancelLabel = widget_get_button_name(BUTTON_CANCEL);
+    nfdresult = NFD_PickFolderU8_With(&outPath, &args);
+    if (nfdresult == NFD_OKAY) {
+      res = outPath;
+      NFD_FreePathU8(outPath);
+    } else {
+      res.clear();
+    }
+    NFD_Quit();
   }
-  NFD_Quit();
-  if (res.empty() || res == "/") {
+  if (nfdresult != NFD_ERROR && (res.empty() || res == "/")) {
     return res.c_str();
   }
-  static string final_res;
-  final_res = ((res.back() != '/') ? res + string("/") : res);
+  final_res = ((!res.empty() && res.back() != '/') ? res + string("/") : res);
   if (nfdresult != NFD_ERROR) {
     return final_res.c_str();
   } else {
