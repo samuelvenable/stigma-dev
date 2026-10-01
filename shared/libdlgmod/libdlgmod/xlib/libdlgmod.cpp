@@ -216,55 +216,38 @@ static inline void SetErrorHandlers() {
 }
 
 static inline void change_relative_to_qt() {
-  SetErrorHandlers();
   cancel_pressed = false;
   if (dm_dialogengine == dm_x11) {
-    bool in_path = false;
+    bool in_path = false, is_qt = false;
     const char *path = getenv("PATH");
     if (path && path[0] != '\0') {
       const char *ptr = getenv("XDG_CURRENT_DESKTOP");
-      if (ptr && ptr[0] != '\0') {
-        string str = ptr;
+      string str = ((ptr) ? ptr : "");
+      if (!str.empty()) {
         std::transform(str.begin(), str.end(), str.begin(), ::toupper);
-        bool is_qt = (str.find("KDE") != string::npos || str.find("TDE") != string::npos || 
-          str.find("LXQT") != string::npos || str.find("RAZOR") != string::npos || 
-          str.find("CUTEFISH") != string::npos || str.find("DEEPIN") != string::npos || 
-          str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
-          str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
-        if (is_qt) {
-          struct stat st;
-          string buf;
-          string cmd = "kdialog";
-          string cpp_path(path);
-          stringstream ss(cpp_path);
-          char resolved_path[PATH_MAX];
-          while (std::getline(ss, buf, ':')) {
-            if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
-              !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
-              setenv("QT_QPA_PLATFORM", "xcb", 1);
-              dm_dialogengine = dm_kdialog;
-              in_path = true;
-              break;
-            }
+        is_qt = (str.find("KDE") != string::npos || str.find("TDE") != string::npos || 
+        str.find("LXQT") != string::npos || str.find("RAZOR") != string::npos || 
+        str.find("CUTEFISH") != string::npos || str.find("DEEPIN") != string::npos || 
+        str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
+        str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
+      }
+      if (is_qt) {
+        struct stat st;
+        string buf;
+        string cmd = "kdialog";
+        string cpp_path(path);
+        stringstream ss(cpp_path);
+        char resolved_path[PATH_MAX];
+        while (std::getline(ss, buf, ':')) {
+          if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
+            !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+            setenv("QT_QPA_PLATFORM", "xcb", 1);
+            dm_dialogengine = dm_kdialog;
+            in_path = true;
+            break;
           }
-          if (!in_path) {
-            struct stat st;
-            string buf;
-            string cmd = "zenity";
-            string cpp_path(path);
-            stringstream ss(cpp_path);
-            char resolved_path[PATH_MAX];
-            while (std::getline(ss, buf, ':')) {
-              if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
-                !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
-                setenv("GDK_BACKEND", "x11", 1);
-                dm_dialogengine = dm_zenity;
-                in_path = true;
-                break;
-              }
-            }
-          }
-        } else {
+        }
+        if (!in_path) {
           struct stat st;
           string buf;
           string cmd = "zenity";
@@ -280,21 +263,37 @@ static inline void change_relative_to_qt() {
               break;
             }
           }
-          if (!in_path) {
-            struct stat st;
-            string buf;
-            string cmd = "kdialog";
-            string cpp_path(path);
-            stringstream ss(cpp_path);
-            char resolved_path[PATH_MAX];
-            while (std::getline(ss, buf, ':')) {
-              if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
-                !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
-                setenv("QT_QPA_PLATFORM", "xcb", 1);
-                dm_dialogengine = dm_kdialog;
-                in_path = true;
-                break;
-              }
+        }
+      } else {
+        struct stat st;
+        string buf;
+        string cmd = "zenity";
+        string cpp_path(path);
+        stringstream ss(cpp_path);
+        char resolved_path[PATH_MAX];
+        while (std::getline(ss, buf, ':')) {
+          if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
+            !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+            setenv("GDK_BACKEND", "x11", 1);
+            dm_dialogengine = dm_zenity;
+            in_path = true;
+            break;
+          }
+        }
+        if (!in_path) {
+          struct stat st;
+          string buf;
+          string cmd = "kdialog";
+          string cpp_path(path);
+          stringstream ss(cpp_path);
+          char resolved_path[PATH_MAX];
+          while (std::getline(ss, buf, ':')) {
+            if (realpath((buf + string("/") + cmd).c_str(), resolved_path) && 
+              !stat(resolved_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+              setenv("QT_QPA_PLATFORM", "xcb", 1);
+              dm_dialogengine = dm_kdialog;
+              in_path = true;
+              break;
             }
           }
         }
@@ -302,6 +301,7 @@ static inline void change_relative_to_qt() {
     }
     #if !defined(LIBDLGMOD_SUPPRESS_DEPENDENCY_ERROR)
     if (!in_path) {
+      SetErrorHandlers();
       Display *display = XOpenDisplay(nullptr);
       if (display) {
         int screen = DefaultScreen(display);
