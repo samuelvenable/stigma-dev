@@ -226,10 +226,10 @@ static inline void change_relative_to_qt() {
       if (!str.empty()) {
         std::transform(str.begin(), str.end(), str.begin(), ::toupper);
         is_qt = (str.find("KDE") != string::npos || str.find("TDE") != string::npos || 
-        str.find("LXQT") != string::npos || str.find("RAZOR") != string::npos || 
-        str.find("CUTEFISH") != string::npos || str.find("DEEPIN") != string::npos || 
-        str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
-        str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
+          str.find("LXQT") != string::npos || str.find("RAZOR") != string::npos || 
+          str.find("CUTEFISH") != string::npos || str.find("DEEPIN") != string::npos || 
+          str.find("DDE") != string::npos || str.find("UKUI") != string::npos || 
+          str.find("LUMINA") != string::npos || str.find("QT") != string::npos);
       }
       if (is_qt) {
         struct stat st;
@@ -957,7 +957,7 @@ const char *get_save_filename_ext(const char *filter, const char *fname, const c
     args.filterList = filters.data();
     args.filterCount = filters.size();
     args.defaultPath = ((dir && strlen(dir)) ? dir : (getenv("HOME") ? getenv("HOME") : "/"));
-    args.defaultName = ((fname && strlen(fname)) ? fname : "");
+    args.defaultName = ((fname && strlen(fname) && string(fname).find('.') != string::npos) ? fname : nullptr);
     args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
     args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
     args.title = ((title && strlen(title)) ? title : "Save As");
