@@ -957,7 +957,7 @@ const char *get_save_filename_ext(const char *filter, const char *fname, const c
     args.filterList = filters.data();
     args.filterCount = filters.size();
     args.defaultPath = ((dir && strlen(dir)) ? dir : (getenv("HOME") ? getenv("HOME") : "/"));
-    args.defaultName = ((fname && strlen(fname) && string(fname).find('.') != string::npos) ? fname : nullptr);
+    args.defaultName = ((fname && strlen(fname)) ? fname : nullptr);
     args.parentWindow.type = NFD_WINDOW_HANDLE_TYPE_X11;
     args.parentWindow.handle = (void *)(unsigned long long)strtoul(widget_get_owner(), nullptr, 10);
     args.title = ((title && strlen(title)) ? title : "Save As");
