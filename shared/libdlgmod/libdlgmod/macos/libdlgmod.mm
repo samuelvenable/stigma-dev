@@ -1542,6 +1542,7 @@ EOF
   NSColorPanel *myColorPanel = [NSColorPanel sharedColorPanel];
 
   [myColorPanel setFrame:NSMakeRect(0, 0, 229, 399) display:YES animate:NO];
+  [myColorPanel setShowsAlpha:NO];
   if ([myColorTitle length] > 0) [myColorPanel setTitle:myColorTitle];
   NSSize myColorSize = [[myColorPanel contentView] frame].size;
   NSView *myViewView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, myColorSize.width, buttonHeight)];
