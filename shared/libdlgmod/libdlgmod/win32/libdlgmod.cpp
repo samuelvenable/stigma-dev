@@ -126,7 +126,7 @@ namespace dialog_module {
 
     enum CAPTION_TYPES {
       CAPTION_INFORMATION,
-      CAPTION_QUESTON,
+      CAPTION_QUESTION,
       CAPTION_INPUT,
       CAPTION_OPEN,
       CAPTION_SAVE,
@@ -156,7 +156,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Retry";
 
           cpt_array[CAPTION_INFORMATION] = "Information";
-          cpt_array[CAPTION_QUESTON] = "Question";
+          cpt_array[CAPTION_QUESTION] = "Question";
           cpt_array[CAPTION_INPUT] = "Input Query";
           cpt_array[CAPTION_OPEN] = "Open";
           cpt_array[CAPTION_SAVE] = "Save As";
@@ -176,7 +176,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Réessayer";
 
           cpt_array[CAPTION_INFORMATION] = "Information";
-          cpt_array[CAPTION_QUESTON] = "Question";
+          cpt_array[CAPTION_QUESTION] = "Question";
           cpt_array[CAPTION_INPUT] = "Requête d'entrée";
           cpt_array[CAPTION_OPEN] = "Ouvrir";
           cpt_array[CAPTION_SAVE] = "Enregistrer sous";
@@ -196,7 +196,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Wiederholen";
 
           cpt_array[CAPTION_INFORMATION] = "Information";
-          cpt_array[CAPTION_QUESTON] = "Frage";
+          cpt_array[CAPTION_QUESTION] = "Frage";
           cpt_array[CAPTION_INPUT] = "Eingabeabfrage";
           cpt_array[CAPTION_OPEN] = "Offen";
           cpt_array[CAPTION_SAVE] = "Speichern unter";
@@ -216,7 +216,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Rever";
 
           cpt_array[CAPTION_INFORMATION] = "Información";
-          cpt_array[CAPTION_QUESTON] = "Pregunta";
+          cpt_array[CAPTION_QUESTION] = "Pregunta";
           cpt_array[CAPTION_INPUT] = "Consulta de entrada";
           cpt_array[CAPTION_OPEN] = "Abierta";
           cpt_array[CAPTION_SAVE] = "Guardar como";
@@ -236,7 +236,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "重试";
 
           cpt_array[CAPTION_INFORMATION] = "信息";
-          cpt_array[CAPTION_QUESTON] = "问题";
+          cpt_array[CAPTION_QUESTION] = "问题";
           cpt_array[CAPTION_INPUT] = "输入查询";
           cpt_array[CAPTION_OPEN] = "打开";
           cpt_array[CAPTION_SAVE] = "另存为";
@@ -256,7 +256,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "リトライ";
 
           cpt_array[CAPTION_INFORMATION] = "情報";
-          cpt_array[CAPTION_QUESTON] = "質問";
+          cpt_array[CAPTION_QUESTION] = "質問";
           cpt_array[CAPTION_INPUT] = "入力クエリ";
           cpt_array[CAPTION_OPEN] = "開ける";
           cpt_array[CAPTION_SAVE] = "名前を付けて保存";
@@ -276,7 +276,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "다시 해 보다";
 
           cpt_array[CAPTION_INFORMATION] = "정보";
-          cpt_array[CAPTION_QUESTON] = "질문";
+          cpt_array[CAPTION_QUESTION] = "질문";
           cpt_array[CAPTION_INPUT] = "입력 쿼리";
           cpt_array[CAPTION_OPEN] = "열려 있는";
           cpt_array[CAPTION_SAVE] = "다른 이름으로 저장";
@@ -296,7 +296,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Повторить попытку";
 
           cpt_array[CAPTION_INFORMATION] = "Информация";
-          cpt_array[CAPTION_QUESTON] = "Вопрос";
+          cpt_array[CAPTION_QUESTION] = "Вопрос";
           cpt_array[CAPTION_INPUT] = "Входной запрос";
           cpt_array[CAPTION_OPEN] = "Открыть";
           cpt_array[CAPTION_SAVE] = "Сохранить как";
@@ -316,7 +316,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Tentar novamente";
 
           cpt_array[CAPTION_INFORMATION] = "Informação";
-          cpt_array[CAPTION_QUESTON] = "Pergunta";
+          cpt_array[CAPTION_QUESTION] = "Pergunta";
           cpt_array[CAPTION_INPUT] = "Consulta de entrada";
           cpt_array[CAPTION_OPEN] = "Abrir";
           cpt_array[CAPTION_SAVE] = "Salvar como";
@@ -336,7 +336,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "إعادة المحاولة";
 
           cpt_array[CAPTION_INFORMATION] = "معلومة";
-          cpt_array[CAPTION_QUESTON] = "سؤال";
+          cpt_array[CAPTION_QUESTION] = "سؤال";
           cpt_array[CAPTION_INPUT] = "استعلام الإدخال";
           cpt_array[CAPTION_OPEN] = "يفتح";
           cpt_array[CAPTION_SAVE] = "حفظ باسم";
@@ -356,7 +356,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "पुन: प्रयास करें";
 
           cpt_array[CAPTION_INFORMATION] = "जानकारी";
-          cpt_array[CAPTION_QUESTON] = "सवाल";
+          cpt_array[CAPTION_QUESTION] = "सवाल";
           cpt_array[CAPTION_INPUT] = "इनपुट क्वेरी";
           cpt_array[CAPTION_OPEN] = "खुला";
           cpt_array[CAPTION_SAVE] = "के रूप रक्षित करें";
@@ -376,7 +376,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Riprova";
 
           cpt_array[CAPTION_INFORMATION] = "Informazioni";
-          cpt_array[CAPTION_QUESTON] = "Domanda";
+          cpt_array[CAPTION_QUESTION] = "Domanda";
           cpt_array[CAPTION_INPUT] = "Query di input";
           cpt_array[CAPTION_OPEN] = "Aprire";
           cpt_array[CAPTION_SAVE] = "Salva con nome";
@@ -396,7 +396,7 @@ namespace dialog_module {
           btn_array[BUTTON_RETRY] = "Opnieuw proberen";
 
           cpt_array[CAPTION_INFORMATION] = "Informatie";
-          cpt_array[CAPTION_QUESTON] = "Vraag";
+          cpt_array[CAPTION_QUESTION] = "Vraag";
           cpt_array[CAPTION_INPUT] = "Invoervraag";
           cpt_array[CAPTION_OPEN] = "Open";
           cpt_array[CAPTION_SAVE] = "Opslaan als";
