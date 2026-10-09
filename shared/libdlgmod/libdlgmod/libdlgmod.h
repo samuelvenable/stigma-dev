@@ -62,6 +62,7 @@ EXPORTED_FUNCTION void widget_set_system(const char *sys);
 EXPORTED_FUNCTION void widget_set_button_name(int type, const char *name);
 EXPORTED_FUNCTION const char *widget_get_button_name(int type);
 EXPORTED_FUNCTION bool widget_get_canceled();
+EXPORTED_FUNCTION void widget_set_locale();
 #endif
 
 namespace dialog_module {
@@ -97,6 +98,7 @@ namespace dialog_module {
   void widget_set_button_name(int type, const char *name);
   const char *widget_get_button_name(int type);
   bool widget_get_canceled();
+  void widget_set_locale();
   
 } // namespace dialog_module
 
@@ -223,5 +225,9 @@ inline void widget_set_button_name(int type, const char *name) {
 
 inline bool widget_get_canceled() {
   return dialog_module::widget_get_canceled();
+}
+
+inline void widget_set_locale() {
+  dialog_module::widget_set_locale();
 }
 #endif

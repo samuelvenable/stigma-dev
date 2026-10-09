@@ -84,6 +84,7 @@ EXPORTED_FUNCTION double widget_set_system(char *sys);
 EXPORTED_FUNCTION char *widget_get_button_name(double type);
 EXPORTED_FUNCTION double widget_set_button_name(double type, char *name);
 EXPORTED_FUNCTION double widget_get_canceled();
+EXPORTED_FUNCTION double widget_set_locale();
 EXPORTED_FUNCTION void RegisterCallbacks(char *arg1, char *arg2, char *arg3, char *arg4);
 
 namespace {
@@ -657,6 +658,11 @@ double widget_set_button_name(double type, char *name) {
 
 double widget_get_canceled() {
   return dialog_module::widget_get_canceled();
+}
+
+double widget_set_locale() {
+  dialog_module::widget_set_locale();
+  return 0;
 }
 
 void RegisterCallbacks(char *arg1, char *arg2, char *arg3, char *arg4) {

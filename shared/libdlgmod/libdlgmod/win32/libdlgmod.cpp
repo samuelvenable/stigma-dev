@@ -27,6 +27,8 @@ SOFTWARE.
 #include <cstdlib>
 #include <cstdio>
 #include <cwchar>
+#include <cstring>
+#include <clocale>
 
 #include <sstream>
 #include <vector>
@@ -122,8 +124,289 @@ namespace dialog_module {
       BUTTON_RETRY
     };
 
+    enum CAPTION_TYPES {
+      CAPTION_INFORMATION,
+      CAPTION_QUESTON,
+      CAPTION_INPUT,
+      CAPTION_OPEN,
+      CAPTION_SAVE,
+      CAPTION_DIRECTORY,
+      CAPTION_COLOR,
+      CAPTION_ERROR
+    };
+
     int const btn_array_len = 7;
     string btn_array[btn_array_len] = { "Abort", "Ignore", "OK", "Cancel", "Yes", "No", "Retry" };
+
+    int const cpt_array_len = 8;
+    string cpt_array[cpt_array_len] = { "Information", "Question", "Input Query", "Open", "Save As", "Select Directory", "Color", "Error" };
+
+    void widget_set_locale_helper() {
+      const char *ptr = std::setlocale(LC_ALL, "");  
+      if (ptr && strlen(ptr) >= 2) {
+        if (ptr[0] == 'e' && ptr[1] == 'n') {
+          // en = English
+
+          btn_array[BUTTON_ABORT] = "Abort";
+          btn_array[BUTTON_IGNORE] = "Ignore";
+          btn_array[BUTTON_OK] = "OK";
+          btn_array[BUTTON_CANCEL] = "Cancel";
+          btn_array[BUTTON_YES] = "Yes";
+          btn_array[BUTTON_NO] = "No";
+          btn_array[BUTTON_RETRY] = "Retry";
+
+          cpt_array[CAPTION_INFORMATION] = "Information";
+          cpt_array[CAPTION_QUESTON] = "Question";
+          cpt_array[CAPTION_INPUT] = "Input Query";
+          cpt_array[CAPTION_OPEN] = "Open";
+          cpt_array[CAPTION_SAVE] = "Save As";
+          cpt_array[CAPTION_DIRECTORY] = "Select Directory";
+          cpt_array[CAPTION_COLOR] = "Color";
+          cpt_array[CAPTION_ERROR] = "Error";
+
+        } else if (ptr[0] == 'f' && ptr[1] == 'r') {
+          // fr = French
+
+          btn_array[BUTTON_ABORT] = "Avorter";
+          btn_array[BUTTON_IGNORE] = "Ignorer";
+          btn_array[BUTTON_OK] = "D'ACCORD";
+          btn_array[BUTTON_CANCEL] = "Annuler";
+          btn_array[BUTTON_YES] = "Oui";
+          btn_array[BUTTON_NO] = "Non";
+          btn_array[BUTTON_RETRY] = "Réessayer";
+
+          cpt_array[CAPTION_INFORMATION] = "Information";
+          cpt_array[CAPTION_QUESTON] = "Question";
+          cpt_array[CAPTION_INPUT] = "Requête d'entrée";
+          cpt_array[CAPTION_OPEN] = "Ouvrir";
+          cpt_array[CAPTION_SAVE] = "Enregistrer sous";
+          cpt_array[CAPTION_DIRECTORY] = "Sélectionner un répertoire";
+          cpt_array[CAPTION_COLOR] = "Couleur";
+          cpt_array[CAPTION_ERROR] = "Erreur";
+
+        } else if (ptr[0] == 'd' && ptr[1] == 'e') {
+          // de = German
+
+          btn_array[BUTTON_ABORT] = "Abbrechen";
+          btn_array[BUTTON_IGNORE] = "Ignorieren";
+          btn_array[BUTTON_OK] = "OK";
+          btn_array[BUTTON_CANCEL] = "Stornieren";
+          btn_array[BUTTON_YES] = "Ja";
+          btn_array[BUTTON_NO] = "NEIN";
+          btn_array[BUTTON_RETRY] = "Wiederholen";
+
+          cpt_array[CAPTION_INFORMATION] = "Information";
+          cpt_array[CAPTION_QUESTON] = "Frage";
+          cpt_array[CAPTION_INPUT] = "Eingabeabfrage";
+          cpt_array[CAPTION_OPEN] = "Offen";
+          cpt_array[CAPTION_SAVE] = "Speichern unter";
+          cpt_array[CAPTION_DIRECTORY] = "Verzeichnis auswählen";
+          cpt_array[CAPTION_COLOR] = "Farbe";
+          cpt_array[CAPTION_ERROR] = "Fehler";
+
+        } else if (ptr[0] == 'e' && ptr[1] == 's') {
+          // es = Spanish
+
+          btn_array[BUTTON_ABORT] = "Abortar";
+          btn_array[BUTTON_IGNORE] = "Ignorar";
+          btn_array[BUTTON_OK] = "DE ACUERDO";
+          btn_array[BUTTON_CANCEL] = "Cancelar";
+          btn_array[BUTTON_YES] = "Sí";
+          btn_array[BUTTON_NO] = "No";
+          btn_array[BUTTON_RETRY] = "Rever";
+
+          cpt_array[CAPTION_INFORMATION] = "Información";
+          cpt_array[CAPTION_QUESTON] = "Pregunta";
+          cpt_array[CAPTION_INPUT] = "Consulta de entrada";
+          cpt_array[CAPTION_OPEN] = "Abierta";
+          cpt_array[CAPTION_SAVE] = "Guardar como";
+          cpt_array[CAPTION_DIRECTORY] = "Seleccionar directorio";
+          cpt_array[CAPTION_COLOR] = "Color";
+          cpt_array[CAPTION_ERROR] = "Error";
+
+        } else if (ptr[0] == 'z' && ptr[1] == 'h') {
+          // zh = Chinese
+  
+          btn_array[BUTTON_ABORT] = "中止";
+          btn_array[BUTTON_IGNORE] = "忽略";
+          btn_array[BUTTON_OK] = "好的";
+          btn_array[BUTTON_CANCEL] = "取消";
+          btn_array[BUTTON_YES] = "是的";
+          btn_array[BUTTON_NO] = "不";
+          btn_array[BUTTON_RETRY] = "重试";
+
+          cpt_array[CAPTION_INFORMATION] = "信息";
+          cpt_array[CAPTION_QUESTON] = "问题";
+          cpt_array[CAPTION_INPUT] = "输入查询";
+          cpt_array[CAPTION_OPEN] = "打开";
+          cpt_array[CAPTION_SAVE] = "另存为";
+          cpt_array[CAPTION_DIRECTORY] = "选择目录";
+          cpt_array[CAPTION_COLOR] = "颜色";
+          cpt_array[CAPTION_ERROR] = "错误";
+
+        } else if (ptr[0] == 'j' && ptr[1] == 'a') {
+          // ja = Japanese
+  
+          btn_array[BUTTON_ABORT] = "アボート";
+          btn_array[BUTTON_IGNORE] = "無視する";
+          btn_array[BUTTON_OK] = "わかりました";
+          btn_array[BUTTON_CANCEL] = "キャンセル";
+          btn_array[BUTTON_YES] = "はい";
+          btn_array[BUTTON_NO] = "いいえ";
+          btn_array[BUTTON_RETRY] = "リトライ";
+
+          cpt_array[CAPTION_INFORMATION] = "情報";
+          cpt_array[CAPTION_QUESTON] = "質問";
+          cpt_array[CAPTION_INPUT] = "入力クエリ";
+          cpt_array[CAPTION_OPEN] = "開ける";
+          cpt_array[CAPTION_SAVE] = "名前を付けて保存";
+          cpt_array[CAPTION_DIRECTORY] = "ディレクトリを選択";
+          cpt_array[CAPTION_COLOR] = "色";
+          cpt_array[CAPTION_ERROR] = "エラー";
+
+        } else if (ptr[0] == 'k' && ptr[1] == 'o') {
+          // ko = Korean
+
+          btn_array[BUTTON_ABORT] = "중단";
+          btn_array[BUTTON_IGNORE] = "무시하다";
+          btn_array[BUTTON_OK] = "좋아요";
+          btn_array[BUTTON_CANCEL] = "취소";
+          btn_array[BUTTON_YES] = "예";
+          btn_array[BUTTON_NO] = "아니요";
+          btn_array[BUTTON_RETRY] = "다시 해 보다";
+
+          cpt_array[CAPTION_INFORMATION] = "정보";
+          cpt_array[CAPTION_QUESTON] = "질문";
+          cpt_array[CAPTION_INPUT] = "입력 쿼리";
+          cpt_array[CAPTION_OPEN] = "열려 있는";
+          cpt_array[CAPTION_SAVE] = "다른 이름으로 저장";
+          cpt_array[CAPTION_DIRECTORY] = "디렉터리 선택";
+          cpt_array[CAPTION_COLOR] = "색상";
+          cpt_array[CAPTION_ERROR] = "오류";
+
+        } else if (ptr[0] == 'r' && ptr[1] == 'u') {
+          // ru = Russian
+
+          btn_array[BUTTON_ABORT] = "Отмена";
+          btn_array[BUTTON_IGNORE] = "Игнорировать";
+          btn_array[BUTTON_OK] = "ХОРОШО";
+          btn_array[BUTTON_CANCEL] = "Отмена";
+          btn_array[BUTTON_YES] = "Да";
+          btn_array[BUTTON_NO] = "Нет";
+          btn_array[BUTTON_RETRY] = "Повторить попытку";
+
+          cpt_array[CAPTION_INFORMATION] = "Информация";
+          cpt_array[CAPTION_QUESTON] = "Вопрос";
+          cpt_array[CAPTION_INPUT] = "Входной запрос";
+          cpt_array[CAPTION_OPEN] = "Открыть";
+          cpt_array[CAPTION_SAVE] = "Сохранить как";
+          cpt_array[CAPTION_DIRECTORY] = "Выберите каталог";
+          cpt_array[CAPTION_COLOR] = "Цвет";
+          cpt_array[CAPTION_ERROR] = "Ошибка";
+
+        } else if (ptr[0] == 'p' && ptr[1] == 't') {
+          // pt = Portuguese
+
+          btn_array[BUTTON_ABORT] = "Abortar";
+          btn_array[BUTTON_IGNORE] = "Ignorar";
+          btn_array[BUTTON_OK] = "OK";
+          btn_array[BUTTON_CANCEL] = "Cancelar";
+          btn_array[BUTTON_YES] = "Sim";
+          btn_array[BUTTON_NO] = "Não";
+          btn_array[BUTTON_RETRY] = "Tentar novamente";
+
+          cpt_array[CAPTION_INFORMATION] = "Informação";
+          cpt_array[CAPTION_QUESTON] = "Pergunta";
+          cpt_array[CAPTION_INPUT] = "Consulta de entrada";
+          cpt_array[CAPTION_OPEN] = "Abrir";
+          cpt_array[CAPTION_SAVE] = "Salvar como";
+          cpt_array[CAPTION_DIRECTORY] = "Selecionar diretório";
+          cpt_array[CAPTION_COLOR] = "Cor";
+          cpt_array[CAPTION_ERROR] = "Erro";
+
+        } else if (ptr[0] == 'a' && ptr[1] == 'r') {
+          // ar = Arabic
+
+          btn_array[BUTTON_ABORT] = "إلغاء";
+          btn_array[BUTTON_IGNORE] = "يتجاهل";
+          btn_array[BUTTON_OK] = "نعم";
+          btn_array[BUTTON_CANCEL] = "يلغي";
+          btn_array[BUTTON_YES] = "نعم";
+          btn_array[BUTTON_NO] = "لا";
+          btn_array[BUTTON_RETRY] = "إعادة المحاولة";
+
+          cpt_array[CAPTION_INFORMATION] = "معلومة";
+          cpt_array[CAPTION_QUESTON] = "سؤال";
+          cpt_array[CAPTION_INPUT] = "استعلام الإدخال";
+          cpt_array[CAPTION_OPEN] = "يفتح";
+          cpt_array[CAPTION_SAVE] = "حفظ باسم";
+          cpt_array[CAPTION_DIRECTORY] = "اختر المجلد";
+          cpt_array[CAPTION_COLOR] = "لون";
+          cpt_array[CAPTION_ERROR] = "خطأ";
+
+        } else if (ptr[0] == 'h' && ptr[1] == 'i') {
+          // hi = Hindi
+
+          btn_array[BUTTON_ABORT] = "बीच में बंद करें";
+          btn_array[BUTTON_IGNORE] = "अनदेखा करना";
+          btn_array[BUTTON_OK] = "ठीक है";
+          btn_array[BUTTON_CANCEL] = "रद्द करना";
+          btn_array[BUTTON_YES] = "हाँ";
+          btn_array[BUTTON_NO] = "नहीं";
+          btn_array[BUTTON_RETRY] = "पुन: प्रयास करें";
+
+          cpt_array[CAPTION_INFORMATION] = "जानकारी";
+          cpt_array[CAPTION_QUESTON] = "सवाल";
+          cpt_array[CAPTION_INPUT] = "इनपुट क्वेरी";
+          cpt_array[CAPTION_OPEN] = "खुला";
+          cpt_array[CAPTION_SAVE] = "के रूप रक्षित करें";
+          cpt_array[CAPTION_DIRECTORY] = "डायरेक्टरी चुनें";
+          cpt_array[CAPTION_COLOR] = "रंग";
+          cpt_array[CAPTION_ERROR] = "गलती";
+
+        } else if (ptr[0] == 'i' && ptr[1] == 't') {
+          // it = Italian
+
+          btn_array[BUTTON_ABORT] = "Interrompi";
+          btn_array[BUTTON_IGNORE] = "Ignorare";
+          btn_array[BUTTON_OK] = "OK";
+          btn_array[BUTTON_CANCEL] = "Cancellare";
+          btn_array[BUTTON_YES] = "SÌ";
+          btn_array[BUTTON_NO] = "NO";
+          btn_array[BUTTON_RETRY] = "Riprova";
+
+          cpt_array[CAPTION_INFORMATION] = "Informazioni";
+          cpt_array[CAPTION_QUESTON] = "Domanda";
+          cpt_array[CAPTION_INPUT] = "Query di input";
+          cpt_array[CAPTION_OPEN] = "Aprire";
+          cpt_array[CAPTION_SAVE] = "Salva con nome";
+          cpt_array[CAPTION_DIRECTORY] = "Seleziona directory";
+          cpt_array[CAPTION_COLOR] = "Colore";
+          cpt_array[CAPTION_ERROR] = "Errore";
+
+        } else if (ptr[0] == 'n' && ptr[1] == 'l') {
+          // nl = Dutch
+
+          btn_array[BUTTON_ABORT] = "Afbreken";
+          btn_array[BUTTON_IGNORE] = "Negeren";
+          btn_array[BUTTON_OK] = "OK";
+          btn_array[BUTTON_CANCEL] = "Annuleren";
+          btn_array[BUTTON_YES] = "Ja";
+          btn_array[BUTTON_NO] = "Nee";
+          btn_array[BUTTON_RETRY] = "Opnieuw proberen";
+
+          cpt_array[CAPTION_INFORMATION] = "Informatie";
+          cpt_array[CAPTION_QUESTON] = "Vraag";
+          cpt_array[CAPTION_INPUT] = "Invoervraag";
+          cpt_array[CAPTION_OPEN] = "Open";
+          cpt_array[CAPTION_SAVE] = "Opslaan als";
+          cpt_array[CAPTION_DIRECTORY] = "Map selecteren";
+          cpt_array[CAPTION_COLOR] = "Kleur";
+          cpt_array[CAPTION_ERROR] = "Fout";
+
+        }
+      }
+    }
 
     wstring widen(string str) {
       if (str.empty()) return L"";
@@ -213,7 +496,7 @@ namespace dialog_module {
     int show_message_helper(const char *str, bool cancelable) {
       string tstr = str; wstring wstr = widen(tstr);
 
-      string title = (caption == "") ? (cancelable ? "Question" : "Information") : caption;
+      string title = (caption == "") ? (cancelable ? cpt_array[CAPTION_QUESTION] : cpt_array[CAPTION_INFORMATION]) : caption;
       wstring wtitle = widen(title);
 
       UINT flags = MB_DEFBUTTON1 | MB_APPLMODAL;
@@ -227,7 +510,7 @@ namespace dialog_module {
     int show_question_helper(const char *str, bool cancelable) {
       string tstr = str; wstring wstr = widen(tstr);
 
-      string title = (caption == "") ? "Question" : caption;
+      string title = (caption == "") ? cpt_array[CAPTION_QUESTION] : caption;
       wstring wtitle = widen(title);
 
       UINT flags = MB_DEFBUTTON1 | MB_APPLMODAL | MB_ICONQUESTION;
@@ -241,7 +524,7 @@ namespace dialog_module {
     int show_error_helper(const char *str, bool abort, bool attempt) {
       string tstr = str; wstring wstr = widen(tstr);
 
-      string title = (caption == "") ? "Error" : caption;
+      string title = (caption == "") ? cpt_array[CAPTION_ERROR] : caption;
       wstring wtitle = widen(title);
 
       if (attempt) {
@@ -758,7 +1041,7 @@ namespace dialog_module {
     }
 
     const char *get_string_helper(const char *str, const char *def, bool hide) {
-      hidden = hide; string title = (caption == "") ? "Input Query" : caption;
+      hidden = hide; string title = (caption == "") ? cpt_array[CAPTION_INPUT] : caption;
       return InputBox(str, title.c_str(), def);
     }
 
@@ -1250,6 +1533,10 @@ namespace dialog_module {
 
   bool widget_get_canceled() {
     return cancel_pressed;
+  }
+
+  void widget_set_locale() {
+    widget_set_locale_helper();
   }
 
 } // namespace dialog_module
