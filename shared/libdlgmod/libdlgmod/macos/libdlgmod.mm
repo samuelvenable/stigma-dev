@@ -2018,7 +2018,14 @@ namespace dialog_module {
 
     string str_str = str;
     string str_def = remove_trailing_zeros(def);
-    double result = strtod(cocoa_input_box(str_str.c_str(), str_def.c_str(), current_icon.c_str(), (caption.empty()) ? cpt_array[CAPTION_INPUT].c_str() : caption.c_str(), true), nullptr);
+    string str_result = cocoa_input_box(str_str.c_str(), str_def.c_str(), current_icon.c_str(), (caption.empty()) ? cpt_array[CAPTION_INPUT].c_str() : caption.c_str(), true);    
+  
+    for (int i = 0; !str_result.empty() && i < str_result.length() && (!std::isdigit(str_result[i]) && str_result[i] != '-' && str_result[i] != '+' && str_result[i] != '.'); i++) {
+      str_result = str_result.substr(i + 1);  
+    }
+  
+    if (str_result.empty()) cancel_pressed = true; else cancel_pressed = false;
+    double result = strtod(str_result.c_str(), nullptr);
 
     if (result < DIGITS_MIN) result = DIGITS_MIN;
     if (result > DIGITS_MAX) result = DIGITS_MAX;
@@ -2035,7 +2042,14 @@ namespace dialog_module {
 
     string str_str = str;
     string str_def = remove_trailing_zeros(def);
-    double result = strtod(cocoa_password_box(str_str.c_str(), str_def.c_str(), current_icon.c_str(), (caption.empty()) ? cpt_array[CAPTION_INPUT].c_str() : caption.c_str(), true), nullptr);
+    string str_result = cocoa_password_box(str_str.c_str(), str_def.c_str(), current_icon.c_str(), (caption.empty()) ? cpt_array[CAPTION_INPUT].c_str() : caption.c_str(), true);    
+  
+    for (int i = 0; !str_result.empty() && i < str_result.length() && (!std::isdigit(str_result[i]) && str_result[i] != '-' && str_result[i] != '+' && str_result[i] != '.'); i++) {
+      str_result = str_result.substr(i + 1);  
+    }
+  
+    if (str_result.empty()) cancel_pressed = true; else cancel_pressed = false;
+    double result = strtod(str_result.c_str(), nullptr);
 
     if (result < DIGITS_MIN) result = DIGITS_MIN;
     if (result > DIGITS_MAX) result = DIGITS_MAX;

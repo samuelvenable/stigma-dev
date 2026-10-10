@@ -27,6 +27,7 @@ SOFTWARE.
 */
 
 #include <cstdio>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <climits>
@@ -1009,8 +1010,13 @@ double get_integer(const char *str, double def) {
   if (def > DIGITS_MAX) def = DIGITS_MAX;
 
   string str_def = remove_trailing_zeros(def);
-  string str_result = get_string(str, str_def.c_str());
-  if (str_result.empty()) cancel_pressed = true;
+  string str_result = get_string(str, str_def.c_str());    
+  
+  for (int i = 0; !str_result.empty() && i < str_result.length() && (!std::isdigit(str_result[i]) && str_result[i] != '-' && str_result[i] != '+' && str_result[i] != '.'); i++) {
+    str_result = str_result.substr(i + 1);  
+  }
+  
+  if (str_result.empty()) cancel_pressed = true; else cancel_pressed = false;
   double result = strtod(str_result.c_str(), nullptr);
 
   if (result < DIGITS_MIN) result = DIGITS_MIN;
@@ -1026,8 +1032,13 @@ double get_passcode(const char *str, double def) {
   if (def > DIGITS_MAX) def = DIGITS_MAX;
 
   string str_def = remove_trailing_zeros(def);
-  string str_result = get_password(str, str_def.c_str());
-  if (str_result.empty()) cancel_pressed = true;
+  string str_result = get_password(str, str_def.c_str());    
+  
+  for (int i = 0; !str_result.empty() && i < str_result.length() && (!std::isdigit(str_result[i]) && str_result[i] != '-' && str_result[i] != '+' && str_result[i] != '.'); i++) {
+    str_result = str_result.substr(i + 1);  
+  }
+  
+  if (str_result.empty()) cancel_pressed = true; else cancel_pressed = false;
   double result = strtod(str_result.c_str(), nullptr);
 
   if (result < DIGITS_MIN) result = DIGITS_MIN;
