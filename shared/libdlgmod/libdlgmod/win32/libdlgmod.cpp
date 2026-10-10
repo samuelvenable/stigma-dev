@@ -625,6 +625,14 @@ namespace dialog_module {
         cancel_pressed = false;
         if (tstr_gctitle != "")
           SetWindowTextW(hdlg, cpp_wstr_gctitle.c_str());
+        RECT rc; GetWindowRect(hdlg, &rc);
+        int width = rc.right - rc.left, height = rc.bottom - rc.top;
+        SetWindowPos(hdlg, nullptr, 0, 0, width, height, SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+        int cxscreen = GetSystemMetrics(SM_CXSCREEN);
+        int cyscreen = GetSystemMetrics(SM_CYSCREEN);
+        int xpos = (cxscreen - width) / 2;
+        int ypos = (cyscreen / 3) - (height / 2);
+        SetWindowPos(hdlg, HWND_TOP, xpos, ypos, width, height, SWP_SHOWWINDOW);
         PostMessageW(hdlg, WM_SETFOCUS, 0, 0);
       }
       return false;
