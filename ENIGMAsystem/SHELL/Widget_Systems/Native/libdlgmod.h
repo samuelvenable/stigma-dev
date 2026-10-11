@@ -60,6 +60,7 @@ namespace dialog_module {
   std::string widget_get_button_name(int type);
   void widget_set_button_name(int type, std::string name);
   bool widget_get_canceled();
+  void widget_set_locale();
   
 } // namespace dialog_module
 
