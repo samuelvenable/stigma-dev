@@ -73,6 +73,7 @@ namespace enigma_user {
   void widget_set_button_name(int type, std::string name);
   std::string widget_get_button_name(int type);
   bool widget_get_canceled();
+  void widget_set_locale();
   inline bool action_if_question(std::string message) {
     return show_question(message);
   }
