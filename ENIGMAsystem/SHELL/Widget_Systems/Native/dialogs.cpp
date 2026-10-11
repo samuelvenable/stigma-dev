@@ -232,4 +232,9 @@ bool widget_get_canceled() {
   return dialog_module::widget_get_canceled();
 }
 
+void widget_set_locale() {
+  enigma::widget_system_initialize();
+  dialog_module::widget_set_locale();
+}
+
 } // namespace enigma_user
