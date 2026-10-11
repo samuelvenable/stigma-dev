@@ -78,6 +78,7 @@ namespace dialog_module {
     int libdlgmod_widget_get_button_name = -1;
     int libdlgmod_widget_set_button_name = -1;
     int libdlgmod_widget_get_canceled = -1;
+    int libdlgmod_widget_set_locale = -1;
     
   } // anonymous namespace
 
@@ -114,6 +115,7 @@ namespace dialog_module {
     libdlgmod_widget_get_button_name = external_define(LIBDLGMOD, "widget_get_button_name", 0, ty_string, 1, ty_real);
     libdlgmod_widget_set_button_name = external_define(LIBDLGMOD, "widget_set_button_name", 0, ty_real, 2, ty_real, ty_string);
     libdlgmod_widget_get_canceled = external_define(LIBDLGMOD, "widget_get_canceled", 0, ty_real, 0);
+    libdlgmod_widget_set_locale = external_define(LIBDLGMOD, "widget_set_locale", 0, ty_real, 0);
   }
 
   int show_message(std::string str) {
@@ -238,6 +240,10 @@ namespace dialog_module {
 
   bool widget_get_canceled() {
     return external_call(libdlgmod_widget_get_canceled);
+  }
+
+  void widget_set_locale() {
+    external_call(libdlgmod_widget_set_locale);
   }
   
 } // namespace dialog_module
