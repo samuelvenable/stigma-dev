@@ -61,6 +61,10 @@ SOFTWARE.
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
+#if !defined(LIBDLGMOD_SUPPRESS_DEPENDENCY_ERROR)
+#include <X11/extensions/Xrandr.h>
+#include <X11/extensions/Xinerama.h>
+#endif
 
 using std::string;
 using std::stringstream;
@@ -70,6 +74,87 @@ using std::vector;
 namespace dialog_module {
 
 namespace {
+
+#if !defined(LIBDLGMOD_SUPPRESS_DEPENDENCY_ERROR)
+int displayX            = -1;
+int displayY            = -1;
+
+int displayWidth        = -1;
+int displayHeight       = -1;
+
+int displayXGetter      = -1;
+int displayYGetter      = -1;
+
+int displayWidthGetter  = -1;
+int displayHeightGetter = -1;
+
+void display_get_position(bool i, int *result) {
+  Display *display = XOpenDisplay(NULL);
+  *result = 0; Rotation original_rotation; 
+  Window root = XDefaultRootWindow(display);
+  XRRScreenConfiguration *conf = XRRGetScreenInfo(display, root);
+  SizeID original_size_id = XRRConfigCurrentConfiguration(conf, &original_rotation);
+  if (XineramaIsActive(display)) {
+    int m = 0; XineramaScreenInfo *xrrp = XineramaQueryScreens(display, &m);
+    if (!i) *result = xrrp[original_size_id].x_org;
+    else if (i) *result = xrrp[original_size_id].y_org;
+    XFree(xrrp);
+  }
+  XCloseDisplay(display);
+}
+
+void display_get_size(bool i, int *result) {
+  Display *display = XOpenDisplay(NULL);
+  *result = 0; int num_sizes; Rotation original_rotation; 
+  Window root = XDefaultRootWindow(display);
+  int screen = XDefaultScreen(display);
+  XRRScreenConfiguration *conf = XRRGetScreenInfo(display, root);
+  SizeID original_size_id = XRRConfigCurrentConfiguration(conf, &original_rotation);
+  if (XineramaIsActive(display)) {
+    XRRScreenSize *xrrs = XRRSizes(display, screen, &num_sizes);
+    if (!i) *result = xrrs[original_size_id].width;
+    else if (i) *result = xrrs[original_size_id].height;
+  } else if (!i) *result = XDisplayWidth(display, screen);
+  else if (i) *result = XDisplayHeight(display, screen);
+  XCloseDisplay(display);
+}
+
+int display_get_x() {
+  if (displayXGetter == displayX && displayX != -1)
+    return displayXGetter;
+  display_get_position(false, &displayXGetter);
+  int result = displayXGetter;
+  displayX = result;
+  return result;
+}
+
+int display_get_y() { 
+  if (displayYGetter == displayY && displayY != -1)
+    return displayYGetter;
+  display_get_position(true, &displayYGetter);
+  int result = displayYGetter;
+  displayY = result;
+  return result;
+}
+
+int display_get_width() {
+  if (displayWidthGetter == displayWidth && displayWidth != -1) 
+    return displayWidthGetter;
+  display_get_size(false, &displayWidthGetter);
+  int result = displayWidthGetter;
+  displayWidth = result;
+  return result;
+}
+
+int display_get_height() {
+  if (displayHeightGetter == displayHeight && displayHeight != -1)
+    return displayHeightGetter;
+  display_get_size(true, &displayHeightGetter);
+  int result = displayHeightGetter;
+  displayHeight = result;
+  return result;
+}
+#endif
 
 int const dm_x11     = -1;
 int const dm_zenity  =  0;
@@ -485,20 +570,22 @@ string filename_ext(string fname) {
   return fname.substr(fp);
 }
 
-static inline int XErrorHandlerImpl(Display *display, XErrorEvent *event) {
+int XErrorHandlerImpl(Display *display, XErrorEvent *event) {
   return 0;
 }
 
-static inline int XIOErrorHandlerImpl(Display *display) {
+int XIOErrorHandlerImpl(Display *display) {
   return 0;
 }
 
-static inline void SetErrorHandlers() {
+void SetErrorHandlers() {
   XSetErrorHandler(XErrorHandlerImpl);
   XSetIOErrorHandler(XIOErrorHandlerImpl);
 }
 
-static inline void change_relative_to_qt() {
+void XSetIcon(Display *display, Window window, const char *icon);
+
+void change_relative_to_qt() {
   cancel_pressed = false;
   if (dm_dialogengine == dm_x11) {
     bool in_path = false, is_qt = false;
@@ -590,17 +677,40 @@ static inline void change_relative_to_qt() {
         int screen = DefaultScreen(display);
         Window owner = (Window)(std::intptr_t)strtoul(widget_get_owner(), nullptr, 10);
         Window parent = ((owner) ? owner : RootWindow(display, screen));
+        int xpos = display_get_x() + ((display_get_width() - 550) / 2);
+        int ypos = display_get_y() + ((display_get_height() - (32 * 4)) / 2);
         Window window = XCreateSimpleWindow(display, parent, 
         0, 0, 550, 32 * 4, 1, BlackPixel(display, screen), WhitePixel(display, screen));
         XStoreName(display, window, "Fatal Error");
+        if (owner && owner != RootWindow(display, screen)) {
+          XStoreName(display, owner, "Fatal Error");
+          XSetIcon(display, owner, widget_get_icon());
+          XResizeWindow(display, owner, 550, 32 * 4);
+          XSizeHints *size_hints = XAllocSizeHints();
+          size_hints->flags &= ~PPosition;
+          size_hints->flags |= USPosition;
+          size_hints->x = xpos;
+          size_hints->y = ypos;
+          XSetWMNormalHints(display, owner, size_hints);
+          XMoveWindow(display, owner, xpos, ypos);
+          XFree(size_hints);
+        }
         XSelectInput(display, window, ExposureMask | KeyPressMask);
         XMapWindow(display, window);
+        XSetIcon(display, window, widget_get_icon());
         const char *err1 = "Both zenity and kdialog are not found in your system's $PATH environment variable.";
         const char *err2 = "Please install either zenity and/or kdialog with your system's package manager";
         const char *err3 = "before attempting to run this application. You may press any key to abort..."; 
         XEvent event;
         while (true) {
           XNextEvent(display, &event);
+          if (owner && owner != RootWindow(display, screen)) {
+            XWindowAttributes xattr;
+            XStoreName(display, owner, "Fatal Error");
+            XSetIcon(display, owner, widget_get_icon());
+            XGetWindowAttributes(display, owner, &xattr);
+            XResizeWindow(display, window, xattr.width, xattr.height);
+          }
           if (event.type == Expose) {
             XDrawString(display, window, DefaultGC(display, screen), 32, 32, err1, strlen(err1));
             XDrawString(display, window, DefaultGC(display, screen), 32, 32 * 2, err2, strlen(err2));
@@ -619,7 +729,7 @@ static inline void change_relative_to_qt() {
 }
 
 // set dialog transient; set title caption.
-static inline void modify_shell_dialog(PROCID pid) {
+void modify_shell_dialog(PROCID pid) {
   SetErrorHandlers(); int sz = 0;
   WINDOWID *arr = nullptr; Window wid = 0;
   Display *display = XOpenDisplay(nullptr);
