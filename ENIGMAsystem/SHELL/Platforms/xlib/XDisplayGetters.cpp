@@ -38,13 +38,13 @@ typedef struct {
   unsigned int height;
 } XRRCrtcInfoRectangle;
 
-XRRCrtcInfoRectangle XRRCrtcInfoGetPrimaryMoniorRectangle(Display *display) {
+XRRCrtcInfoRectangle XRRCrtcInfoGetPrimaryMonitorRectangle(Display *display) {
   XRRCrtcInfoRectangle rectangle = { 0, 0, 0, 0 };
   XRRScreenResources *screenRes = nullptr;
   RROutput primaryOutput = 0;
   XRROutputInfo *outputInfo = nullptr;
   XRRCrtcInfo *crtcInfo = nullptr;
-  Window root = DefaultRootWindow(display);
+  Window root = XDefaultRootWindow(display);
   int major = 0, minor = 0;
   if (!XRRQueryVersion(display, &major, &minor)) {
     goto fallback;
@@ -83,10 +83,10 @@ XRRCrtcInfoRectangle XRRCrtcInfoGetPrimaryMoniorRectangle(Display *display) {
   XRRFreeScreenResources(screenRes);
   return rectangle;
   fallback:
-  int screen = DefaultScreen(display);
+  int screen = XDefaultScreen(display);
   rectangle.x = 0, rectangle.y = 0;
-  rectangle.width = DisplayWidth(display, screen);
-  rectangle.height = DisplayHeight(display, screen);
+  rectangle.width = XDisplayWidth(display, screen);
+  rectangle.height = XDisplayHeight(display, screen);
   return rectangle;
 }
 
@@ -97,7 +97,7 @@ namespace enigma_user {
 int display_get_x() {
   Display *display = XOpenDisplay(nullptr);
   if (display) {
-    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMonitorRectangle(display);
     XCloseDisplay(display);
     return rectangle.x;
   }
@@ -107,7 +107,7 @@ int display_get_x() {
 int display_get_y() { 
   Display *display = XOpenDisplay(nullptr);
   if (display) {
-    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMonitorRectangle(display);
     XCloseDisplay(display);
     return rectangle.y;
   }
@@ -117,7 +117,7 @@ int display_get_y() {
 int display_get_width() {
   Display *display = XOpenDisplay(nullptr);
   if (display) {
-    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMonitorRectangle(display);
     XCloseDisplay(display);
     return (int)rectangle.width;
   }
@@ -127,7 +127,7 @@ int display_get_width() {
 int display_get_height() {
   Display *display = XOpenDisplay(nullptr);
   if (display) {
-    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMonitorRectangle(display);
     XCloseDisplay(display);
     return (int)rectangle.height;
   }
