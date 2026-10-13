@@ -28,85 +28,110 @@
 
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
-#include <X11/extensions/Xinerama.h>
 
-static int displayX            = -1;
-static int displayY            = -1;
-static int displayWidth        = -1;
-static int displayHeight       = -1;
+namespace {
 
-static int displayXGetter      = -1;
-static int displayYGetter      = -1;
-static int displayWidthGetter  = -1;
-static int displayHeightGetter = -1;
+typedef struct {
+  int x;
+  int y;
+  unsigned int width;
+  unsigned int height;
+} XRRCrtcInfoRectangle;
 
-static void display_get_position(bool i, int *result) {
-  Display *display = XOpenDisplay(NULL);
-  *result = 0; Rotation original_rotation; 
-  Window root = XDefaultRootWindow(display);
-  XRRScreenConfiguration *conf = XRRGetScreenInfo(display, root);
-  SizeID original_size_id = XRRConfigCurrentConfiguration(conf, &original_rotation);
-  if (XineramaIsActive(display)) {
-    int m = 0; XineramaScreenInfo *xrrp = XineramaQueryScreens(display, &m);
-    if (!i) *result = xrrp[original_size_id].x_org;
-    else if (i) *result = xrrp[original_size_id].y_org;
-    XFree(xrrp);
+XRRCrtcInfoRectangle XRRCrtcInfoGetPrimaryMoniorRectangle(Display *display) {
+  XRRCrtcInfoRectangle rectangle = { 0, 0, 0, 0 };
+  XRRScreenResources *screenRes = nullptr;
+  RROutput primaryOutput = 0;
+  XRROutputInfo *outputInfo = nullptr;
+  XRRCrtcInfo *crtcInfo = nullptr;
+  Window root = DefaultRootWindow(display);
+  int major = 0, minor = 0;
+  if (!XRRQueryVersion(display, &major, &minor)) {
+    goto fallback;
   }
-  XCloseDisplay(display);
+  screenRes = XRRGetScreenResources(display, root);
+  if (!screenRes) {
+    goto fallback;
+  }
+  primaryOutput = XRRGetOutputPrimary(display, root);
+  if (primaryOutput == None) {
+    XRRFreeScreenResources(screenRes);
+    goto fallback;
+  }
+  outputInfo = XRRGetOutputInfo(display, screenRes, primaryOutput);
+  if (!outputInfo) {
+    XRRFreeScreenResources(screenRes);
+    goto fallback;
+  }
+  if (outputInfo->crtc == None) {
+    XRRFreeOutputInfo(outputInfo);
+    XRRFreeScreenResources(screenRes);
+    goto fallback;
+  }
+  crtcInfo = XRRGetCrtcInfo(display, screenRes, outputInfo->crtc);
+  if (!crtcInfo) {
+    XRRFreeOutputInfo(outputInfo);
+    XRRFreeScreenResources(screenRes);
+    goto fallback;
+  }
+  rectangle.x = crtcInfo->x;
+  rectangle.y = crtcInfo->y;
+  rectangle.width = crtcInfo->width;
+  rectangle.height = crtcInfo->height;
+  XRRFreeCrtcInfo(crtcInfo);
+  XRRFreeOutputInfo(outputInfo);
+  XRRFreeScreenResources(screenRes);
+  return rectangle;
+  fallback:
+  int screen = DefaultScreen(display);
+  rectangle.x = 0, rectangle.y = 0;
+  rectangle.width = DisplayWidth(display, screen);
+  rectangle.height = DisplayHeight(display, screen);
+  return rectangle;
 }
 
-static void display_get_size(bool i, int *result) {
-  Display *display = XOpenDisplay(NULL);
-  *result = 0; int num_sizes; Rotation original_rotation; 
-  Window root = XDefaultRootWindow(display);
-  int screen = XDefaultScreen(display);
-  XRRScreenConfiguration *conf = XRRGetScreenInfo(display, root);
-  SizeID original_size_id = XRRConfigCurrentConfiguration(conf, &original_rotation);
-  if (XineramaIsActive(display)) {
-    XRRScreenSize *xrrs = XRRSizes(display, screen, &num_sizes);
-    if (!i) *result = xrrs[original_size_id].width;
-    else if (i) *result = xrrs[original_size_id].height;
-  } else if (!i) *result = XDisplayWidth(display, screen);
-  else if (i) *result = XDisplayHeight(display, screen);
-  XCloseDisplay(display);
-}
+} // anonymous namespace
 
 namespace enigma_user {
 
 int display_get_x() {
-  if (displayXGetter == displayX && displayX != -1)
-    return displayXGetter;
-  display_get_position(false, &displayXGetter);
-  int result = displayXGetter;
-  displayX = result;
-  return result;
+  Display *display = XOpenDisplay(nullptr);
+  if (display) {
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XCloseDisplay(display);
+    return rectangle.x;
+  }
+  return -1;
 }
 
 int display_get_y() { 
-  if (displayYGetter == displayY && displayY != -1)
-    return displayYGetter;
-  display_get_position(true, &displayYGetter);
-  int result = displayYGetter;
-  displayY = result;
-  return result;
+  Display *display = XOpenDisplay(nullptr);
+  if (display) {
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XCloseDisplay(display);
+    return rectangle.y;
+  }
+  return -1;
 }
 
 int display_get_width() {
-  if (displayWidthGetter == displayWidth && displayWidth != -1) 
-    return displayWidthGetter;
-  display_get_size(false, &displayWidthGetter);
-  int result = displayWidthGetter;
-  displayWidth = result;
-  return result;
+  Display *display = XOpenDisplay(nullptr);
+  if (display) {
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XCloseDisplay(display);
+    return (int)rectangle.width;
+  }
+  return -1;
 }
 
 int display_get_height() {
-  if (displayHeightGetter == displayHeight && displayHeight != -1)
-    return displayHeightGetter;
-  display_get_size(true, &displayHeightGetter);
-  int result = displayHeightGetter;
-  displayHeight = result;
-  return result;
+  Display *display = XOpenDisplay(nullptr);
+  if (display) {
+    XRRCrtcInfoRectangle rectangle = XRRCrtcInfoGetPrimaryMoniorRectangle(display);
+    XCloseDisplay(display);
+    return (int)rectangle.height;
+  }
+  return -1;
 }
 
 } // namespace enigma_user
