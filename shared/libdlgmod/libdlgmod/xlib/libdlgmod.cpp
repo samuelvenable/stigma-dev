@@ -1299,7 +1299,7 @@ const char *get_open_filenames_ext(const char *filter, const char *fname, const 
       string str_fname = filename_name(fname);
       string str_dir = dir;
       string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-      if (str_dir.empty()) pwd = string("\") + get_home_folder() + string("/") + add_escaping(str_fname, false, "") + string("\"");
+      if (str_dir.empty()) pwd = string("\"") + get_home_folder() + string("/") + add_escaping(str_fname, false, "") + string("\"");
       else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
       str_command = string("kdialog ") +
       string("--getopenfilename ") + pwd + kdialog_filter(filter) +
