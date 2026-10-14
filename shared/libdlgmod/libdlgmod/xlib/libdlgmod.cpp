@@ -731,9 +731,20 @@ void modify_shell_dialog(PROCID pid) {
 }
 
 string add_escaping(string str, bool is_caption, string new_caption) {
-  string result = str; if (is_caption && str == "") result = new_caption;
-  result = string_replace_all(result, "\"", "\\\"");
+  if (is_caption && str.empty()) str = new_caption;
+  string result;
+  result.reserve(str.size());
+  for (char character : str) {
+    if (character == '\\' || character == '"' || character == '$' || character == '`')
+      result += '\\';
+    result += character;
+  }
   return result;
+}
+
+string get_home_folder() {
+  const char *home = getenv("HOME");
+  return ((home) ? home : "");
 }
 
 string create_shell_dialog(string command) {
@@ -1186,7 +1197,7 @@ const char *get_open_filename_ext(const char *filter, const char *fname, const c
       string str_fname = filename_name(fname);
       string str_dir = dir;
       string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-      else str_path = string("$HOME/") + str_fname;
+      else str_path = get_home_folder() + string("/") + str_fname;
       str_command = string("ans=$(zenity ") +
       string("--file-selection --title=\"") + str_title + string("\" --filename=\"") +
       add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter) + string(");echo $ans");
@@ -1196,7 +1207,7 @@ const char *get_open_filename_ext(const char *filter, const char *fname, const c
       string str_fname = filename_name(fname);
       string str_dir = dir;
       string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-      if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
+      if (str_dir.empty()) pwd = string("\"") + get_home_folder() + string("/") + add_escaping(str_fname, false, "") + string("\"");
       else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
       str_command = string("ans=$(kdialog ") +
       string("--getopenfilename ") + pwd + kdialog_filter(filter) +
@@ -1278,7 +1289,7 @@ const char *get_open_filenames_ext(const char *filter, const char *fname, const 
       string str_fname = filename_name(fname);
       string str_dir = dir;
       string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-      else str_path = string("$HOME/") + str_fname;
+      else str_path = get_home_folder() + ("/") + str_fname;
       str_command = string("zenity ") +
       string("--file-selection --multiple --separator='\n' --title=\"") + str_title + string("\" --filename=\"") +
       add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter);
@@ -1288,7 +1299,7 @@ const char *get_open_filenames_ext(const char *filter, const char *fname, const 
       string str_fname = filename_name(fname);
       string str_dir = dir;
       string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-      if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
+      if (str_dir.empty()) pwd = string("\") + get_home_folder() + string("/") + add_escaping(str_fname, false, "") + string("\"");
       else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
       str_command = string("kdialog ") +
       string("--getopenfilename ") + pwd + kdialog_filter(filter) +
@@ -1365,7 +1376,7 @@ const char *get_save_filename_ext(const char *filter, const char *fname, const c
       string str_fname = filename_name(fname);
       string str_dir = dir;
       string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-      else str_path = string("$HOME/") + str_fname;
+      else str_path = get_home_folder() + string("/") + str_fname;
       str_command = string("ans=$(zenity ") +
       string("--file-selection  --save --confirm-overwrite --title=\"") + str_title + string("\" --filename=\"") +
       add_escaping(str_path, false, "") + string("\"") + zenity_filter(filter) + string(");echo $ans");
@@ -1375,7 +1386,7 @@ const char *get_save_filename_ext(const char *filter, const char *fname, const c
       string str_fname = filename_name(fname);
       string str_dir = dir;
       string str_path; if (!str_dir.empty()) str_path = str_dir + string("/") + str_fname;
-      if (str_dir.empty()) pwd = string("\"$HOME/") + add_escaping(str_fname, false, "") + string("\"");
+      if (str_dir.empty()) pwd = string("\"") + get_home_folder() + string("/") + add_escaping(str_fname, false, "") + string("\"");
       else pwd = string("\"") + add_escaping(str_path, false, "") + string("\"");
       str_command = string("ans=$(kdialog ") +
       string("--getsavefilename ") + pwd + kdialog_filter(filter) +
@@ -1435,7 +1446,7 @@ const char *get_directory_alt(const char *capt, const char *root) {
       string str_title = add_escaping(capt, true, cpt_array[CAPTION_DIRECTORY]);
       caption = (str_title == cpt_array[CAPTION_DIRECTORY]) ? cpt_array[CAPTION_DIRECTORY] : capt;
       string str_dname = root;
-      if (str_dname.empty() || str_dname[0] != '/') str_dname = "$HOME";
+      if (str_dname.empty() || str_dname[0] != '/') str_dname = get_home_folder();
       string str_end = ");if [ $ans = / ] ;then echo $ans;elif [ $? = 1 ] ;then echo $ans/;else echo $ans;fi";
       str_command = string("ans=$(zenity ") +
       string("--file-selection --directory --title=\"") + str_title + string("\" --filename=\"") +
@@ -1444,7 +1455,7 @@ const char *get_directory_alt(const char *capt, const char *root) {
       string str_title = add_escaping(capt, true, cpt_array[CAPTION_DIRECTORY]);
       caption = (str_title == cpt_array[CAPTION_DIRECTORY]) ? cpt_array[CAPTION_DIRECTORY] : capt;
       string str_dname = root;
-      if (str_dname.empty() || str_dname[0] != '/') pwd = "\"$HOME/\"";
+      if (str_dname.empty() || str_dname[0] != '/') pwd = string("\"") + get_home_folder() + string("/\"");
       else pwd = string("\"") + add_escaping(str_dname, false, "") + string("\"");
       str_command = string("ans=$(kdialog ") +
       string("--getexistingdirectory ") + pwd + string(" --title \"") + str_title + string("\");echo $ans");
