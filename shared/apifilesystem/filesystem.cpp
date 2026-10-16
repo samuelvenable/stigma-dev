@@ -85,7 +85,6 @@ using std::mt19937;
 using std::shuffle;
 using std::getline;
 using std::reverse;
-using std::thread;
 using std::vector;
 using std::size_t;
 using std::sort;
@@ -1269,7 +1268,7 @@ namespace ngs::fs {
   void directory_contents_first_async(string dname, string pattern, bool includedirs, bool recursive) {
     directory_contents_completion_async = true;
     directory_contents_completion_status = false;
-    thread(directory_contents_first, dname, pattern, includedirs, recursive).detach();
+    std::thread(directory_contents_first, dname, pattern, includedirs, recursive).detach();
   }
 
   bool directory_contents_get_completion_status() {
