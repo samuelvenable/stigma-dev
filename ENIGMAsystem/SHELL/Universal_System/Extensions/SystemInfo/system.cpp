@@ -1267,9 +1267,9 @@ std::string gpu_manufacturer() {
   #endif
   #if (defined(__sun) && defined(__SVR4))
   unsigned identifier = 0;
-  std::string vendor = read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}'| awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $1}'");
-  if (!vendor.empty()) {
-    std::istringstream converter(vendor);
+  std::string sun_vendor = read_output("prtconf | awk '/display/{p=3} p > 0 {print $0; p--}'| awk -F'pci' 'NR==3{print $0}' | sed 's/.*pci//g' | awk -F' ' '{print $1}' | awk -F',' '{print $1}'");
+  if (!sun_vendor.empty()) {
+    std::istringstream converter(sun_vendor);
     converter >> std::hex >> identifier;
     gpuvendor = get_vendor_or_device_name_by_id(identifier, false);
   }
@@ -1291,9 +1291,9 @@ std::string gpu_manufacturer() {
     return gpuvendor;
   #else
   unsigned identifier = 0;
-  std::string vendor = read_output("ioreg -bls | grep -n2 '    | |   | |   \"model\" = <\"' | awk -F',\"pci' 'NR==5{print $2}' | rev | cut -c 2- | rev | awk -F',' '{print $1}'");
-  if (!vendor.empty()) {
-    std::istringstream converter(vendor);
+  std::string mac_vendor = read_output("ioreg -bls | grep -n2 '    | |   | |   \"model\" = <\"' | awk -F',\"pci' 'NR==5{print $2}' | rev | cut -c 2- | rev | awk -F',' '{print $1}'");
+  if (!mac_vendor.empty()) {
+    std::istringstream converter(mac_vendor);
     converter >> std::hex >> identifier;
     gpuvendor = get_vendor_or_device_name_by_id(identifier, false);
   }
