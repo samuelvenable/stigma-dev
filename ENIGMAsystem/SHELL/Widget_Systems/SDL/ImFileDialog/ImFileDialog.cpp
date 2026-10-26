@@ -1403,17 +1403,10 @@ namespace ifd {
         int origY = y / 16;
         int index = (origY * w + origX) * 4;
         int scaledIndex = (y * sw + x) * 4;
-        #if !defined(IFD_USE_OPENGL)
-        sd[scaledIndex + 0] = data[index + 0];
-        sd[scaledIndex + 1] = data[index + 1];
-        sd[scaledIndex + 2] = data[index + 2];          
-        sd[scaledIndex + 3] = data[index + 3];
-        #else
         sd[scaledIndex + 2] = data[index + 0];
         sd[scaledIndex + 1] = data[index + 1];
         sd[scaledIndex + 0] = data[index + 2];          
         sd[scaledIndex + 3] = data[index + 3];
-        #endif
       }
     }
     free(image);
