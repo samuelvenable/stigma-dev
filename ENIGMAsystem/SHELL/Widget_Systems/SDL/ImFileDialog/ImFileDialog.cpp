@@ -55,23 +55,32 @@
 #define STB_IMAGE_IMPLEMENTATION
 #endif
 
-#include <stb/stb_image.h>
+#ifndef STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#endif
 
-#if ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
+#include <stb/stb_image.h>
+#include <stb/stb_image_write.h>
+
+#if (((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun)) && !defined(IFD_USE_BASIC_ICONS))
 #include <lunasvg.h>
 #endif
 
 #ifdef _WIN32
 #include <windows.h>
+#if !defined(IFD_USE_BASIC_ICONS)
 #include <shellapi.h>
+#endif
 #include <lmcons.h>
+#if !defined(IFD_USE_BASIC_ICONS)
 #if defined(_MSC_VER)
 #pragma comment(lib, "Shell32.lib")
+#endif
 #endif
 #else
 #if (defined(__MACH__) && defined(__APPLE__))
 #include <AppKit/AppKit.h>
-#elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
+#elif (((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun)) && !defined(IFD_USE_BASIC_ICONS))
 #include <gio/gio.h>
 #include <gtk/gtk.h>
 #endif
@@ -84,7 +93,7 @@
 #define DEFAULT_ICON_SIZE 32
 #define PI 3.141592f
 
-#if ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
+#if (((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun)) && !defined(IFD_USE_BASIC_ICONS))
 using namespace lunasvg;
 #endif
 
@@ -535,6 +544,12 @@ namespace ifd {
         ngs::fs::file_text_close(fd);
       }
     }
+    stbi_write_png((configPath.string() + "\\file_icon.png").c_str(), 32, 32, 4, (const void *)&file_icon[0], 32 * 4);
+    stbi_write_png((configPath.string() + "\\folder_icon.png").c_str(), 32, 32, 4, (const void *)&folder_icon[0], 32 * 4);
+    if (ngs::fs::environment_get_variable("IMGUI_FILE_ICON").empty())
+      ngs::fs::environment_set_variable("IMGUI_FILE_ICON", configPath.string() + "\\file_icon.png");
+    if (ngs::fs::environment_get_variable("IMGUI_FOLDER_ICON").empty())
+      ngs::fs::environment_set_variable("IMGUI_FOLDER_ICON", configPath.string() + "\\folder_icon.png");
 
     // This PC
     FileTreeNode *thisPC = new FileTreeNode(IFD_THIS_PC);
@@ -596,6 +611,12 @@ namespace ifd {
         ngs::fs::file_text_close(fd);
       }
     }
+    stbi_write_png((configPath.string() + "/file_icon.png").c_str(), 32, 32, 4, (const void *)&file_icon[0], 32 * 4);
+    stbi_write_png((configPath.string() + "/folder_icon.png").c_str(), 32, 32, 4, (const void *)&folder_icon[0], 32 * 4);
+    if (ngs::fs::environment_get_variable("IMGUI_FILE_ICON").empty())
+      ngs::fs::environment_set_variable("IMGUI_FILE_ICON", configPath.string() + "/file_icon.png");
+    if (ngs::fs::environment_get_variable("IMGUI_FOLDER_ICON").empty())
+      ngs::fs::environment_set_variable("IMGUI_FOLDER_ICON", configPath.string() + "/folder_icon.png");
 
     // This PC
     FileTreeNode *thisPC = new FileTreeNode(IFD_THIS_PC);
@@ -978,7 +999,7 @@ namespace ifd {
   }
 
   void *FileDialog::m_getIcon(const ghc::filesystem::path& path) {
-    #ifdef _WIN32
+    #if (defined(_WIN32) && !defined(IFD_USE_BASIC_ICONS))
     if (m_icons.count(path.string()) > 0)
       return m_icons[path.string()];
 
@@ -1052,7 +1073,7 @@ namespace ifd {
     }
 
     return m_icons[pathU8];
-    #elif (defined(__APPLE__) && defined(__MACH__))
+    #elif ((defined(__APPLE__) && defined(__MACH__)) && !defined(IFD_USE_BASIC_ICONS))
     if (m_icons.count(path.string()) > 0)
       return m_icons[path.string()];
 
@@ -1147,7 +1168,7 @@ namespace ifd {
     [icon unlockFocus];
 
     return m_icons[pathU8];
-    #elif ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun))
+    #elif (((defined(__linux__) && !defined(__ANDROID__)) || (defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)) || defined(__sun)) && !defined(IFD_USE_BASIC_ICONS))
     if (m_icons.count(path.string()) > 0)
       return m_icons[path.string()];
 
@@ -1315,63 +1336,89 @@ namespace ifd {
     }
     m_iconIndices.push_back(iconID);
     m_iconFilepaths.push_back(pathU8);
-    ImVec4 wndBg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
-    if ((wndBg.x + wndBg.y + wndBg.z) / 3.0f > 0.5f) {
-      uint8_t *data = (uint8_t *)ifd::GetDefaultFileIcon();
-      if (iconID == 0) data = (uint8_t *)ifd::GetDefaultFolderIcon();
-      int w = 32;
-      int h = 32;
-      int sw = w * 16;
-      int sh = h * 16;
-      unsigned char *sd = (unsigned char *)calloc(sw * sh * 4, sizeof(unsigned char));
-      for (int y = 0; y < sh; y++) {
-        for (int x = 0; x < sw; x++) {
-          int origX = x / 16;
-          int origY = y / 16;
-          int index = (origY * w + origX) * 4;
-          int scaledIndex = (y * sw + x) * 4;
-          sd[scaledIndex + 0] = data[index + 0];
-          sd[scaledIndex + 1] = data[index + 1];
-          sd[scaledIndex + 2] = data[index + 2];
-          sd[scaledIndex + 3] = data[index + 3];
-        }
+    uint8_t *data = nullptr;
+    unsigned char *image = nullptr;
+    if (iconID == 0) {
+      ghc::filesystem::path folder_icon_path = ngs::fs::environment_get_variable("IMGUI_FOLDER_ICON");
+      if (!folder_icon_path.string().empty() && folder_icon_path.has_extension()) {
+        std::string ext = folder_icon_path.extension().string();
+        if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") {
+          int width, height, nrChannels;
+          image = stbi_load(folder_icon_path.string().c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
+          if (image) {
+            unsigned char *invData = (unsigned char *)calloc(height * width * 4, sizeof(unsigned char));
+            if (invData) {
+              for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                  int index = (y * width + x) * 4;
+                  invData[index + 0] = image[index + 0];
+                  invData[index + 1] = image[index + 1];
+                  invData[index + 2] = image[index + 2];
+                  invData[index + 3] = image[index + 3];
+                }
+              }
+              free(image);
+              image = invData;
+            }
+          }
+        }
       }
-      m_icons[pathU8] = this->CreateTexture(sd, sw, sh, 0);
-      free(sd);
     } else {
-      uint8_t *data = (uint8_t*)ifd::GetDefaultFileIcon();
-      if (iconID == 0) data = (uint8_t *)ifd::GetDefaultFolderIcon();
-      int w = DEFAULT_ICON_SIZE;
-      int h = DEFAULT_ICON_SIZE;
-      unsigned char *invData = (unsigned char *)calloc(w * h * 4, sizeof(unsigned char));
-      for (int y = 0; y < w; y++) {
-        for (int x = 0; x < h; x++) {
-          int index = (y * w + x) * 4;
-          invData[index + 0] = 255 - data[index + 0];
-          invData[index + 1] = 255 - data[index + 1];
-          invData[index + 2] = 255 - data[index + 2];
-          invData[index + 3] = data[index + 3];
+      ghc::filesystem::path file_icon_path = ngs::fs::environment_get_variable("IMGUI_FILE_ICON");
+      if (!file_icon_path.string().empty() && file_icon_path.has_extension()) {
+        std::string ext = file_icon_path.extension().string();
+        if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") {
+          int width, height, nrChannels;
+          image = stbi_load(file_icon_path.string().c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
+          if (image) {
+            unsigned char *invData = (unsigned char *)calloc(height * width * 4, sizeof(unsigned char));
+            if (invData) {
+              for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                  int index = (y * width + x) * 4;
+                  invData[index + 0] = image[index + 0];
+                  invData[index + 1] = image[index + 1];
+                  invData[index + 2] = image[index + 2];
+                  invData[index + 3] = image[index + 3];
+                }
+              }
+              free(image);
+              image = invData;
+            }
+          }
         }
       }
-      int sw = w * 16;
-      int sh = h * 16;
-      unsigned char *sd = (unsigned char *)calloc(sw * sh * 4, sizeof(unsigned char));
-      for (int y = 0; y < sh; y++) {
-        for (int x = 0; x < sw; x++) {
-          int origX = x / 16;
-          int origY = y / 16;
-          int index = (origY * w + origX) * 4;
-          int scaledIndex = (y * sw + x) * 4;
-          sd[scaledIndex + 0] = invData[index + 0];
-          sd[scaledIndex + 1] = invData[index + 1];
-          sd[scaledIndex + 2] = invData[index + 2];
-          sd[scaledIndex + 3] = invData[index + 3];
-        }
-      }
-      m_icons[pathU8] = this->CreateTexture(sd, sw, sh, 0);
-      free(invData);
-      free(sd);
     }
+    data = (uint8_t *)ifd::GetDefaultFileIcon();
+    if (iconID == 0) data = (uint8_t *)ifd::GetDefaultFolderIcon();
+    if (image) data = (uint8_t *)image;
+    int w = 32;
+    int h = 32;
+    int sw = w * 16;
+    int sh = h * 16;
+    unsigned char *sd = (unsigned char *)calloc(sw * sh * 4, sizeof(unsigned char));
+    for (int y = 0; y < sh; y++) {
+      for (int x = 0; x < sw; x++) {
+        int origX = x / 16;
+        int origY = y / 16;
+        int index = (origY * w + origX) * 4;
+        int scaledIndex = (y * sw + x) * 4;
+        #if !defined(IFD_USE_OPENGL)
+        sd[scaledIndex + 0] = data[index + 0];
+        sd[scaledIndex + 1] = data[index + 1];
+        sd[scaledIndex + 2] = data[index + 2];          
+        sd[scaledIndex + 3] = data[index + 3];
+        #else
+        sd[scaledIndex + 2] = data[index + 0];
+        sd[scaledIndex + 1] = data[index + 1];
+        sd[scaledIndex + 0] = data[index + 2];          
+        sd[scaledIndex + 3] = data[index + 3];
+        #endif
+      }
+    }
+    free(image);
+    m_icons[pathU8] = this->CreateTexture(sd, sw, sh, 0);
+    free(sd);
     return m_icons[pathU8];
     #endif
   }
