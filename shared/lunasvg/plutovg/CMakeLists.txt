@@ -33,7 +33,7 @@ set(plutovg_headers
     source/plutovg-stb-truetype.h
 )
 
-add_library(plutovg ${plutovg_sources} ${plutovg_headers})
+add_library(plutovg STATIC ${plutovg_sources} ${plutovg_headers})
 add_library(plutovg::plutovg ALIAS plutovg)
 
 set_target_properties(plutovg PROPERTIES
