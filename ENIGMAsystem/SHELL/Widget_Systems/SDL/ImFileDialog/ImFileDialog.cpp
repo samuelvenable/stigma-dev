@@ -1361,7 +1361,7 @@ namespace ifd {
               image = invData;
             }
           }
-        }
+        }
       }
     } else {
       ghc::filesystem::path file_icon_path = ngs::fs::environment_get_variable("IMGUI_FILE_ICON");
