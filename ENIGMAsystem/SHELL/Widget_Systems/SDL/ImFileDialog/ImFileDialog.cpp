@@ -120,7 +120,7 @@ namespace ifd {
     GetFileAttributesW(path.wstring().c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND);
     #else
     std::error_code ec;
-    return (!path.u8string().empty() && path.is_absolute() && ghc::filesystem::exists(path, ec));
+    return (!path.string().empty() && path.is_absolute() && ghc::filesystem::exists(path, ec));
     #endif
   }
 
@@ -132,7 +132,7 @@ namespace ifd {
     path.wstring()[1] == L':'));
     #else
     std::error_code ec;
-    return (!path.u8string().empty() && path.u8string()[0] == '/');
+    return (!path.string().empty() && path.string()[0] == '/');
     #endif
   }
 
@@ -890,14 +890,14 @@ namespace ifd {
       
       if (m_type == IFD_DIALOG_DIRECTORY) {
         #if defined(_WIN32)
-        if (!m_result.empty() && !m_result.back().u8string().empty() && 
-          m_result.back().u8string().back() != '\\') {
-          m_result.back() = m_result.back().u8string() + "\\";
+        if (!m_result.empty() && !m_result.back().string().empty() && 
+          m_result.back().string().back() != '\\') {
+          m_result.back() = m_result.back().string() + "\\";
         }
         #else
-        if (!m_result.empty() && !m_result.back().u8string().empty() && 
-          m_result.back().u8string().back() != '/') {
-          m_result.back() = m_result.back().u8string() + "/";
+        if (!m_result.empty() && !m_result.back().string().empty() && 
+          m_result.back().string().back() != '/') {
+          m_result.back() = m_result.back().string() + "/";
         }
         #endif
       } else if (m_type == IFD_DIALOG_SAVE) {
@@ -1321,9 +1321,9 @@ namespace ifd {
     if (G_IS_OBJECT(file)) g_object_unref(file);
     return m_icons[pathU8];
     #else
-    if (m_icons.count(path.u8string()) > 0)
-      return m_icons[path.u8string()];
-    std::string pathU8 = path.u8string();
+    if (m_icons.count(path.string()) > 0)
+      return m_icons[path.string()];
+    std::string pathU8 = path.string();
     m_icons[pathU8] = nullptr;
     std::error_code ec;
     int iconID = 1;
