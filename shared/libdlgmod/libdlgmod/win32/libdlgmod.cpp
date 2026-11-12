@@ -866,7 +866,10 @@ namespace dialog_module {
               }
               if (!equalsext && filename_ext(narrow(textstr)) == "" && semicolonsplit.size()) {
                 wstring textwstr = widen(filename_change_ext(narrow(textstr), semicolonsplit[0]));
+                DWORD selection_start = 0, selection_end = 0;
+                SendMessageW(textbox, EM_GETSEL, (WPARAM)&selection_start, (LPARAM)&selection_end);
                 SetWindowTextW(textbox, textwstr.c_str());
+                SendMessageW(textbox, EM_SETSEL, selection_start, selection_end);
               }
             }
           }
