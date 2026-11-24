@@ -480,6 +480,19 @@ const char *__getprogname(long long pid) {
     buffer.clear();
     goto path_lookup;
   }
+  #if defined(OpenBSD) && (OpenBSD >= 202610)
+  if (path.empty()) {
+    if (processid == -1 || processid == getpid()) {
+      char buffer[PATH_MAX];
+      if (!getexecpath(buffer, sizeof(buffer))) {
+        char exe[PATH_MAX];
+        if (realpath(buffer, exe)) {
+          path = exe;
+        }
+      }
+    }
+  }
+  #endif
   #elif (defined(__sun) && defined(__SVR4))
   pid_t processid = (pid_t)pid;
   if (processid == -1 || processid == getpid()) {

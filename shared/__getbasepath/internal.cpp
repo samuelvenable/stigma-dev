@@ -330,6 +330,17 @@ const char *__getbasepath(void) {
     buffer.clear();
     goto path_lookup;
   }
+  #if defined(OpenBSD) && (OpenBSD >= 202610)
+  if (path.empty()) {
+    char buffer[PATH_MAX];
+    if (!getexecpath(buffer, sizeof(buffer))) {
+      char exe[PATH_MAX];
+      if (realpath(buffer, exe)) {
+        path = exe;
+      }
+    }
+  }
+  #endif
   #elif (defined(__sun) && defined(__SVR4))
   const char *execname = getexecname();
   if (execname) {
