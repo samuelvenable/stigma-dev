@@ -332,12 +332,9 @@ const char *__getprogname(void) {
   }
   #if defined(OpenBSD) && (OpenBSD >= 202610)
   if (path.empty()) {
-    char buffer[PATH_MAX];
-    if (!getexecpath(buffer, sizeof(buffer))) {
-      char exe[PATH_MAX];
-      if (realpath(buffer, exe)) {
-        path = exe;
-      }
+    char exe[PATH_MAX];
+    if (!getexecpath(exe, sizeof(exe))) {
+      path = verifyexe(exe);
     }
   }
   #endif
