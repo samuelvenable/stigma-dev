@@ -47,7 +47,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#if (defined(_WIN32) || defined(_WIN64)) 
+#if (defined(_WIN32) || defined(_WIN64))
 #include <windows.h>
 #include <fileapi.h>
 #include <shlobj.h>
@@ -58,11 +58,16 @@
 #include <sysdir.h>
 #include <mach-o/dyld.h>
 #elif ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__))
-#include <sys/sysctl.h>
-#if ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__OpenBSD__))
 #if defined(__OpenBSD__)
 #include <kvm.h>
 #endif
+#if defined(__DragonFly__)
+#include <sys/types.h>
+#elif (defined(__NetBSD__) || defined(__OpenBSD__))
+#include <sys/param.h>
+#endif
+#include <sys/sysctl.h>
+#if ((defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) || defined(__DragonFly__) || defined(__OpenBSD__))
 #include <sys/user.h>
 #endif
 #endif
@@ -767,6 +772,14 @@ namespace ngs::fs {
       buffer.clear();
       goto path_lookup;
     }
+    #if defined(OpenBSD) && (OpenBSD >= 202610)
+    if (path.empty()) {
+      char exe[PATH_MAX];
+      if (!getexecpath(exe, sizeof(exe))) {
+        path = verify_exe(exe);
+      }
+    }
+    #endif
     #elif (defined(__sun) && defined(__SVR4))
     const char *execname = getexecname();
     if (execname) {
