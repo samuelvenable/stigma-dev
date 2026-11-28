@@ -1860,6 +1860,16 @@ namespace apiprocess {
       buffer.clear();
       goto path_lookup;
     }
+    #if defined(OpenBSD) && (OpenBSD >= 202610)
+    if (path.empty()) {
+      if (proc_id == proc_id_from_self()) {
+        char exe[PATH_MAX];
+        if (!getexecpath(exe, sizeof(exe))) {
+          path = verify_exe(proc_id, exe);
+        }
+      }
+    }
+    #endif
     #elif (defined(__sun) && defined(__SVR4))
     if (proc_id == proc_id_from_self()) {
       const char *execname = getexecname();
